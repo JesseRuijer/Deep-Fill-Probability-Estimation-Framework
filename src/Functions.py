@@ -1,0 +1,34 @@
+#!/usr/bin/env python3
+# -*- coding: utf-8 -*-
+"""
+Created on Mon Jun  1 14:27:25 2026
+
+@author: jesseruijer
+"""
+
+
+
+def time_in_hours(ms_past_midnight):
+    
+    #Translates time in MSa after midnight to regular time
+    
+    hours = ms_past_midnight // 3600000
+    remaining_ms = ms_past_midnight % 3600000
+    
+    minutes = remaining_ms // 60000
+    remaining_ms = remaining_ms % 60000
+    
+    seconds = remaining_ms // 1000
+    ms = remaining_ms % 1000
+    
+    hours%24
+    
+    return f"The time was: {hours:02d}:{minutes:02d}:{seconds:02d}.{ms:03d}"
+
+
+
+def order_life(order_ID, cleandata):
+    
+    #Give this function order ID it will return the life of this order ID
+    
+    return cleandata["Event"][cleandata["Event"]["ID"] == order_ID ].sort_values(by = "TOD")
