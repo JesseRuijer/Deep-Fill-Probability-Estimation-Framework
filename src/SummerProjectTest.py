@@ -5,6 +5,15 @@ Created on Wed May 20 19:41:13 2026
 
 @author: jesseruijer
 """
+
+
+
+
+#Build queue development and use that for queue position feature
+#Use that to update log reg model
+#There are a lot more lob feature statistics i could add later
+
+
 import scipy.io
 import pandas as pd
 import numpy as np
@@ -16,7 +25,7 @@ from sklearn.linear_model import LogisticRegression
 from sklearn.preprocessing import StandardScaler
 import seaborn as sns
 
-from Functions import time_in_hours, plots, plot_feature, plot_corr_map
+from Functions import time_in_hours, plots, plot_feature, plot_corr_map, order_life
 
 
 pd.set_option('display.max_columns', None)
@@ -35,7 +44,10 @@ def import_data(file_path, file_path_MO):
     
     struct_data_E = mat_data['data'][0, 0]['Event']
     df_Event = pd.DataFrame(struct_data_E)
-    df_Event.columns = ["TOD", "ID", "Type", "Vol", "Price", "unknown1", "unknown2"]
+    df_Event.columns = ["TOD", "ID", "Type", "Vol", "Price", "unknown1", "SideOfBook"] #BuySide = 1, Sellside = 0, note hidden orders can be pegged at midpoint so hard to classify those so maybe best to ignore this col for 84s
+    
+    #unknown 1 is literally just a row of ones and has no predictive power so remove it from df
+    df_Event = df_Event.drop(columns= ["unknown1"])
 
     struct_data_BV = mat_data['data'][0, 0]['BuyVolume']
     df_BV = pd.DataFrame(struct_data_BV)
@@ -86,12 +98,11 @@ def clean_data(raw_data):
     df_SP = raw_data["SellPrice"]
     df_MO = raw_data["MO"]
     
-   #Cleans dataframes to not include first and last 30 min of trading hours and not include 88 and 84
+   #Cleans dataframes to not include first and last 30 min of trading hours and not include 88 
     valid_row_mask = (
         (df_E["TOD"] >= 36000000) &
         (df_E["TOD"] <= 55800000) &
-        (df_E["Type"] != 88) &
-        (df_E["Type"] != 84)
+        (df_E["Type"] != 88)
         )
     
     df_E_without_noise = df_E[valid_row_mask]
@@ -137,21 +148,43 @@ def data_regressors(rawdata, cleandata):
     #Total Vol imbalance uses sum of the 20 cols provided in the data
     #axis=1 does across cols, axis=0 does across rows
     Regressors_df["TotalVolImbalance"] = ((df_BV.sum(axis=1)-df_SV.sum(axis=1))/(df_BV.sum(axis=1)+ df_SV.sum(axis=1))).fillna(0)
-
-
+    
+    hidden_vol = np.where(df_E["Type"] ==  84, df_E['Vol'], 0) #returns the vol of types 84 else zero in a new numpy array
+    cum_vol_pad = np.pad(np.cumsum(hidden_vol), (1,0), constant_values = 0) #says add a zero to the start, nothing to the back and then we take cumsum of all the vols
+    tod_values = df_E['TOD'].values
+    lookback = 5000 #Lookback time in MS for hidden vol trades
+    lookback_times = tod_values - lookback
+    start_indices = np.searchsorted(tod_values, lookback_times, side='left')    #Does binary search st for every lookback time we calculate the row index it woud land on in tod_values
+    current_indices = np.arange(1, len(tod_values) + 1)
+    Regressors_df["LookBackHiddenVol"] = cum_vol_pad[current_indices] - cum_vol_pad[start_indices]
+    
     weights = [1/(i) for i in range(1,21)]
 
     Regressors_df["Weighted Vol Imbalance"] = (((weights*df_BV).sum(axis=1)-(weights*df_SV).sum(axis=1))/((weights*df_BV).sum(axis=1)+ (weights*df_SV).sum(axis=1))).fillna(0)
     Regressors_df["Midprice"] = (df_BP[0]+df_SP[0])/2
     Regressors_df["Microprice"] = ((df_BV[0]*df_SP[0])+(df_SV[0]*df_BP[0]))/(df_BV[0]+df_SV[0])
     
+    direction_of_order = df_E["SideOfBook"].values
+    price_of_order = df_E["Price"].values
+    best_bid = df_BP[0].values
+    best_ask = df_SP[0].values
+    
+    distance_to_touch = np.where( #np.where works like an if condition, its this, else do this
+        
+        direction_of_order == 1,
+        best_bid - price_of_order,
+        price_of_order - best_ask
+        
+        )
+    
+    Regressors_df["DistanceToTouch"] = distance_to_touch   #How far a placed LO is from best bid or best ask
     
     #Calculates how far order is awaay from best bid or best ask
-    Regressors_df['distance_to_best_price_ask'] = cleandata['SellPrice'][0] - cleandata[]
+    #Regressors_df['distance_to_best_price_ask'] = cleandata['SellPrice'][0] - cleandata[]
     
     train_mask = (
             (df_E2["Type"] != 88) &
-            (df_E2["Type"] != 84) &
+            (df_E2["Type"] != 84) & #Here we do remove 84 since we cant train on something thats hidden i.e not in queue
             #To remove after hour trading data
             (df_E2["TOD"] <= 57601000)
             )
@@ -179,7 +212,8 @@ rawdata = import_data(file_path, file_path_MO)
 cleandata = clean_data(rawdata)
 regressormatrix = data_regressors(rawdata, cleandata)
 
-########## Replicating the slides
+
+#############3########## Replicating the slides #############################
 print(f" Total number of events on 1 April 2014 of INTC is {len(cleandata['Event'])}")
 print(f" Amount of Market Orders on 1 April 2014 of INTC is {len(cleandata['MO'])}")
 print(f' Percentage of MO per total number of events on 1 April 2014 INTC is {(len(cleandata["MO"])/len(cleandata["Event"])*100):.04f}%')
@@ -189,20 +223,78 @@ sell_no_walk = (cleandata['MO']['APPS'] == cleandata['MO']['BBP'] ) & (cleandata
 total_walk = buy_no_walk | sell_no_walk # | is OR operator
 
 print(f" Percentage of orders that did not walk the book for INTC on April 1 2024 is {(total_walk.sum()/(len(cleandata['MO'])) * 100):.2f} % ")
-######### 
+################################################################################3
 
 
-#unknown 2 could very well be what side of the book the order appears on, but prove that below
-#unknown 1 could be if its a visible order, proof that using 84 which is in raw and not in clean
 
 
-print(cleandata["Event"][cleandata["Event"]["Type"] == 70])
+
 #How many shares are sitting ahead of this in the queue
 #Queue_pos
 
 
+################Proving Unknown 2 is what size of the book an event happens###########
+#This shows whenever 66 or 83 we only get 1s and 0s respectively
+print(cleandata["Event"][(cleandata["Event"]["Type"] == 66) & (cleandata["Event"]["SideOfBook"] == 0)])
+print(cleandata["Event"][(cleandata["Event"]["Type"] == 83) & (cleandata["Event"]["SideOfBook"] == 1)])
+#Must also check the side is correct for the other orders, most difficult will be the hidden orders
+hidden0 = (rawdata['Event']['Type'] == 84) & (rawdata["Event"]["SideOfBook"] == 0)
+hidden0index = rawdata['Event'][hidden0].index
+look_up_index = hidden0index - 1 #To see what LOB looked like before LO was placed
+#Adding .values is really important here because that removes the original indices from the df and just hands pandas lists of numbers without any pre fit indices
+best_buy = rawdata["BuyPrice"].loc[look_up_index, 0].values # first col gives best buy price
+best_sell = rawdata["SellPrice"].loc[look_up_index, 0].values # first col gives best sell price
+trade_price84 = rawdata["Event"].loc[hidden0index, "Price"].values
 
+res_df = pd.DataFrame(
+    { "Trade price of 84": trade_price84,
+     "Best Buy": best_buy,
+     "Best Sell": best_sell}
+    )
 
+print(res_df.head(10))
+#Here we may see orders exactly at mid price to be pegged there if they have to sell a lot they dont want to scare the market i think
+#Sell LOs slightly above best buy is to ensure they can capture the incoming buyer immediately
+#That gave some intuition about the location of the Hidden orders, now we can go on to show the sides are still correct
+#For the other order types
+
+target_event_types = [67, 68, 69, 70, 84]
+mask = rawdata['Event']["Type"].isin(target_event_types)
+index = rawdata['Event'][mask].index
+unknown2val = rawdata['Event'].loc[index, 'SideOfBook'].values
+eventprice = rawdata['Event'].loc[index, 'Price'].values
+
+#Now look at LOB status before this order was placed
+index_before = index - 1
+best_bid = rawdata['BuyPrice'].loc[index_before, 0].values
+best_ask = rawdata['SellPrice'].loc[index_before, 0].values
+midprice_before = (best_ask + best_bid)/2
+what_type = rawdata['Event'].loc[index, 'Type'].values
+
+proof_df = pd.DataFrame(
+    {'EventPrice': eventprice,
+     'unknown2' : unknown2val,
+     'Midprice': midprice_before,
+     'Type': what_type
+     })
+
+#if price is below midprice its on the buy side and vice versa
+proof_df['StrictlyBuySide%'] = (proof_df['EventPrice'] < proof_df['Midprice']).astype(int)*100 #astype just converts the boolean into 1 or 0
+proof_df['StrictlyMidPrice%'] = (proof_df['EventPrice'] == proof_df['Midprice']).astype(int)*100
+proof_df['StrictlySellSide%'] = (proof_df['EventPrice'] > proof_df['Midprice']).astype(int)*100
+
+bucket_cols = ['Type', 'unknown2']
+target_cols = ['StrictlyBuySide%', 'StrictlyMidPrice%', 'StrictlySellSide%']
+grouped_buckets = proof_df.groupby(bucket_cols)
+filtered_buckets = grouped_buckets[target_cols]
+final_proof = filtered_buckets.mean()
+
+#i.e for each type of event its calculated for the price of the order where the type was for whether that was on buy
+#or sell side
+
+print(final_proof)
+
+#########################################################################################3
 
 #try to recreate the graph at 11 am
 plots(cleandata, 39600000)
