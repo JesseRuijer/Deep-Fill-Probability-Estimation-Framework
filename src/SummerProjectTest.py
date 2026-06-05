@@ -5,14 +5,13 @@ Created on Wed May 20 19:41:13 2026
 
 @author: jesseruijer
 """
-
-
-
-
-#Build queue development and use that for queue position feature
-#Use that to update log reg model
 #There are a lot more lob feature statistics i could add later
-
+#Write something to classify if the stock is small or large tick and change analysis depending on that
+#Finish prediction function
+#Visualisation of performance vs dummy guessing
+#Statistical evidence for my log regression model since now we just have the ORs but no p values or CIs
+#maybe still use microprice in model but use it in some relative way or microprice relative to midprice, think of something
+#Importing libraries,classes, functions from other scripts
 
 import scipy.io
 import pandas as pd
@@ -20,16 +19,19 @@ import numpy as np
 import matplotlib.pyplot as plt
 import statsmodels.api as sm
 import statsmodels.formula.api as smf
-from sklearn.metrics import confusion_matrix, classification_report, precision_recall_curve, roc_auc_score, brier_score_loss, log_loss
+from sklearn.metrics import precision_recall_curve, roc_auc_score, brier_score_loss, log_loss, roc_curve
+from sklearn.calibration import calibration_curve, CalibratedClassifierCV
+from sklearn.dummy import DummyClassifier
 from sklearn.linear_model import LogisticRegression
 from sklearn.preprocessing import StandardScaler
 import seaborn as sns
 
 from Functions import time_in_hours, plots, plot_feature, plot_corr_map, order_life
 
-
+#Just a display feature in console so all columns are printed in console
 pd.set_option('display.max_columns', None)
 
+#Setting file paths
 file_path = '../STOCKS/INTC_NASDAQ/INTC_20140401_NASDAQ.mat'
 file_path_MO = '../STOCKS/INTC_NASDAQ/Market Order/INTC_20140401.mat'
 
@@ -131,12 +133,22 @@ def clean_data(raw_data):
 
 def data_regressors(rawdata, cleandata):
     
+    
     df_E = cleandata["Event"]
     df_E2 = rawdata["Event"]
-    df_BV = cleandata["BuyVol"]
-    df_SV = cleandata["SellVol"]
-    df_BP = cleandata["BuyPrice"]
-    df_SP = cleandata["SellPrice"]
+   
+    
+    #For our machine to make accurate predictions we have to shift forward each row in the LOB BuySell Vol and Price
+    #i.e for row 1 in event normally, row 1 in the LOB data would correspond to what happened immediately after 
+    #the event in row 1, but to predict what happened to the event in row1 we need what the LOB looked like before that 
+    #event happened so we need to shift row 0 from LOB down to row 1, can do this vectorize wise by .shift
+    #So first we do that for the raw data so its all alligned, and then we can go to removing cols and stuff in cleandata
+    
+    df_BV = rawdata["BuyVol"].shift(1).loc[df_E.index]
+    df_SV = rawdata["SellVol"].shift(1).loc[df_E.index]
+    df_BP = rawdata["BuyPrice"].shift(1).loc[df_E.index]
+    df_SP = rawdata["SellPrice"].shift(1).loc[df_E.index]
+    
     
     Regressors_df = pd.DataFrame()
     Regressors_df["TOD"] = df_E["TOD"]
@@ -177,11 +189,37 @@ def data_regressors(rawdata, cleandata):
         
         )
     
+    
+    
     Regressors_df["DistanceToTouch"] = distance_to_touch   #How far a placed LO is from best bid or best ask
     
     #Calculates how far order is awaay from best bid or best ask
-    #Regressors_df['distance_to_best_price_ask'] = cleandata['SellPrice'][0] - cleandata[]
     
+    #Vol Ahead looks at for a given placed limit order how much volume is ahead of it until best price
+    #We create an empty array for all tods an event was placed, loop through all 20 levels of the order book prices we have and add volume to it if its in front of our order
+    
+    total_buy_vol_ahead = np.zeros(len(df_E))
+    total_sell_vol_ahead = np.zeros(len(df_E))
+    
+    for i in range(20):
+        lvl_buy_price = df_BP[i].values
+        lvl_buy_vol = df_BV[i].values
+        lvl_sell_price = df_SP[i].values
+        lvl_sell_vol = df_SV[i].values
+        
+        total_buy_vol_ahead += np.where( lvl_buy_price >= price_of_order, lvl_buy_vol,0)
+        total_sell_vol_ahead += np.where(lvl_sell_price <= price_of_order, lvl_sell_vol, 0)
+        
+    Vol_Ahead = np.where(
+        direction_of_order == 1,
+        total_buy_vol_ahead,
+        total_sell_vol_ahead
+        )
+    
+    Regressors_df['VolAhead'] = Vol_Ahead
+    #we use log1p  which is log 1 + x since if an order is placed inside the spread it would have negative values and we cant take log of that 
+
+    Regressors_df['LogVolAhead'] = np.log1p(Regressors_df['VolAhead'])
     train_mask = (
             (df_E2["Type"] != 88) &
             (df_E2["Type"] != 84) & #Here we do remove 84 since we cant train on something thats hidden i.e not in queue
@@ -208,6 +246,7 @@ def data_regressors(rawdata, cleandata):
     
     return Clean_Regression_Data
 
+#Adding the dataframes to variables for further use
 rawdata = import_data(file_path, file_path_MO)
 cleandata = clean_data(rawdata)
 regressormatrix = data_regressors(rawdata, cleandata)
@@ -223,14 +262,9 @@ sell_no_walk = (cleandata['MO']['APPS'] == cleandata['MO']['BBP'] ) & (cleandata
 total_walk = buy_no_walk | sell_no_walk # | is OR operator
 
 print(f" Percentage of orders that did not walk the book for INTC on April 1 2024 is {(total_walk.sum()/(len(cleandata['MO'])) * 100):.2f} % ")
+#try to recreate the graph at 11 am
+plots(cleandata, 39600000)
 ################################################################################3
-
-
-
-
-
-#How many shares are sitting ahead of this in the queue
-#Queue_pos
 
 
 ################Proving Unknown 2 is what size of the book an event happens###########
@@ -252,7 +286,7 @@ res_df = pd.DataFrame(
      "Best Sell": best_sell}
     )
 
-print(res_df.head(10))
+print(f'       Hidden Orders      \n {res_df.head(10)}')
 #Here we may see orders exactly at mid price to be pegged there if they have to sell a lot they dont want to scare the market i think
 #Sell LOs slightly above best buy is to ensure they can capture the incoming buyer immediately
 #That gave some intuition about the location of the Hidden orders, now we can go on to show the sides are still correct
@@ -292,24 +326,25 @@ final_proof = filtered_buckets.mean()
 #i.e for each type of event its calculated for the price of the order where the type was for whether that was on buy
 #or sell side
 
-print(final_proof)
+print(f'                 Final Proof of unknown 2    \n {final_proof}')
 
 #########################################################################################3
 
-#try to recreate the graph at 11 am
-plots(cleandata, 39600000)
 
 #BASpread seems to not be relevant for INTC since the spread is pretty much one cent for the whole day
-plot_feature(regressormatrix, "TotalVolImbalance")
+
+#Some plots for exploratory data analysis and correlation matrices
+plot_feature(regressormatrix, "QImbalance")
 
 plot_corr_map(regressormatrix)
 
 
-#Starting logistic regression
+###################Starting logistic regression###########################
 
 #Must train model on filtered Data, but can search for its outcome on full data in terms of time, i.e an order might still get filled or not after 3:30 PM
 #Filtered is already above, here below is not constrained on time but still constrained on not including 88 and 84
 
+#Importing training data
 file_path2 = '../STOCKS/INTC_NASDAQ/INTC_20140424_NASDAQ.mat'
 file_path_MO2 = '../STOCKS/INTC_NASDAQ/Market Order/INTC_20140424.mat'
 rawdata2 = import_data(file_path2, file_path_MO2)
@@ -317,64 +352,59 @@ cleandata2 = clean_data(rawdata2)
 regressormatrix2 = data_regressors(rawdata2, cleandata2)
 
 
-#Below prints how many 1s and 0s we had
-print("\n Total Fills vs Cancels")
-print(regressormatrix["Fill_NoFill"].value_counts())
-
-#Below prints how many counts of Types we had
-print(cleandata["Event"]["Type"].value_counts())
-
-print(regressormatrix.head())
-
-#Logistic regression using statsmodels lib
-lr_model = LogisticRegression()
+#Logistic regression 
+#Might use somethiing of platt scaling to wrap the log res model as log res doesnt work very well with data where the output is very skewed, i.e here we have much more cancels then fills
+base_lr_model = LogisticRegression(max_iter=1000) # max iter higher then the standard 100 to take into account the noisy data we have
+calibrated_model = CalibratedClassifierCV(estimator=base_lr_model, method='sigmoid', cv=5 ) #Do some research if and why 5 is good value for cross validation in ML
 scalar = StandardScaler()
-
 y_train = regressormatrix["Fill_NoFill"]
-features = ['QImbalance', 'AbsQImbalance', 'TotalVolImbalance', 'Weighted Vol Imbalance', 
-            'Midprice', 'Microprice'] 
-X_train = regressormatrix[features]
+
+#Look at the required assumptions for logistic regression, i think need iid and for example
+#below i included price related features but if the price changes they dont follow the same distribution
+#on a given day anymore and the whole model breaks, so now the model only looks at volume
+#and position dynamics
+
+log_mdl_features = ['AbsQImbalance', 'Weighted Vol Imbalance', 
+              "DistanceToTouch", 'LogVolAhead', "LookBackHiddenVol"] 
+X_train = regressormatrix[log_mdl_features]
 
 X_train_standardised = scalar.fit_transform(X_train) #Here we fit and transform
 #Fit Scikit logistic regrssion
 
-lr_model.fit(X_train_standardised, y_train)
+calibrated_model.fit(X_train_standardised, y_train)
+
+base_lr_model.fit(X_train_standardised, y_train)
 
 y_true = regressormatrix2["Fill_NoFill"]
 
-X_test = regressormatrix2[features]
+X_test = regressormatrix2[log_mdl_features]
 
 X_test_scaled = scalar.transform(X_test) #Here we transform and not fit anymore i.e we use same scale as above so comparisons are valid
 
 #Do some prediction using scikit learn
-y_pred = lr_model.predict(X_test_scaled)
-y_pred_prob = lr_model.predict_proba(X_test_scaled)[: , 1] # We are now only looking at the fill probabilities
-
-
-
-
-
-
-
+y_pred = calibrated_model.predict(X_test_scaled)
+y_pred_prob = calibrated_model.predict_proba(X_test_scaled)[: , 1] # We are now only looking at the fill probabilities
 
 
 
 model_coef_df = pd.DataFrame(
     
     {
-     "Feature": features,
-     "Coefficient (Log Odds)" : lr_model.coef_[0],  # We only predict binary classification so our model only has one row so access that with [0]
-     "Odds Ratio": np.exp(lr_model.coef_[0])
+     "Feature": log_mdl_features,
+     "Coefficient (Log Odds)" : base_lr_model.coef_[0],  # We only predict binary classification so our model only has one row so access that with [0]
+     "Odds Ratio": np.exp(base_lr_model.coef_[0])
      }
     
     )
-print(model_coef_df.sort_values(by = "Odds Ratio", key=abs, ascending=False))
+print(f'                  Logistic Regression ORs \n {model_coef_df.sort_values(by = "Odds Ratio", key=abs, ascending=False)}')
 
 
 #Baseline fill percentage which i defined as the number of ones divided by number of ones and zeros in fill_map, which guarantees uniqueness by the fact i used .last in code before it
 print(f"Baseline Fill percentage is {regressormatrix2['Fill_NoFill'].mean()*100:.2f} %")
 
-
+#because were making a probability engine using logistic regression we must look at brier score and log loss to evaulte it
+#Confusion matrices and precisions for ex dont make too much sense here since then you need to define a treshold for when a probability gets put in the category
+#0 or 1 where for us that doesnt matter we're just interested in the pure probability of an order beig filled
 
 print("Engine metrics")
 
@@ -388,11 +418,60 @@ aucscore = roc_auc_score(y_true, y_pred_prob)
 print(f'AUC score is {aucscore:.3f}')
 
 
-#######Work on LOB chronological order reconstruction 
+
+#Visualisiton of performance and comparison to baseline dummy model which just guesses a baseline percentage on each order for it being filled 
+#Dummy y fill prob is just an array of length y true with all entries equal to dummy fill prob
+
+dummy_fill_prob = regressormatrix['Fill_NoFill'].mean()
+dummy_y_pred_prob = np.full(len(y_true), dummy_fill_prob)
+
+
+print("Dummy metrics")
+
+dummy_brierscore = brier_score_loss(y_true, dummy_y_pred_prob)
+print(f'Dummy Brier score is {dummy_brierscore:.3f}')
+
+dummy_logloss = log_loss(y_true, dummy_y_pred_prob)
+print(f' Dummy Logloss score is {dummy_logloss:.3f}')
+
+dummy_aucscore = roc_auc_score(y_true, dummy_y_pred_prob)
+print(f'Dummy AUC score is {dummy_aucscore:.3f}')
+
+
+
+
+
+
+
+
+
+
+
+
+
+# def feature_of_order():
     
+#     return features_of_order
 
+# def predict_order_fill_prob(features):
+#     #predicts specific probability for a given limit order being filled using the logistic regression engine from above
+    
+    
+#     input_df = pd.DataFrame({
+#             'AbsQImbalance' : features[0],
+#             'Weighted Vol Imbalance' : features[1],
+#             'Microprice' : features[2],
+#             'DistanceToTouch' : features[3],
+#             'LogVolAhead' : features[4],
+#             'LookBackHiddenVol' : features[-1] 
+#             })
+    
+#     scaled_input  = scalar.transform(input_df)
+#     fill_prob = lr_model.predict_log_proba(scaled_input)[0,1]
+    
+#     return fill_prob
 
-
+# print(predict_order_fill_prob(feature_of_order()))
 
 
 

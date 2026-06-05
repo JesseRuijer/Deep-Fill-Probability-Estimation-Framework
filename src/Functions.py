@@ -11,7 +11,7 @@ import seaborn as sns
 
 def time_in_hours(ms_past_midnight):
     
-    #Translates time in MSa after midnight to regular time
+    #Translates time in ms after midnight to regular time
     
     hours = ms_past_midnight // 3600000
     remaining_ms = ms_past_midnight % 3600000
@@ -63,6 +63,8 @@ def plots(cleandata, target_time):
     
 def plot_feature(regressormatrix, feature):
     
+    #Plots boxplot and density plot of a given feature in regressormatrix
+    
     plt.figure(figsize = (9,5))
     
     sns.boxplot(
@@ -85,12 +87,23 @@ def plot_feature(regressormatrix, feature):
 
 def plot_corr_map(regressormatrix):
     
-    features = ['BASpread', 'QImbalance', 'AbsQImbalance', 'TotalVolImbalance', 'Weighted Vol Imbalance', 
-                'Midprice', 'Microprice'] 
-    corr_matrix = regressormatrix[features].corr()
+    #Plots Correlation heat plot of all features and of features that appear in model
+    
+    features_all = ['BASpread', 'QImbalance', 'AbsQImbalance', 'TotalVolImbalance', 'Weighted Vol Imbalance', 
+                'Midprice', 'Microprice', "DistanceToTouch", 'LogVolAhead', "LookBackHiddenVol"] 
+    
+    features_in_model = ['AbsQImbalance', 'Weighted Vol Imbalance', 'Microprice', 
+                         "DistanceToTouch", 'LogVolAhead', "LookBackHiddenVol"] 
+    corr_matrix = regressormatrix[features_all].corr()
+    corr_matrix2 = regressormatrix[features_in_model].corr()
 
     sns.heatmap(corr_matrix, annot=True, cmap='coolwarm', vmin=-1, vmax=1)
-    plt.title("Feature Correlation Matrix")
+    plt.title("All Feature Correlation Matrix")
+    plt.show()
+    
+    
+    sns.heatmap(corr_matrix2, annot=True, cmap='coolwarm', vmin=-1, vmax=1)
+    plt.title("Feature Correlation Matrix Of Features In Model")
     plt.show()
     
     
