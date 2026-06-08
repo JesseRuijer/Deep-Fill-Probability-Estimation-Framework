@@ -7,10 +7,13 @@ Created on Wed May 20 19:41:13 2026
 """
 #There are a lot more lob feature statistics i could add later
 #Write something to classify if the stock is small or large tick and change analysis depending on that
-#Finish prediction function
+#Finish prediction function of logistic regression engine
 #Visualisation of performance vs dummy guessing
-#Statistical evidence for my log regression model since now we just have the ORs but no p values or CIs
+#Statistical evidence for my log regression model since now we just have the ORs but no p values or CIs, i think those are the odds ratios as p values work strangely for logistic regression i think
 #maybe still use microprice in model but use it in some relative way or microprice relative to midprice, think of something
+
+
+
 #Importing libraries,classes, functions from other scripts
 
 import scipy.io
@@ -19,12 +22,13 @@ import numpy as np
 import matplotlib.pyplot as plt
 import statsmodels.api as sm
 import statsmodels.formula.api as smf
-from sklearn.metrics import precision_recall_curve, roc_auc_score, brier_score_loss, log_loss, roc_curve
+from sklearn.metrics import precision_recall_curve, roc_auc_score, brier_score_loss, log_loss, roc_curve, average_precision_score
 from sklearn.calibration import calibration_curve, CalibratedClassifierCV
 from sklearn.dummy import DummyClassifier
 from sklearn.linear_model import LogisticRegression
 from sklearn.preprocessing import StandardScaler
 import seaborn as sns
+import lightgbm as lgb 
 
 from Functions import time_in_hours, plots, plot_feature, plot_corr_map, order_life
 
@@ -251,6 +255,11 @@ rawdata = import_data(file_path, file_path_MO)
 cleandata = clean_data(rawdata)
 regressormatrix = data_regressors(rawdata, cleandata)
 
+print(cleandata['Event'].head())
+
+print(cleandata["Event"].head(10))
+
+time_in_hours(36000003)
 
 #############3########## Replicating the slides #############################
 print(f" Total number of events on 1 April 2014 of INTC is {len(cleandata['Event'])}")
@@ -414,16 +423,20 @@ print(f'Brier score is {brierscore:.3f}')
 logloss = log_loss(y_true, y_pred_prob)
 print(f'Logloss score is {logloss:.3f}')
 
+#However i think AUC is only reliable on balanced data which this totally isnt, so the AUC is artificially inflated, why because we rarely ever have a fill and AUC is area under ROC, ROC formula is 
+
 aucscore = roc_auc_score(y_true, y_pred_prob)
 print(f'AUC score is {aucscore:.3f}')
 
 
+avgprecision = average_precision_score(y_true, y_pred_prob)
+print(f'Avg precision score is {avgprecision:.3f}')
 
 #Visualisiton of performance and comparison to baseline dummy model which just guesses a baseline percentage on each order for it being filled 
 #Dummy y fill prob is just an array of length y true with all entries equal to dummy fill prob
 
 dummy_fill_prob = regressormatrix['Fill_NoFill'].mean()
-dummy_y_pred_prob = np.full(len(y_true), dummy_fill_prob)
+dummy_y_pred_prob = np.full(len(y_true), dummy_fill_prob) #just creates an array of length y true with dummy fill probs
 
 
 print("Dummy metrics")
@@ -439,19 +452,30 @@ print(f'Dummy AUC score is {dummy_aucscore:.3f}')
 
 
 
+#Visualisation of performance vs dummy
+fig, axes = plt.subplots(1,3, figsize = (24,8))
+#calibration curve
+engine_true, engine_prob_pred = calibration_curve(y_true, y_pred_prob, n_bins=10, strategy = 'quantile') #tuple unpacking since the function returns two variables, we just name them immediately in one line
+axes[0].plot([0,1], [0,1], color = 'grey', label = "Perfect Calibration") # axes[0] means we're talking about the left figure then [0,1] , [0,1] are x list and y list and are read vertically so the first point is 0,0 and the second point is 1,1 and a line is drawn between them i.e the perfect prediction line i think but check this
+axes[0].plot(engine_prob_pred, engine_true, color = 'b' ,label = 'Logistic Regression Engine')
+axes[0].set_title('Calibration curve')
+axes[0].legend()
 
+#Roc curve
 
+engine_fpr, engine_tpr, tresholds = roc_curve(y_true, y_pred_prob) #returns false postive rates and true positive rates, treshold which i think is the number or prob above or below it gives a certain classification
+dummy_fpr, dummy_tpr, tresholds = roc_curve(y_true, dummy_y_pred_prob)
+axes[1].plot(engine_fpr, engine_tpr, color = 'b', label = 'Logistic Regression Engine')
+axes[1].plot(dummy_fpr, dummy_tpr, color = 'r', label = 'Dummy')
+axes[1].legend()
 
+#Precision recall curve
+engine_precision, engine_recall, engine_treshold = precision_recall_curve(y_true, y_pred_prob)
+axes[2].plot(engine_recall, engine_precision, color = 'b', label = 'Engine PR')
+axes[2].plot([0,1], [dummy_fill_prob, dummy_fill_prob], color = 'red', label = 'Dummy') #the dummy PR is just the baseline fill rate i.e here just a horizontal line
 
+plt.show()
 
-
-
-
-
-
-# def feature_of_order():
-    
-#     return features_of_order
 
 # def predict_order_fill_prob(features):
 #     #predicts specific probability for a given limit order being filled using the logistic regression engine from above
@@ -472,6 +496,79 @@ print(f'Dummy AUC score is {dummy_aucscore:.3f}')
 #     return fill_prob
 
 # print(predict_order_fill_prob(feature_of_order()))
+
+
+
+
+# light GBM 
+
+#imbalance ratio since our outcome variable is heavily skewed
+
+imbalance_ratio = (1-dummy_fill_prob) / dummy_fill_prob
+
+base_lgb = lgb.LGBMClassifier(
+    n_jobs = -1, #Using all available threads in cpu 
+    n_estimators = 150, # number of sequential trees  
+    learning_rate = 0.05, # scales contribution of each individual tree
+    num_leaves = 31, #max num of leaves, i.e terminal nodes, allowed in each tree 
+    random_state = 69 , #just set random seed for reproducability
+    scale_pos_weight = imbalance_ratio #telling the loss function about the skewed output var i think, not sure yet
+    ) 
+
+#calibrating the model, trees use stepfunctions, so use isotonic to match that, do more research on this
+
+calibrated_lgb = CalibratedClassifierCV(
+    estimator = base_lgb,
+    method = 'isotonic',
+    cv = 5
+    )
+
+print('Training lgb') # im pretty sure trees dont require scalar and only care about relative ordering 
+calibrated_lgb.fit(X_train, y_train)
+
+y_pred_prob_lgb = calibrated_lgb.predict_proba(X_test)[:, 1]
+
+#Evaluate performance metrics 
+print("Light GBM Engine metrics")
+
+brierscore_lgb = brier_score_loss(y_true, y_pred_prob_lgb)
+print(f'Brier score is {brierscore_lgb:.3f}')
+
+logloss_lgb = log_loss(y_true, y_pred_prob_lgb)
+print(f'Logloss score is {logloss_lgb:.3f}')
+
+#However i think AUC is only reliable on balanced data which this totally isnt, so the AUC is artificially inflated, why because we rarely ever have a fill and AUC is area under ROC, ROC formula is 
+
+aucscore_lgb = roc_auc_score(y_true, y_pred_prob_lgb)
+print(f'AUC score is {aucscore_lgb:.3f}')
+
+avgprecision_lgb = average_precision_score(y_true, y_pred_prob_lgb)
+print(f'Avg precision score is {avgprecision_lgb:.3f}')
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 
 
 
