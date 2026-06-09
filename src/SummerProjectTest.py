@@ -5,12 +5,8 @@ Created on Wed May 20 19:41:13 2026
 
 @author: jesseruijer
 """
-#There are a lot more lob feature statistics i could add later
-#Write something to classify if the stock is small or large tick and change analysis depending on that
-#Finish prediction function of logistic regression engine
-#Visualisation of performance vs dummy guessing
-#Statistical evidence for my log regression model since now we just have the ORs but no p values or CIs, i think those are the odds ratios as p values work strangely for logistic regression i think
-#maybe still use microprice in model but use it in some relative way or microprice relative to midprice, think of something
+#There are a lot more lob feature statistics i could add later make sure to add them to feature lists and corr plots
+#Work on data cleaning from yesterday and soln to the fill no fill variable
 
 
 
@@ -152,7 +148,10 @@ def data_regressors(rawdata, cleandata):
     df_SV = rawdata["SellVol"].shift(1).loc[df_E.index]
     df_BP = rawdata["BuyPrice"].shift(1).loc[df_E.index]
     df_SP = rawdata["SellPrice"].shift(1).loc[df_E.index]
+    df_MO = cleandata['MO']
     
+    opening_time = 34200000
+    closing_time = 57600000
     
     Regressors_df = pd.DataFrame()
     Regressors_df["TOD"] = df_E["TOD"]
@@ -192,8 +191,58 @@ def data_regressors(rawdata, cleandata):
         price_of_order - best_ask
         
         )
+    ###########################Creating some non linear features#######################
+    MO_tod_values = df_MO['TOD'].values #remeber .values makes it into np array since using for loops for this or pandas functions would take forever
+    MO_vol_values = df_MO['Vol'].values
     
+    cum_mo_vol = np.pad(np.cumsum(MO_vol_values), (1,0), constant_values = 0)      #pads to add a zero at thes start and then cumsum calculates the running total so to know the order arrival rate between two different times you just calculate the difference in their total running values
     
+    lookback_intensity = 100 # time we want to look back for in ms
+    event_tod_values = df_E['TOD'].values
+    lookback_starting_times = event_tod_values - lookback_intensity
+    
+    mo_start_indices = np.searchsorted(MO_tod_values, lookback_starting_times, side = 'left')   #Finds the row indices where the lookback window starts and below where it finishes
+    mo_end_indices = np.searchsorted(MO_tod_values, event_tod_values, side = 'right') 
+    
+    Regressors_df['MOTrailingVol100ms'] = cum_mo_vol[mo_end_indices] -  cum_mo_vol[mo_start_indices]
+    Regressors_df['MOTrailingOrders100ms'] = mo_end_indices - mo_start_indices
+    
+    #Building something similar for the LOs, the adding and the cancelation activities
+    mask_add = df_E['Type'].isin([66,83])
+    mask_cancel = df_E['Type'].isin([67,68])
+    mask_execute = df_E['Type'].isin([69,70])
+    
+    lo_add_vals_tod = df_E.loc[mask_add, 'TOD'].values
+    lo_add_vals_vol = df_E.loc[mask_add, 'Vol'].values
+    
+    lo_cancel_vals_tod = df_E.loc[mask_cancel, 'TOD'].values
+    lo_cancel_vals_vol = df_E.loc[mask_cancel, 'Vol'].values
+    
+    lo_execute_vals_tod = df_E.loc[mask_execute, 'TOD'].values
+    lo_execute_vals_vol = df_E.loc[mask_execute, 'Vol'].values
+    
+    added_lo_cumsum = np.pad(np.cumsum(lo_add_vals_vol), (1,0) , constant_values = 0)
+    cancel_lo_cumsum = np.pad(np.cumsum(lo_cancel_vals_vol), (1,0) , constant_values = 0)
+    execute_lo_cumsum = np.pad(np.cumsum(lo_execute_vals_vol), (1,0) , constant_values = 0)
+    
+    added_lo_start_indices = np.searchsorted(lo_add_vals_tod, lookback_starting_times, side = 'left')   #Finds the row indices where the lookback window starts and below where it finishes
+    added_lo_end_indices = np.searchsorted(lo_add_vals_tod, event_tod_values, side = 'right') 
+   
+    cancel_lo_start_indices = np.searchsorted(lo_cancel_vals_tod, lookback_starting_times, side = 'left')   #Finds the row indices where the lookback window starts and below where it finishes
+    cancel_lo_end_indices = np.searchsorted(lo_cancel_vals_tod, event_tod_values, side = 'right') 
+    
+    execute_lo_start_indices = np.searchsorted(lo_execute_vals_tod, lookback_starting_times, side = 'left')   #Finds the row indices where the lookback window starts and below where it finishes
+    execute_lo_end_indices = np.searchsorted(lo_execute_vals_tod, event_tod_values, side = 'right') 
+    
+    Regressors_df['LOTrailingVolPlaced100ms'] = added_lo_cumsum[added_lo_end_indices] -  added_lo_cumsum[added_lo_start_indices]
+    Regressors_df['LOTrailingCountOrdersPlaced100ms'] = added_lo_end_indices - added_lo_start_indices
+   
+    Regressors_df['LOTrailingVolCanceled100ms'] = cancel_lo_cumsum[cancel_lo_end_indices] -  cancel_lo_cumsum[cancel_lo_start_indices]
+    Regressors_df['LOTrailingCountOrdersCanceled100ms'] = cancel_lo_end_indices - cancel_lo_start_indices
+    
+    Regressors_df['LOTrailingVolExecuted100ms'] =  execute_lo_cumsum[execute_lo_end_indices] -   execute_lo_cumsum[execute_lo_start_indices]
+    Regressors_df['LOTrailingCountOrdersExecuted100ms'] = execute_lo_end_indices - execute_lo_start_indices
+    ###########################################
     
     Regressors_df["DistanceToTouch"] = distance_to_touch   #How far a placed LO is from best bid or best ask
     
@@ -246,20 +295,60 @@ def data_regressors(rawdata, cleandata):
     Regressors_df["Fill_NoFill"] = df_E["ID"].astype(int).map(fill_map)
 
     Clean_Regression_Data = Regressors_df.dropna(subset = ["Fill_NoFill"])
-
+    
+    #Building a regime classifier which uses categorical variables to tell in what regime of day we are in
+    Regressors_df['Regime'] = np.where(Regressors_df['TOD'] < opening_time , 0,    #Pre Market                         
+                              np.where(Regressors_df['TOD'] < 36000000 , 1,    # 30 min vol after opening
+                              np.where(Regressors_df['TOD'] < 55800000 , 2,    #Regular Market hours without first and last 30 min
+                              np.where(Regressors_df['TOD'] < closing_time , 3,    #30 min high volatilitiy time before closing
+                              4))))                                            #After market hours
+    
+    #need to alter the fill stuff maybe some sort of weighted splitting since the unit stuff if i were to use something like duplicating for that would just murder my RAM
+    #might make a third classificaiton which is not filled at end of day and therefore cancelled, which is different then being canceled during day 
+    
+    #orders that made it to the end of the day without being filled or canceled 
     
     return Clean_Regression_Data
+
+
 
 #Adding the dataframes to variables for further use
 rawdata = import_data(file_path, file_path_MO)
 cleandata = clean_data(rawdata)
 regressormatrix = data_regressors(rawdata, cleandata)
 
-print(cleandata['Event'].head())
+print(rawdata["Event"]["Type"].value_counts())
+
+
+print(regressormatrix[regressormatrix['MOTrailingVol100ms'] != 0].head(5))
+
+### check if 88/84 have ID, can i find order with similar ID to the 84 earlier in day 
+#So the answer is no we cant find similar ID earlier in day, but they do both have an ID
+#88 has an ID and you can immediately see that the VOL of those is massive
+print(rawdata['Event'][rawdata['Event']['Type'] == 88].head())
+print(rawdata['Event'][rawdata['Event']['Type'] == 84].head())
+# Theres 84 if and only if ID is 0
+print(rawdata['Event'][(rawdata['Event']['ID'] != 0) & (rawdata['Event']['Type'] == 84)])
+print(rawdata['Event'][(rawdata['Event']['Type'] != 84) & (rawdata['Event']['ID'] == 0)])
+
 
 print(cleandata["Event"].head(10))
 
-time_in_hours(36000003)
+
+#####################Proving data only NOT ONLY has DAY type limit orders i.e. a LO placed during day will doesnt exist anymore after 4pm########################3
+opening_time = 34200000
+closing_time = 57600000
+    
+order_lifespan = rawdata['Event'].groupby('ID')['TOD'].agg(['min', 'max'])  #Creates pd df with buckets grouped by ID then only looks at TOD and then for each bucket calculates min and max and outputs that in pds df
+mask6 = (order_lifespan['min'] < closing_time) & (order_lifespan['max'] > closing_time)
+extract_orders = order_lifespan[mask6].index.values
+
+print(extract_orders)
+print(len(extract_orders)) #However only like 8 were put in much later then a few seconds past 4 where the cancelations are probably just do to latency 
+print(order_life(147566 , rawdata))     #This was placed in pre market and canceled at end of day 
+
+############################################################################
+
 
 #############3########## Replicating the slides #############################
 print(f" Total number of events on 1 April 2014 of INTC is {len(cleandata['Event'])}")
@@ -275,8 +364,11 @@ print(f" Percentage of orders that did not walk the book for INTC on April 1 202
 plots(cleandata, 39600000)
 ################################################################################3
 
-
+print(rawdata['Event'][rawdata['Event']['TOD'] == 0])
 ################Proving Unknown 2 is what size of the book an event happens###########
+print(time_in_hours( 72000039))
+#84 midprice half int, rounding might be wrong. Answer: no as the hidden orders are executed and that can be done at halfprice if agreed to. it is however true that regular LOs can only be placed in sizes of one cent at the smallest  
+
 #This shows whenever 66 or 83 we only get 1s and 0s respectively
 print(cleandata["Event"][(cleandata["Event"]["Type"] == 66) & (cleandata["Event"]["SideOfBook"] == 0)])
 print(cleandata["Event"][(cleandata["Event"]["Type"] == 83) & (cleandata["Event"]["SideOfBook"] == 1)])
@@ -343,7 +435,7 @@ print(f'                 Final Proof of unknown 2    \n {final_proof}')
 #BASpread seems to not be relevant for INTC since the spread is pretty much one cent for the whole day
 
 #Some plots for exploratory data analysis and correlation matrices
-plot_feature(regressormatrix, "QImbalance")
+plot_feature(regressormatrix, "LOTrailingVolExecuted100ms")
 
 plot_corr_map(regressormatrix)
 
@@ -375,26 +467,38 @@ y_train = regressormatrix["Fill_NoFill"]
 
 log_mdl_features = ['AbsQImbalance', 'Weighted Vol Imbalance', 
               "DistanceToTouch", 'LogVolAhead', "LookBackHiddenVol"] 
+
+lgbm_mdl_features = log_mdl_features + ['BASpread', 'QImbalance', 'TotalVolImbalance', 'Midprice', 'Microprice', 
+                                        'MOTrailingVol100ms', 'MOTrailingOrders100ms', 'LOTrailingVolPlaced100ms', 'LOTrailingCountOrdersPlaced100ms', 
+                                        'LOTrailingVolCanceled100ms', 'LOTrailingCountOrdersCanceled100ms', 'LOTrailingVolExecuted100ms',
+                                        'LOTrailingCountOrdersExecuted100ms', 'VolAhead']
+
 X_train = regressormatrix[log_mdl_features]
+
+X_train_lgbm = regressormatrix[lgbm_mdl_features]
 
 X_train_standardised = scalar.fit_transform(X_train) #Here we fit and transform
 #Fit Scikit logistic regrssion
 
+
+
 calibrated_model.fit(X_train_standardised, y_train)
+
+
 
 base_lr_model.fit(X_train_standardised, y_train)
 
 y_true = regressormatrix2["Fill_NoFill"]
 
 X_test = regressormatrix2[log_mdl_features]
+X_test_lgbm = regressormatrix2[lgbm_mdl_features]
 
 X_test_scaled = scalar.transform(X_test) #Here we transform and not fit anymore i.e we use same scale as above so comparisons are valid
+
 
 #Do some prediction using scikit learn
 y_pred = calibrated_model.predict(X_test_scaled)
 y_pred_prob = calibrated_model.predict_proba(X_test_scaled)[: , 1] # We are now only looking at the fill probabilities
-
-
 
 model_coef_df = pd.DataFrame(
     
@@ -450,7 +554,8 @@ print(f' Dummy Logloss score is {dummy_logloss:.3f}')
 dummy_aucscore = roc_auc_score(y_true, dummy_y_pred_prob)
 print(f'Dummy AUC score is {dummy_aucscore:.3f}')
 
-
+avgprecision_dummy = average_precision_score(y_true, dummy_y_pred_prob)
+print(f'Avg precision score is {avgprecision_dummy:.3f}')
 
 #Visualisation of performance vs dummy
 fig, axes = plt.subplots(1,3, figsize = (24,8))
@@ -472,32 +577,27 @@ axes[1].legend()
 #Precision recall curve
 engine_precision, engine_recall, engine_treshold = precision_recall_curve(y_true, y_pred_prob)
 axes[2].plot(engine_recall, engine_precision, color = 'b', label = 'Engine PR')
+axes[2].set_xlabel('Recall')
+axes[2].set_ylabel('Precision')
 axes[2].plot([0,1], [dummy_fill_prob, dummy_fill_prob], color = 'red', label = 'Dummy') #the dummy PR is just the baseline fill rate i.e here just a horizontal line
 
 plt.show()
 
 
-# def predict_order_fill_prob(features):
-#     #predicts specific probability for a given limit order being filled using the logistic regression engine from above
+def predict_order_fill_prob(features):
+    #predicts specific probability for a given limit order being filled using the logistic regression engine from above
+    #since pd dfs are slow its better to use np array here
     
+    input_array = np.array(features).reshape(1,-1) #resshape needed 1 means passing 1 row, -1 means calculate the right dim for the columns so this creates a matrix which is whats needed for sci kit later
+    scaled_input  = (input_array - scalar.mean_) / scalar.scale_ # I think the trailing _ tells sci kit to look at the fitted values and calculate mean and std of those                   using scalar so we do the standardizations for each value and not all at the same time
+    fill_prob = calibrated_model.predict_proba(scaled_input)[0,1]
     
-#     input_df = pd.DataFrame({
-#             'AbsQImbalance' : features[0],
-#             'Weighted Vol Imbalance' : features[1],
-#             'Microprice' : features[2],
-#             'DistanceToTouch' : features[3],
-#             'LogVolAhead' : features[4],
-#             'LookBackHiddenVol' : features[-1] 
-#             })
-    
-#     scaled_input  = scalar.transform(input_df)
-#     fill_prob = lr_model.predict_log_proba(scaled_input)[0,1]
-    
-#     return fill_prob
+    return fill_prob
 
-# print(predict_order_fill_prob(feature_of_order()))
-
-
+example_state = X_test.iloc[67].values # Expects numerical list with values corresponding to the entries above
+print(predict_order_fill_prob(example_state))
+print(X_test.iloc[67])
+#Better to also create a function that extracts these features for maybe a given order ID?
 
 
 # light GBM 
@@ -517,35 +617,33 @@ base_lgb = lgb.LGBMClassifier(
 
 #calibrating the model, trees use stepfunctions, so use isotonic to match that, do more research on this
 
-calibrated_lgb = CalibratedClassifierCV(
+calibrated_lgbm = CalibratedClassifierCV(
     estimator = base_lgb,
     method = 'isotonic',
     cv = 5
     )
 
 print('Training lgb') # im pretty sure trees dont require scalar and only care about relative ordering 
-calibrated_lgb.fit(X_train, y_train)
+calibrated_lgbm.fit(X_train_lgbm, y_train)
 
-y_pred_prob_lgb = calibrated_lgb.predict_proba(X_test)[:, 1]
+y_pred_prob_lgbm = calibrated_lgbm.predict_proba(X_test_lgbm)[:, 1]
 
 #Evaluate performance metrics 
 print("Light GBM Engine metrics")
 
-brierscore_lgb = brier_score_loss(y_true, y_pred_prob_lgb)
-print(f'Brier score is {brierscore_lgb:.3f}')
+brierscore_lgbm = brier_score_loss(y_true, y_pred_prob_lgbm)
+print(f'Brier score is {brierscore_lgbm:.3f}')
 
-logloss_lgb = log_loss(y_true, y_pred_prob_lgb)
-print(f'Logloss score is {logloss_lgb:.3f}')
+logloss_lgbm = log_loss(y_true, y_pred_prob_lgbm)
+print(f'Logloss score is {logloss_lgbm:.3f}')
 
 #However i think AUC is only reliable on balanced data which this totally isnt, so the AUC is artificially inflated, why because we rarely ever have a fill and AUC is area under ROC, ROC formula is 
 
-aucscore_lgb = roc_auc_score(y_true, y_pred_prob_lgb)
-print(f'AUC score is {aucscore_lgb:.3f}')
+aucscore_lgbm = roc_auc_score(y_true, y_pred_prob_lgbm)
+print(f'AUC score is {aucscore_lgbm:.3f}')
 
-avgprecision_lgb = average_precision_score(y_true, y_pred_prob_lgb)
-print(f'Avg precision score is {avgprecision_lgb:.3f}')
-
-
+avgprecision_lgbm = average_precision_score(y_true, y_pred_prob_lgbm)
+print(f'Avg precision score is {avgprecision_lgbm:.3f}')
 
 
 

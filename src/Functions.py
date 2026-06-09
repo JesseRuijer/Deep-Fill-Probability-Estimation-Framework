@@ -28,11 +28,11 @@ def time_in_hours(ms_past_midnight):
 
 
 
-def order_life(order_ID, cleandata):
+def order_life(order_ID, df):
     
     #Give this function order ID it will return the life of this order ID
     
-    return cleandata["Event"][cleandata["Event"]["ID"] == order_ID ].sort_values(by = "TOD")
+    return df["Event"][df["Event"]["ID"] == order_ID ].sort_values(by = "TOD")
 
 def plots(cleandata, target_time):
     
