@@ -7,8 +7,10 @@ Created on Wed May 20 19:41:13 2026
 """
 #There are a lot more lob feature statistics i could add later make sure to add them to feature lists and corr plots
 #Work on data cleaning from yesterday and soln to the fill no fill variable
-
-
+#The label doesnt matter for 88 since theres no bid and ask side there
+#Is there crossing in the graphs before the market opens maybe my graphs overlap
+#Mabye the vol of 88 at eod is the amount of vol and the price could maybe be midprice or some other price
+#Make something to access the feature matrix at a time of day and that it doesnt display empty df if the ms isnt right it should then round down to the nearest time
 
 #Importing libraries,classes, functions from other scripts
 
@@ -26,7 +28,7 @@ from sklearn.preprocessing import StandardScaler
 import seaborn as sns
 import lightgbm as lgb 
 
-from Functions import time_in_hours, plots, plot_feature, plot_corr_map, order_life
+from Functions import time_in_hours, plots, plot_feature, plot_corr_map, order_life, time_to_hours
 
 #Just a display feature in console so all columns are printed in console
 pd.set_option('display.max_columns', None)
@@ -284,6 +286,7 @@ def data_regressors(rawdata, cleandata):
     #Maps all the cancel or fill parts of LOs to df
     outcome_df = train_event_df[train_event_df["Type"].isin([67,68,69,70])]
 
+    #This could still be useful if we just want to look at if a random order will be filled partially or fully so dont remove this yet, maybe put it in another function
     #Groups by ID and looks at what happens last, i.e that will be fill or cancel, but also looks if there was a partial fill at any time during its life 
     fill_map = outcome_df.groupby("ID")["Type"].apply(lambda x: x.isin([69,70]).any())
 
@@ -308,19 +311,155 @@ def data_regressors(rawdata, cleandata):
     
     #orders that made it to the end of the day without being filled or canceled 
     
+    Regressors_df['TimeTillMarketClose'] = closing_time - df_E['TOD']
+    
+    #########Trying to make the continuous order tracker that correctly tracks partial fills and then lets the rest continue for the rest of the day as a new parent order
+    
+    Regressors_df['Type'] = df_E['Type']
+    Regressors_df['ID'] = df_E['ID']
+    Regressors_df['Vol'] = df_E['Vol']
+    
+    
+    
+    Regressors_df['PartialVols'] = np.where(Regressors_df['Type'].isin([67,68,69,70]), Regressors_df['Vol'] , 0)
+    
+    Regressors_df['OriginalVol'] = Regressors_df.groupby('ID')['Vol'].transform('first') #Looks at first entry and copies all entries to be like that, i.e the starting vol of any unique order id 
+    Regressors_df['VolTaken'] = Regressors_df.groupby('ID')['PartialVols'].cumsum()
+    
+    #Vol of the new parent order
+    Regressors_df['UnfilledAfter'] = Regressors_df['OriginalVol'] - Regressors_df['VolTaken']
+    
+    #Look if the remaining vol filled or canceled 
+    Regressors_df['ExecutedVol'] = np.where(Regressors_df['Type'].isin([69,70]), Regressors_df['Vol'] , 0)
+    Regressors_df['CanceledVol'] = np.where(Regressors_df['Type'].isin([67,68]), Regressors_df['Vol'] , 0)
+    
+    #How much vol was executed or canceled after this millisecond
+    
+    Regressors_df['TotalExecutedAfter'] = (Regressors_df.iloc[::-1].groupby('ID')['ExecutedVol'].cumsum().iloc[::-1] - Regressors_df['ExecutedVol'])
+    Regressors_df['TotalCanceledAfter'] = ((Regressors_df.iloc[::-1].groupby('ID')['CanceledVol'].cumsum().iloc[::-1]) - (Regressors_df['CanceledVol']))
+    
+    #Trying to make some sort of weighting
+    
+    snapshot_state_df = Regressors_df[Regressors_df['Type'].isin([67,68,69,70])].copy()
+    
+    fills_df = snapshot_state_df[snapshot_state_df['TotalExecutedAfter'] > 0].copy()
+    fills_df['FillNoFill'] = 1
+    fills_df['UnitWeight'] = fills_df['TotalExecutedAfter']
+    
+    
+    cancels_df = snapshot_state_df[snapshot_state_df['TotalCanceledAfter'] > 0].copy()
+    fills_df['FillNoFill'] = 0
+    fills_df['UnitWeight'] = fills_df['TotalCanceledAfter']
+    
+    Clean_Regression_Data = pd.concat([fills_df , cancels_df], ignore_index= True)
+    
+    #Has something partial happened to this order (1) or not (0)
+    Clean_Regression_Data['OriginalOrNotOrder'] = np.where(Clean_Regression_Data['Type'].isin([67,69]) , 1, 0)
+    Clean_Regression_Data['VolOfLastEvent'] = Clean_Regression_Data['Vol']
+    
+    #Cols that either dont have necessary info or to prevent data leaking i.e we cant train on totalexecuted after since that happnes in the future
+    Cols_to_drop = ['ID', 'Type', 'Vol', 'TotalExecutedAfter', 'TotalCanceledAfter', 'ExecutedVol', 'CanceledVol']
+    
+    Clean_Regression_Data = Clean_Regression_Data.drop(columns = Cols_to_drop)
+    
+    
     return Clean_Regression_Data
-
-
 
 #Adding the dataframes to variables for further use
 rawdata = import_data(file_path, file_path_MO)
 cleandata = clean_data(rawdata)
 regressormatrix = data_regressors(rawdata, cleandata)
 
+print(time_in_hours(57600062))
 print(rawdata["Event"]["Type"].value_counts())
 
-
+print(cleandata['Event'][cleandata['Event']['Type'] == 69])
+print(order_life(32402869, cleandata))
 print(regressormatrix[regressormatrix['MOTrailingVol100ms'] != 0].head(5))
+
+print(f'Amount of final bulkorder cross section is \n {rawdata["Event"][rawdata["Event"]["Type"] == 88 ]}')
+print(f' Amount of total volume of events in day is s{rawdata["Event"]["Vol"].sum()}')
+
+
+
+#
+#print(rawdata['BuyPrice']rawdata['BuyPrice']['TOD'] = 40000000])
+    
+# Revise this test logic its not quite correct yet
+# df_E = pd.DataFrame({
+#     'TOD': [36000055, 36000059, 36000062],
+#     'ID': [32402869, 32402869, 32402869],
+#     'Type': [66, 69, 70],  # Place, Partial Fill, Full Fill
+#     'Vol': [300, 200, 100]  # Volumes from your console
+# })
+
+# # Initialize the Regressors DataFrame with dummy market features
+# # We vary 'VolAhead' to simulate the order book changing in real-time
+# Regressors_df = pd.DataFrame()
+# Regressors_df['TOD'] = df_E['TOD']
+# Regressors_df['VolAhead'] = [5000, 1200, 0]  # Queue clears out as time passes
+# Regressors_df['DistanceToTouch'] = [2, 0, 0]   # Order moves to the touch line
+
+# print("--- STEP 1: INITIAL COMPILING GRID ---")
+# print(pd.concat([df_E[['ID', 'Type', 'Vol']], Regressors_df[['VolAhead', 'DistanceToTouch']]], axis=1))
+# print("\n" + "="*60 + "\n")
+
+# # =========================================================================
+# # 2. RUN THE CONTINUOUS TARGET LOGIC
+# # =========================================================================
+# Regressors_df['Type'] = df_E['Type']
+# Regressors_df['ID'] = df_E['ID']
+# Regressors_df['Vol'] = df_E['Vol']
+
+# # Isolate exact event behaviors
+# Regressors_df['ExecutedVol'] = np.where(Regressors_df['Type'].isin([69, 70]), Regressors_df['Vol'], 0)
+# Regressors_df['CanceledVol'] = np.where(Regressors_df['Type'].isin([67, 68]), Regressors_df['Vol'], 0)
+
+# # Execute the double-flip reverse cumsum calculation
+# Regressors_df['TotalExecutedAfter'] = (Regressors_df.iloc[::-1].groupby('ID')['ExecutedVol'].cumsum().iloc[::-1] - Regressors_df['ExecutedVol'])
+# Regressors_df['TotalCanceledAfter'] = (Regressors_df.iloc[::-1].groupby('ID')['CanceledVol'].cumsum().iloc[::-1] - Regressors_df['CanceledVol'])
+
+# print("--- STEP 2: REVERSE CUMSUM RESULTS (Looking into the future) ---")
+# print(Regressors_df[['Type', 'Vol', 'ExecutedVol', 'TotalExecutedAfter']])
+# print("\n" + "="*60 + "\n")
+
+# # =========================================================================
+# # 3. STATE-SPACE FILTERING & SNAPSHOT EXTRACTION
+# # =========================================================================
+# # Isolate rows where order states are born or transformed
+# state_snapshots_df = Regressors_df[Regressors_df['Type'].isin([66, 83, 69])].copy()
+
+# print("--- STEP 3: STATE SNAPSHOTS RETAINED (Type 70 is dropped) ---")
+# print(state_snapshots_df[['TOD', 'Type', 'VolAhead', 'TotalExecutedAfter']])
+# print("\n" + "="*60 + "\n")
+
+# # =========================================================================
+# # 4. TARGET GENERATION AND MATRIX PURGE
+# # =========================================================================
+# # Generate the Success Rows
+# fills_df = state_snapshots_df[state_snapshots_df['TotalExecutedAfter'] > 0].copy()
+# fills_df['Fill_NoFill'] = 1
+# fills_df['Unit_Weight'] = fills_df['TotalExecutedAfter']
+
+# # Generate the Failure Rows
+# cancels_df = state_snapshots_df[state_snapshots_df['TotalCanceledAfter'] > 0].copy()
+# cancels_df['Fill_NoFill'] = 0
+# cancels_df['Unit_Weight'] = cancels_df['TotalCanceledAfter']
+
+# # Combine into final training array
+# Clean_Regression_Data = pd.concat([fills_df, cancels_df], ignore_index=True)
+
+# # Feature extraction
+# Clean_Regression_Data['Is_Partial_Fill_Now'] = np.where(Clean_Regression_Data['Type'] == 69, 1, 0)
+# Clean_Regression_Data['Current_Event_Vol'] = Clean_Regression_Data['Vol']
+
+# # Drop intermediate infrastructure tracking keys
+# cols_to_drop = ['ID', 'Type', 'Vol', 'ExecutedVol', 'CanceledVol', 'TotalExecutedAfter', 'TotalCanceledAfter']
+# Clean_Regression_Data = Clean_Regression_Data.drop(columns=cols_to_drop)
+
+# print("--- STEP 4: FINAL CLEAN MACHINE LEARNING MATRIX ---")
+# print(Clean_Regression_Data)
+
 
 ### check if 88/84 have ID, can i find order with similar ID to the 84 earlier in day 
 #So the answer is no we cant find similar ID earlier in day, but they do both have an ID
@@ -334,7 +473,8 @@ print(rawdata['Event'][(rawdata['Event']['Type'] != 84) & (rawdata['Event']['ID'
 
 print(cleandata["Event"].head(10))
 
-
+#Bulk orders are probably opening and closing auctions
+print(time_in_hours(15570644 ))
 #####################Proving data only NOT ONLY has DAY type limit orders i.e. a LO placed during day will doesnt exist anymore after 4pm########################3
 opening_time = 34200000
 closing_time = 57600000
@@ -361,7 +501,12 @@ total_walk = buy_no_walk | sell_no_walk # | is OR operator
 
 print(f" Percentage of orders that did not walk the book for INTC on April 1 2024 is {(total_walk.sum()/(len(cleandata['MO'])) * 100):.2f} % ")
 #try to recreate the graph at 11 am
-plots(cleandata, 39600000)
+plots(rawdata, 57603600)
+print(time_in_hours(33300000))
+time_to_hours(16.001)
+print(cleandata['Event'])
+print(9.25*3600000)
+
 ################################################################################3
 
 print(rawdata['Event'][rawdata['Event']['TOD'] == 0])

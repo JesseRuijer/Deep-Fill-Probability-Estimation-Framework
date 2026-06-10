@@ -83,6 +83,18 @@ Created on Mon Jun  1 13:48:14 2026
 # print(stats_df)
 
 
+# #The logic for the double []::-1] stuff in regressormatrix function
+# df = pd.DataFrame({
+#     'Col A' : [1,2,3,4,5],
+#     'Col B' : [6,7,8,9,10]
+#     })
+# print(df)
+# print(df.cumsum())
+# print(df.iloc[::-1])
+# print(df.iloc[::-1].cumsum())
+# print(df.iloc[::-1].cumsum().iloc[::-1])
+
+
 
 
 

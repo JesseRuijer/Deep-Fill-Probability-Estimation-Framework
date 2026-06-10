@@ -26,7 +26,9 @@ def time_in_hours(ms_past_midnight):
     
     return f"{hours:02d}:{minutes:02d}:{seconds:02d}.{ms:03d}"
 
-
+def time_to_hours(time):
+    #Input time as follows: 9:15 am = 9.25
+    return time*3600000
 
 def order_life(order_ID, df):
     
@@ -44,8 +46,8 @@ def plots(cleandata, target_time):
     sell_prices = cleandata["SellPrice"].loc[row_index_event] / 10000
     sell_volume = cleandata["SellVol"].loc[row_index_event]
     plt.figure(figsize=(9,6))
-    plt.bar(buy_prices, buy_volume, width = 0.007, color = "red" , edgecolor = 'black',label = 'Bids')
-    plt.bar(sell_prices, sell_volume, width = 0.007, color = "blue",edgecolor = 'black', label = 'Asks')
+    plt.bar(buy_prices, buy_volume, width = 0.007, color = "red" , alpha = 0.5, edgecolor = 'black',label = 'Bids')
+    plt.bar(sell_prices, sell_volume, width = 0.007, color = "blue",alpha = 0.5,edgecolor = 'black', label = 'Asks')
     plt.xlabel("Price")
     plt.ylabel("Vol")
     plt.title(f"Vol of Best Bid and Best Ask immediately before MO at {time_in_hours(target_time)}")
