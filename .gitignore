@@ -3,3 +3,6 @@
 *.pdf
 __pycache__/
 .DS_Store
+*.pkl
+models/
+.spyproject/

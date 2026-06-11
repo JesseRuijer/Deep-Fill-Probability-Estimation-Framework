@@ -6,36 +6,42 @@ Created on Mon Jun  1 13:48:14 2026
 @author: jesseruijer
 """
 
-#To print
+######################################## Some basic commands ###################################
 #print(df_Event.iloc[0:10, 0:5])
 #Keys
 #print(mat_data_MO.keys())
 #Find something specific print(df_Event[df_Event[0] == 24581757])
-
 # print(df_Event.head())
 # print(df_Event.tail())
 
 # describe gives some nice stats stuff on dfs 
 #print(df_Event_without_noise.describe())
 
-
-#Search in DF
-# print(df_Event_without_noise.iloc[15:25,0:7])
-# print(df_MO_without_noise.iloc[0:5,0:9])
-
 #How to import from other scripts
 #from Functions import time_in_hours
 #print(time_in_hours(3600000))
 
+#Search in DF
+# print(df_Event_without_noise.iloc[15:25,0:7])
+######################################################################################
 
-# print(order_life(32398125, cleandata))
 
-#Below shows at end of day spams 68s to cancel outstanding orders in full 
+
+
+
+
+####################Below shows at end of day spams 68s to cancel outstanding orders in full #####################
 # mask3 = (
 #     (df_Event["Type"] == 68) & 
 #     (df_Event["TOD"] > 55800000) & 
-#     (df_Event["TOD"] <= 57600000)
+#     (df_Event["TOD"] <= 57602000)
 #     )
+# print(df_Event[mask3])
+######################################################################################
+
+
+
+
 
 
 #When you add the .values it changes structure from pandas df to a numpy array much faster for calculations
@@ -82,7 +88,7 @@ Created on Mon Jun  1 13:48:14 2026
 
 # print(stats_df)
 
-
+######################################################################################
 # #The logic for the double []::-1] stuff in regressormatrix function
 # df = pd.DataFrame({
 #     'Col A' : [1,2,3,4,5],
@@ -93,6 +99,70 @@ Created on Mon Jun  1 13:48:14 2026
 # print(df.iloc[::-1])
 # print(df.iloc[::-1].cumsum())
 # print(df.iloc[::-1].cumsum().iloc[::-1])
+######################################################################################
+
+
+######################################################################################
+# ### check if 88/84 have ID, can i find order with similar ID to the 84 earlier in day 
+# #So the answer is no we cant find similar ID earlier in day, but they do both have an ID
+# #88 has an ID and you can immediately see that the VOL of those is quite big, they are for bulk auctions for cross events
+# #At start and end of day because then you can have crossing i.e buy orders and sell orders on top of eachother, note the actual distinction between buy and sell side does not exist now, so the side of the book variable does not make any sense for 88s 
+# print(rawdata['Event'][rawdata['Event']['Type'] == 88].head())
+# print(rawdata['Event'][rawdata['Event']['Type'] == 84].head())
+# # Theres 84 if and only if ID is 0
+# print(rawdata['Event'][(rawdata['Event']['ID'] != 0) & (rawdata['Event']['Type'] == 84)])
+# print(rawdata['Event'][(rawdata['Event']['Type'] != 84) & (rawdata['Event']['ID'] == 0)])
+
+
+######################################################################################
+
+
+
+
+
+# #####################Proving data only NOT ONLY has DAY type limit orders i.e. a LO placed during day will doesnt exist anymore after 4pm########################3
+  
+# order_lifespan = rawdata['Event'].groupby('ID')['TOD'].agg(['min', 'max'])  #Creates pd df with buckets grouped by ID then only looks at TOD and then for each bucket calculates min and max and outputs that in pds df
+# mask6 = (order_lifespan['min'] < config.MARKET_CLOSE_TIME) & (order_lifespan['max'] > config.MARKET_CLOSE_TIME)
+# extract_orders = order_lifespan[mask6].index.values
+
+# print(extract_orders)
+# print(len(extract_orders)) #However only like 8 were put in much later then a few seconds past 4 where the cancelations are probably just do to latency 
+# print(order_life(147566 , rawdata))     #This was placed in pre market and canceled at end of day 
+
+# ############################################################################
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+# #############3########## Replicating the slides #############################
+# print(f" Total number of events on 1 April 2014 of INTC is {len(cleandata['Event'])}")
+# print(f" Amount of Market Orders on 1 April 2014 of INTC is {len(cleandata['MO'])}")
+# print(f' Percentage of MO per total number of events on 1 April 2014 INTC is {(len(cleandata["MO"])/len(cleandata["Event"])*100):.04f}%')
+
+# buy_no_walk = (cleandata['MO']['APPS'] == cleandata['MO']['BAP'] ) & (cleandata['MO']['BorS'] == -1)
+# sell_no_walk = (cleandata['MO']['APPS'] == cleandata['MO']['BBP'] ) & (cleandata['MO']['BorS'] == 1)
+# total_walk = buy_no_walk | sell_no_walk # | is OR operator
+
+# print(f" Percentage of orders that did not walk the book for INTC on April 1 2024 is {(total_walk.sum()/(len(cleandata['MO'])) * 100):.2f} % ")
+# #try to recreate the graph at 11 am
+# plots(rawdata, 34199640)
+# print(time_in_hours(33300000))
+# time_to_hours(9.4999)
+# print(cleandata['Event'])
+# print(9.25*3600000)
+
+# ################################################################################
 
 
 
@@ -108,5 +178,77 @@ Created on Mon Jun  1 13:48:14 2026
 
 
 
+
+
+
+
+
+
+
+
+# ################Proving Unknown 2 is what size of the book an event happens###########
+# #84 midprice half int, rounding might be wrong. Answer: no as the hidden orders are executed and that can be done at halfprice if agreed to. it is however true that regular LOs can only be placed in sizes of one cent at the smallest  
+
+# #This shows whenever 66 or 83 we only get 1s and 0s respectively
+# print(cleandata["Event"][(cleandata["Event"]["Type"] == 66) & (cleandata["Event"]["SideOfBook"] == 0)])
+# print(cleandata["Event"][(cleandata["Event"]["Type"] == 83) & (cleandata["Event"]["SideOfBook"] == 1)])
+# #Must also check the side is correct for the other orders, most difficult will be the hidden orders
+# hidden0 = (rawdata['Event']['Type'] == 84) & (rawdata["Event"]["SideOfBook"] == 0)
+# hidden0index = rawdata['Event'][hidden0].index
+# look_up_index = hidden0index - 1 #To see what LOB looked like before LO was placed
+# #Adding .values is really important here because that removes the original indices from the df and just hands pandas lists of numbers without any pre fit indices
+# best_buy = rawdata["BuyPrice"].loc[look_up_index, 0].values # first col gives best buy price
+# best_sell = rawdata["SellPrice"].loc[look_up_index, 0].values # first col gives best sell price
+# trade_price84 = rawdata["Event"].loc[hidden0index, "Price"].values
+
+# res_df = pd.DataFrame(
+#     { "Trade price of 84": trade_price84,
+#      "Best Buy": best_buy,
+#      "Best Sell": best_sell}
+#     )
+
+# print(f'       Hidden Orders      \n {res_df.head(10)}')
+# #Here we may see orders exactly at mid price to be pegged there if they have to sell a lot they dont want to scare the market i think
+# #Sell LOs slightly above best buy is to ensure they can capture the incoming buyer immediately
+# #That gave some intuition about the location of the Hidden orders, now we can go on to show the sides are still correct
+# #For the other order types
+
+# target_event_types = [67, 68, 69, 70, 84]
+# mask = rawdata['Event']["Type"].isin(target_event_types)
+# index = rawdata['Event'][mask].index
+# unknown2val = rawdata['Event'].loc[index, 'SideOfBook'].values
+# eventprice = rawdata['Event'].loc[index, 'Price'].values
+
+# #Now look at LOB status before this order was placed
+# index_before = index - 1
+# best_bid = rawdata['BuyPrice'].loc[index_before, 0].values
+# best_ask = rawdata['SellPrice'].loc[index_before, 0].values
+# midprice_before = (best_ask + best_bid)/2
+# what_type = rawdata['Event'].loc[index, 'Type'].values
+
+# proof_df = pd.DataFrame(
+#     {'EventPrice': eventprice,
+#      'unknown2' : unknown2val,
+#      'Midprice': midprice_before,
+#      'Type': what_type
+#      })
+
+# #if price is below midprice its on the buy side and vice versa
+# proof_df['StrictlyBuySide%'] = (proof_df['EventPrice'] < proof_df['Midprice']).astype(int)*100 #astype just converts the boolean into 1 or 0
+# proof_df['StrictlyMidPrice%'] = (proof_df['EventPrice'] == proof_df['Midprice']).astype(int)*100
+# proof_df['StrictlySellSide%'] = (proof_df['EventPrice'] > proof_df['Midprice']).astype(int)*100
+
+# bucket_cols = ['Type', 'unknown2']
+# target_cols = ['StrictlyBuySide%', 'StrictlyMidPrice%', 'StrictlySellSide%']
+# grouped_buckets = proof_df.groupby(bucket_cols)
+# filtered_buckets = grouped_buckets[target_cols]
+# final_proof = filtered_buckets.mean()
+
+# #i.e for each type of event its calculated for the price of the order where the type was for whether that was on buy
+# #or sell side
+
+# print(f'                 Final Proof of unknown 2    \n {final_proof}')
+
+# #########################################################################################
 
 

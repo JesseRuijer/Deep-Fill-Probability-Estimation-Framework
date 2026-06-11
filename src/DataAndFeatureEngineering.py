@@ -1,45 +1,16 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 """
-Created on Wed May 20 19:41:13 2026
+Created on Thu Jun 11 10:45:38 2026
 
 @author: jesseruijer
 """
-#There are a lot more lob feature statistics i could add later make sure to add them to feature lists and corr plots
-#Work on data cleaning from yesterday and soln to the fill no fill variable
-#The label doesnt matter for 88 since theres no bid and ask side there
-#Is there crossing in the graphs before the market opens maybe my graphs overlap
-#Mabye the vol of 88 at eod is the amount of vol and the price could maybe be midprice or some other price
-#Make something to access the feature matrix at a time of day and that it doesnt display empty df if the ms isnt right it should then round down to the nearest time
-#maybe i also need to scale down the prices by dividing them by 10000 for the logistic regression but not sure ƒplots
-
 
 #Importing libraries,classes, functions from other scripts
 
 import scipy.io
 import pandas as pd
 import numpy as np
-import matplotlib.pyplot as plt
-import statsmodels.api as sm
-import statsmodels.formula.api as smf
-from sklearn.metrics import precision_recall_curve, roc_auc_score, brier_score_loss, log_loss, roc_curve, average_precision_score
-from sklearn.calibration import calibration_curve, CalibratedClassifierCV
-from sklearn.dummy import DummyClassifier
-from sklearn.linear_model import LogisticRegression
-from sklearn.preprocessing import StandardScaler
-import seaborn as sns
-import lightgbm as lgb 
-import config
-
-from Functions import time_in_hours, plots, plot_feature, plot_corr_map, order_life, time_to_hours
-
-#Just a display feature in console so all columns are printed in console
-pd.set_option('display.max_columns', None)
-
-#Setting file paths
-file_path = '../STOCKS/INTC_NASDAQ/INTC_20140401_NASDAQ.mat'
-file_path_MO = '../STOCKS/INTC_NASDAQ/Market Order/INTC_20140401.mat'
-
 
 def import_data(file_path, file_path_MO):
     
@@ -136,51 +107,6 @@ def clean_data(raw_data):
     
     return data_set_clean
 
-def basic_info(rawdata):
-    
-    #Some Volume metrics
-    added_vol_day = rawdata['Event'][rawdata['Event']['Type'].isin([66,83])]['Vol'].sum()
-    canceled_vol_day = rawdata['Event'][rawdata['Event']['Type'].isin([67,68])]['Vol'].sum()
-    traded_vol_day = rawdata['Event'][rawdata['Event']['Type'].isin([69, 70])]['Vol'].sum()
-    hidden_executed_vol_day = rawdata['Event'][rawdata['Event']['Type'].isin([84])]['Vol'].sum()
-    bulk_cross_vol_day = rawdata['Event'][rawdata['Event']['Type'].isin([88])]['Vol'].sum()
-    absolute_event_vol_day = rawdata['Event']['Vol'].sum()
-    
-    #Some other basic metrics
-    freq_of_events = rawdata["Event"]["Type"].value_counts()
-    cancelation_ratio = canceled_vol_day / added_vol_day
-    
-    buy_no_walk = (cleandata['MO']['APPS'] == cleandata['MO']['BAP'] ) & (cleandata['MO']['BorS'] == -1)
-    sell_no_walk = (cleandata['MO']['APPS'] == cleandata['MO']['BBP'] ) & (cleandata['MO']['BorS'] == 1)
-    total_walk = buy_no_walk | sell_no_walk # | is OR operator
-
-    #Basic plots
-    plots(rawdata, 34199640)
-    
-    print('################VOLUME METRICS############## \n')
-    print(f'Added Vol in a day (i.e sum during entire day of 66 and 83 vol) is {added_vol_day}')
-    print(f'Canceled Vol in a day (i.e sum during entire day of 67 and 68 vol) is {canceled_vol_day}')
-    print(f'Traded Vol in a day (i.e sum during entire day of 69 and 70 vol) is {traded_vol_day}')
-    print(f'Hidden trades executed Vol in a day (i.e sum during entire day of 84 vol) is {hidden_executed_vol_day}')
-    print(f'Bulk Cross Vol in a day (i.e sum during entire day of 88 vol) is {bulk_cross_vol_day}')
-    print(f'Absolute Event Vol in a day (i.e sum during entire day of all events, measure of activity, note this double counts vol for adding and canceling orders ) is {absolute_event_vol_day}')
-    
-    print('\n #########Some other metrics#############\n')
-    print(f' Frequency of different event types \n {freq_of_events}')
-    print(f' Cancelation Ratio, i.e how many of total added vol in a day were cancelations is {(cancelation_ratio)*100} %')
-    
-    print(f'Amount of final bulkorder cross section is \n {rawdata["Event"][rawdata["Event"]["Type"] == 88 ]}')
-    print(f'Percentage of Vol of Events in the day that were bulk orders is { ((rawdata["Event"][rawdata["Event"]["Type"] == 88 ]["Vol"].sum())/(rawdata["Event"]["Vol"].sum()) * 100) } %')
-    
-    
-    print(f" Total number of events on 1 April 2014 of INTC is {len(rawdata['Event'])}")
-    print(f" Amount of Market Orders on 1 April 2014 of INTC is {len(rawdata['MO'])}")
-    print(f' Percentage of MO per total number of events on 1 April 2014 INTC is {(len(rawdata["MO"])/len(rawdata["Event"])*100):.04f}%')
-    
-    
-    print(f" Percentage of orders that did not walk the book for INTC on April 1 2024 is {(total_walk.sum()/(len(cleandata['MO'])) * 100):.2f} % ")
-    
-    
 
     
     
@@ -420,12 +346,10 @@ def data_regressors(rawdata, cleandata):
     
     return Clean_Regression_Data
 
-#Adding the dataframes to variables for further use
-rawdata = import_data(file_path, file_path_MO)
-cleandata = clean_data(rawdata)
-regressormatrix = data_regressors(rawdata, cleandata)
 
-basic_info(rawdata)
+
+
+
 
 
 #print(rawdata['BuyPrice']rawdata['BuyPrice']['TOD'] = 40000000])
@@ -504,251 +428,3 @@ basic_info(rawdata)
 
 # print("--- STEP 4: FINAL CLEAN MACHINE LEARNING MATRIX ---")
 # print(Clean_Regression_Data)
-
-
-
-
-
-#BASpread seems to not be relevant for INTC since the spread is pretty much one cent for the whole day
-
-#Some plots for exploratory data analysis and correlation matrices
-plot_feature(regressormatrix, "LOTrailingVolExecuted100ms")
-
-plot_corr_map(regressormatrix)
-
-
-###################Starting logistic regression###########################
-
-#Must train model on filtered Data, but can search for its outcome on full data in terms of time, i.e an order might still get filled or not after 3:30 PM
-#Filtered is already above, here below is not constrained on time but still constrained on not including 88 and 84
-
-#Importing training data
-file_path2 = '../STOCKS/INTC_NASDAQ/INTC_20140424_NASDAQ.mat'
-file_path_MO2 = '../STOCKS/INTC_NASDAQ/Market Order/INTC_20140424.mat'
-rawdata2 = import_data(file_path2, file_path_MO2)
-cleandata2 = clean_data(rawdata2)
-regressormatrix2 = data_regressors(rawdata2, cleandata2)
-
-
-#Logistic regression 
-#Might use somethiing of platt scaling to wrap the log res model as log res doesnt work very well with data where the output is very skewed, i.e here we have much more cancels then fills
-base_lr_model = LogisticRegression(max_iter=1000) # max iter higher then the standard 100 to take into account the noisy data we have
-calibrated_model = CalibratedClassifierCV(estimator=base_lr_model, method='sigmoid', cv=5 ) #Do some research if and why 5 is good value for cross validation in ML
-scalar = StandardScaler()
-y_train = regressormatrix["Fill_NoFill"]
-
-#Look at the required assumptions for logistic regression, i think need iid and for example
-#below i included price related features but if the price changes they dont follow the same distribution
-#on a given day anymore and the whole model breaks, so now the model only looks at volume
-#and position dynamics
-
-log_mdl_features = ['AbsQImbalance', 'Weighted Vol Imbalance', 
-              "DistanceToTouch", 'LogVolAhead', "LookBackHiddenVol"] 
-
-lgbm_mdl_features = log_mdl_features + ['BASpread', 'QImbalance', 'TotalVolImbalance', 'Midprice', 'Microprice', 
-                                        'MOTrailingVol100ms', 'MOTrailingOrders100ms', 'LOTrailingVolPlaced100ms', 'LOTrailingCountOrdersPlaced100ms', 
-                                        'LOTrailingVolCanceled100ms', 'LOTrailingCountOrdersCanceled100ms', 'LOTrailingVolExecuted100ms',
-                                        'LOTrailingCountOrdersExecuted100ms', 'VolAhead']
-
-X_train = regressormatrix[log_mdl_features]
-
-X_train_lgbm = regressormatrix[lgbm_mdl_features]
-
-X_train_standardised = scalar.fit_transform(X_train) #Here we fit and transform
-#Fit Scikit logistic regrssion
-
-
-
-calibrated_model.fit(X_train_standardised, y_train)
-
-
-
-base_lr_model.fit(X_train_standardised, y_train)
-
-y_true = regressormatrix2["Fill_NoFill"]
-
-X_test = regressormatrix2[log_mdl_features]
-X_test_lgbm = regressormatrix2[lgbm_mdl_features]
-
-X_test_scaled = scalar.transform(X_test) #Here we transform and not fit anymore i.e we use same scale as above so comparisons are valid
-
-
-#Do some prediction using scikit learn
-y_pred = calibrated_model.predict(X_test_scaled)
-y_pred_prob = calibrated_model.predict_proba(X_test_scaled)[: , 1] # We are now only looking at the fill probabilities
-
-model_coef_df = pd.DataFrame(
-    
-    {
-     "Feature": log_mdl_features,
-     "Coefficient (Log Odds)" : base_lr_model.coef_[0],  # We only predict binary classification so our model only has one row so access that with [0]
-     "Odds Ratio": np.exp(base_lr_model.coef_[0])
-     }
-    
-    )
-print(f'                  Logistic Regression ORs \n {model_coef_df.sort_values(by = "Odds Ratio", key=abs, ascending=False)}')
-
-
-#Baseline fill percentage which i defined as the number of ones divided by number of ones and zeros in fill_map, which guarantees uniqueness by the fact i used .last in code before it
-print(f"Baseline Fill percentage is {regressormatrix2['Fill_NoFill'].mean()*100:.2f} %")
-
-#because were making a probability engine using logistic regression we must look at brier score and log loss to evaulte it
-#Confusion matrices and precisions for ex dont make too much sense here since then you need to define a treshold for when a probability gets put in the category
-#0 or 1 where for us that doesnt matter we're just interested in the pure probability of an order beig filled
-
-print("Engine metrics")
-
-brierscore = brier_score_loss(y_true, y_pred_prob)
-print(f'Brier score is {brierscore:.3f}')
-
-logloss = log_loss(y_true, y_pred_prob)
-print(f'Logloss score is {logloss:.3f}')
-
-#However i think AUC is only reliable on balanced data which this totally isnt, so the AUC is artificially inflated, why because we rarely ever have a fill and AUC is area under ROC, ROC formula is 
-
-aucscore = roc_auc_score(y_true, y_pred_prob)
-print(f'AUC score is {aucscore:.3f}')
-
-
-avgprecision = average_precision_score(y_true, y_pred_prob)
-print(f'Avg precision score is {avgprecision:.3f}')
-
-#Visualisiton of performance and comparison to baseline dummy model which just guesses a baseline percentage on each order for it being filled 
-#Dummy y fill prob is just an array of length y true with all entries equal to dummy fill prob
-
-dummy_fill_prob = regressormatrix['Fill_NoFill'].mean()
-dummy_y_pred_prob = np.full(len(y_true), dummy_fill_prob) #just creates an array of length y true with dummy fill probs
-
-
-print("Dummy metrics")
-
-dummy_brierscore = brier_score_loss(y_true, dummy_y_pred_prob)
-print(f'Dummy Brier score is {dummy_brierscore:.3f}')
-
-dummy_logloss = log_loss(y_true, dummy_y_pred_prob)
-print(f' Dummy Logloss score is {dummy_logloss:.3f}')
-
-dummy_aucscore = roc_auc_score(y_true, dummy_y_pred_prob)
-print(f'Dummy AUC score is {dummy_aucscore:.3f}')
-
-avgprecision_dummy = average_precision_score(y_true, dummy_y_pred_prob)
-print(f'Avg precision score is {avgprecision_dummy:.3f}')
-
-#Visualisation of performance vs dummy
-fig, axes = plt.subplots(1,3, figsize = (24,8))
-#calibration curve
-engine_true, engine_prob_pred = calibration_curve(y_true, y_pred_prob, n_bins=10, strategy = 'quantile') #tuple unpacking since the function returns two variables, we just name them immediately in one line
-axes[0].plot([0,1], [0,1], color = 'grey', label = "Perfect Calibration") # axes[0] means we're talking about the left figure then [0,1] , [0,1] are x list and y list and are read vertically so the first point is 0,0 and the second point is 1,1 and a line is drawn between them i.e the perfect prediction line i think but check this
-axes[0].plot(engine_prob_pred, engine_true, color = 'b' ,label = 'Logistic Regression Engine')
-axes[0].set_title('Calibration curve')
-axes[0].legend()
-
-#Roc curve
-
-engine_fpr, engine_tpr, tresholds = roc_curve(y_true, y_pred_prob) #returns false postive rates and true positive rates, treshold which i think is the number or prob above or below it gives a certain classification
-dummy_fpr, dummy_tpr, tresholds = roc_curve(y_true, dummy_y_pred_prob)
-axes[1].plot(engine_fpr, engine_tpr, color = 'b', label = 'Logistic Regression Engine')
-axes[1].plot(dummy_fpr, dummy_tpr, color = 'r', label = 'Dummy')
-axes[1].legend()
-
-#Precision recall curve
-engine_precision, engine_recall, engine_treshold = precision_recall_curve(y_true, y_pred_prob)
-axes[2].plot(engine_recall, engine_precision, color = 'b', label = 'Engine PR')
-axes[2].set_xlabel('Recall')
-axes[2].set_ylabel('Precision')
-axes[2].plot([0,1], [dummy_fill_prob, dummy_fill_prob], color = 'red', label = 'Dummy') #the dummy PR is just the baseline fill rate i.e here just a horizontal line
-
-plt.show()
-
-
-def predict_order_fill_prob(features):
-    #predicts specific probability for a given limit order being filled using the logistic regression engine from above
-    #since pd dfs are slow its better to use np array here
-    
-    input_array = np.array(features).reshape(1,-1) #resshape needed 1 means passing 1 row, -1 means calculate the right dim for the columns so this creates a matrix which is whats needed for sci kit later
-    scaled_input  = (input_array - scalar.mean_) / scalar.scale_ # I think the trailing _ tells sci kit to look at the fitted values and calculate mean and std of those                   using scalar so we do the standardizations for each value and not all at the same time
-    fill_prob = calibrated_model.predict_proba(scaled_input)[0,1]
-    
-    return fill_prob
-
-example_state = X_test.iloc[67].values # Expects numerical list with values corresponding to the entries above
-print(predict_order_fill_prob(example_state))
-print(X_test.iloc[67])
-#Better to also create a function that extracts these features for maybe a given order ID?
-
-
-# light GBM 
-
-#imbalance ratio since our outcome variable is heavily skewed
-
-imbalance_ratio = (1-dummy_fill_prob) / dummy_fill_prob
-
-base_lgb = lgb.LGBMClassifier(
-    n_jobs = -1, #Using all available threads in cpu 
-    n_estimators = 150, # number of sequential trees  
-    learning_rate = 0.05, # scales contribution of each individual tree
-    num_leaves = 31, #max num of leaves, i.e terminal nodes, allowed in each tree 
-    random_state = 69 , #just set random seed for reproducability
-    scale_pos_weight = imbalance_ratio #telling the loss function about the skewed output var i think, not sure yet
-    ) 
-
-#calibrating the model, trees use stepfunctions, so use isotonic to match that, do more research on this
-
-calibrated_lgbm = CalibratedClassifierCV(
-    estimator = base_lgb,
-    method = 'isotonic',
-    cv = 5
-    )
-
-print('Training lgb') # im pretty sure trees dont require scalar and only care about relative ordering 
-calibrated_lgbm.fit(X_train_lgbm, y_train)
-
-y_pred_prob_lgbm = calibrated_lgbm.predict_proba(X_test_lgbm)[:, 1]
-
-#Evaluate performance metrics 
-print("Light GBM Engine metrics")
-
-brierscore_lgbm = brier_score_loss(y_true, y_pred_prob_lgbm)
-print(f'Brier score is {brierscore_lgbm:.3f}')
-
-logloss_lgbm = log_loss(y_true, y_pred_prob_lgbm)
-print(f'Logloss score is {logloss_lgbm:.3f}')
-
-#However i think AUC is only reliable on balanced data which this totally isnt, so the AUC is artificially inflated, why because we rarely ever have a fill and AUC is area under ROC, ROC formula is 
-
-aucscore_lgbm = roc_auc_score(y_true, y_pred_prob_lgbm)
-print(f'AUC score is {aucscore_lgbm:.3f}')
-
-avgprecision_lgbm = average_precision_score(y_true, y_pred_prob_lgbm)
-print(f'Avg precision score is {avgprecision_lgbm:.3f}')
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-

@@ -1,0 +1,151 @@
+#!/usr/bin/env python3
+# -*- coding: utf-8 -*-
+"""
+Created on Thu Jun 11 12:48:23 2026
+
+@author: jesseruijer
+"""
+
+#Just some quick stuff on when importing new data or creating some graphs
+
+
+import matplotlib.pyplot as plt
+import seaborn as sns
+from Functions import time_in_hours
+from DataAndFeatureEngineering import import_data, clean_data, data_regressors
+import config
+        
+def run_exploratory_analysis(rawdata, cleandata, regressormatrix,feature, target_time):
+        
+    #Function that plots Bar chart at target_time of Vol of bids and asks around midpoint
+
+    row_index_event = (cleandata["Event"]["TOD"] - target_time).abs().idxmin()#this finds the row index closest to the time
+    buy_prices = cleandata["BuyPrice"].loc[row_index_event] / 10000
+    buy_volume = cleandata["BuyVol"].loc[row_index_event] 
+    sell_prices = cleandata["SellPrice"].loc[row_index_event] / 10000
+    sell_volume = cleandata["SellVol"].loc[row_index_event]
+    
+    valid_bids = (buy_prices > 0) & (buy_volume > 0)
+    valid_asks = (sell_prices > 0) & (sell_volume > 0)
+    
+    clean_buy_prices = buy_prices[valid_bids]
+    clean_buy_volume = buy_volume[valid_bids]
+    clean_sell_prices = sell_prices[valid_asks]
+    clean_sell_volume = sell_volume[valid_asks]
+    
+    plt.figure(figsize=(9,6))
+    plt.bar(clean_buy_prices, clean_buy_volume, width = 0.007, color = "red" , alpha = 0.5, edgecolor = 'black',label = 'Bids')
+    plt.bar(clean_sell_prices, clean_sell_volume, width = 0.007, color = "blue",alpha = 0.5,edgecolor = 'black', label = 'Asks')
+    
+    #Autoscaling x axis and adding a tiny buffer so the bars dont touch the edges of the graph
+    min_active_price = min(clean_buy_prices.min(), clean_sell_prices.min())
+    max_active_price = max(clean_buy_prices.max(), clean_sell_prices.max())
+    
+    buffer = 0.03
+    
+    plt.xlim(min_active_price - buffer, max_active_price + buffer)
+    
+    plt.xlabel("Price")
+    plt.ylabel("Vol")
+    plt.title(f"Vol of Best Bid and Best Ask immediately before MO at {time_in_hours(target_time)}")
+    plt.legend()
+    plt.show()
+    
+    sns.histplot(x = cleandata["MO"]["BBV"], color = 'blue', label = "Best Buy Vol", kde=True, bins = 50, alpha = 0.5)
+    sns.histplot(x = cleandata["MO"]["BAV"], color = 'red', label = "Best Ask Vol", kde=True, bins = 50, alpha = 0.5)
+    plt.xlabel("Vol")
+    plt.ylabel("Freq")
+    plt.title("Freq vs Vol of Best Bid and Best Ask immediately before MO")
+    plt.legend()
+    plt.show()
+    
+
+    
+    #Plots boxplot and density plot of a given feature in regressormatrix
+    
+    plt.figure(figsize = (9,5))
+    
+    sns.boxplot(
+        data = regressormatrix,
+        x = "Fill_NoFill" ,
+        y = feature,
+        )
+    plt.xlabel("Filled or Not")
+    plt.ylabel(feature)
+    plt.title(f'Influence of {feature} on fill or no fill')
+    plt.show()
+    
+    sns.kdeplot(data=regressormatrix[regressormatrix['Fill_NoFill'] == 1], x = feature, color = 'blue', label = 'Filled (1)')
+    sns.kdeplot(data=regressormatrix[regressormatrix['Fill_NoFill'] == 0], x = feature, color = 'red', label = 'Not Filled (0)')
+    plt.xlabel(f'{feature}')
+    plt.ylabel("density")
+    plt.legend()
+    plt.title(f'Influence of {feature} on fill or no fill')
+    plt.show()
+
+    
+    #Some Volume metrics
+    added_vol_day = rawdata['Event'][rawdata['Event']['Type'].isin([66,83])]['Vol'].sum()
+    canceled_vol_day = rawdata['Event'][rawdata['Event']['Type'].isin([67,68])]['Vol'].sum()
+    traded_vol_day = rawdata['Event'][rawdata['Event']['Type'].isin([69, 70])]['Vol'].sum()
+    hidden_executed_vol_day = rawdata['Event'][rawdata['Event']['Type'].isin([84])]['Vol'].sum()
+    bulk_cross_vol_day = rawdata['Event'][rawdata['Event']['Type'].isin([88])]['Vol'].sum()
+    absolute_event_vol_day = rawdata['Event']['Vol'].sum()
+    
+    #Some other basic metrics
+    freq_of_events = rawdata["Event"]["Type"].value_counts()
+    cancelation_ratio = canceled_vol_day / added_vol_day
+    
+    buy_no_walk = (cleandata['MO']['APPS'] == cleandata['MO']['BAP'] ) & (cleandata['MO']['BorS'] == -1)
+    sell_no_walk = (cleandata['MO']['APPS'] == cleandata['MO']['BBP'] ) & (cleandata['MO']['BorS'] == 1)
+    total_walk = buy_no_walk | sell_no_walk # | is OR operator
+    
+    print('################VOLUME METRICS############## \n')
+    print(f'Added Vol in a day (i.e sum during entire day of 66 and 83 vol) is {added_vol_day}')
+    print(f'Canceled Vol in a day (i.e sum during entire day of 67 and 68 vol) is {canceled_vol_day}')
+    print(f'Traded Vol in a day (i.e sum during entire day of 69 and 70 vol) is {traded_vol_day}')
+    print(f'Hidden trades executed Vol in a day (i.e sum during entire day of 84 vol) is {hidden_executed_vol_day}')
+    print(f'Bulk Cross Vol in a day (i.e sum during entire day of 88 vol) is {bulk_cross_vol_day}')
+    print(f'Absolute Event Vol in a day (i.e sum during entire day of all events, measure of activity, note this double counts vol for adding and canceling orders ) is {absolute_event_vol_day}')
+    
+    print('\n #########Some other metrics#############\n')
+    print(f" Total number of events on 1 April 2014 of INTC is {len(rawdata['Event'])}")
+    print(f' Frequency of different event types \n {freq_of_events}')
+    print(f' Cancelation Ratio, i.e how many of total added vol in a day were cancelations is {(cancelation_ratio)*100} %')
+    
+    print(f'Amount of final bulkorder cross section is \n {rawdata["Event"][rawdata["Event"]["Type"] == 88 ]}')
+    print(f'Percentage of Vol of Events in the day that were bulk orders is { ((rawdata["Event"][rawdata["Event"]["Type"] == 88 ]["Vol"].sum())/(rawdata["Event"]["Vol"].sum()) * 100) } %')
+    
+    
+    print(' \n #########Some Market Order Info #########\n')
+    print(f" Amount of Market Orders on 1 April 2014 of INTC is {len(rawdata['MO'])}")
+    print(f' Percentage of MO per total number of events on 1 April 2014 INTC is {(len(rawdata["MO"])/len(rawdata["Event"])*100):.04f}%')
+    
+    
+    print(f" Percentage of orders that did  walk the book for INTC on April 1 2024 is {(1 -((total_walk.sum())/(len(cleandata['MO'])))) * 100:.2f} % ")
+    
+    
+    
+if __name__ == "__main__":
+    
+    print(f'Starting Exploratory Data Analysis on {config.TRAIN_FILE_PATH} and {config.TRAIN_FILE_PATH_MO} \n')
+    
+    TARGET_TIME = 36000000
+    FEATURE_ANALYSE = 'QImbalance'
+    
+    
+    rawdata = import_data(config.TRAIN_FILE_PATH, config.TRAIN_FILE_PATH_MO)
+    cleandata = clean_data(rawdata)
+    regressormatrix = data_regressors(rawdata, cleandata)
+    
+    run_exploratory_analysis(rawdata, cleandata, regressormatrix, feature = FEATURE_ANALYSE, target_time = TARGET_TIME)
+    
+    
+    
+    
+    
+    
+    
+    
+    
+    
