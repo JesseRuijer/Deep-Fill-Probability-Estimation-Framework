@@ -16,3 +16,14 @@ TRAIN_FILE_PATH_MO = '../data/raw/INTC_NASDAQ/Market Order/INTC_20140401.mat'
 
 TEST_FILE_PATH = '../data/raw/INTC_NASDAQ/INTC_20140424_NASDAQ.mat'
 TEST_FILE_PATH_MO = '../data/raw/INTC_NASDAQ/Market Order/INTC_20140424.mat'
+
+LOGISTIC_MODEL_FEATURES = ['AbsQImbalance', 'Weighted Vol Imbalance', 
+              "DistanceToTouch", 'LogVolAhead', "LookBackHiddenVol"] 
+
+LGBM_MODEL_FEATURES = ['AbsQImbalance', 'Weighted Vol Imbalance', 
+              "DistanceToTouch", 'LogVolAhead', "LookBackHiddenVol" ,'BASpread', 'QImbalance', 'TotalVolImbalance', 'Midprice', 'Microprice', 
+                                        'MOTrailingVol100ms', 'MOTrailingOrders100ms', 'LOTrailingVolPlaced100ms', 'LOTrailingCountOrdersPlaced100ms', 
+                                        'LOTrailingVolCanceled100ms', 'LOTrailingCountOrdersCanceled100ms', 'LOTrailingVolExecuted100ms',
+                                        'LOTrailingCountOrdersExecuted100ms', 'VolAhead']
+
+TARGET = 'FillNoFill'

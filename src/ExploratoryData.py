@@ -67,7 +67,7 @@ def run_exploratory_analysis(rawdata, cleandata, regressormatrix,feature, target
     
     sns.boxplot(
         data = regressormatrix,
-        x = "Fill_NoFill" ,
+        x = "FillNoFill" ,
         y = feature,
         )
     plt.xlabel("Filled or Not")
@@ -75,8 +75,8 @@ def run_exploratory_analysis(rawdata, cleandata, regressormatrix,feature, target
     plt.title(f'Influence of {feature} on fill or no fill')
     plt.show()
     
-    sns.kdeplot(data=regressormatrix[regressormatrix['Fill_NoFill'] == 1], x = feature, color = 'blue', label = 'Filled (1)')
-    sns.kdeplot(data=regressormatrix[regressormatrix['Fill_NoFill'] == 0], x = feature, color = 'red', label = 'Not Filled (0)')
+    sns.kdeplot(data=regressormatrix[regressormatrix['FillNoFill'] == 1], x = feature, color = 'blue', label = 'Filled (1)')
+    sns.kdeplot(data=regressormatrix[regressormatrix['FillNoFill'] == 0], x = feature, color = 'red', label = 'Not Filled (0)')
     plt.xlabel(f'{feature}')
     plt.ylabel("density")
     plt.legend()

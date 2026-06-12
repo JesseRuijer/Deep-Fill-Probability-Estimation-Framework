@@ -11,6 +11,11 @@ Created on Thu Jun 11 10:45:38 2026
 import scipy.io
 import pandas as pd
 import numpy as np
+import config
+from Functions import order_life, find_order_pattern, time_in_hours
+
+#Just a display feature in console so all columns are printed in console
+pd.set_option('display.max_columns', None)
 
 def import_data(file_path, file_path_MO):
     
@@ -76,11 +81,31 @@ def clean_data(raw_data):
     df_SP = raw_data["SellPrice"]
     df_MO = raw_data["MO"]
     
+    #Security and basic market physics checks
+    
+    df_dictionary = {
+        'Event': df_E,
+        'BV': df_BV,
+        'SV': df_SV,
+        'BP': df_BP,
+        'SP': df_SP,
+        'MO': df_MO,
+        }
+    
+    for name, df in df_dictionary.items():
+        assert not df.isna().any().any(), f'NaN detected in {df}'  #Checks this and if condition true continue if  false then immediately stops and prints, the double .any() is just to see if anywhere in the whole df the condition is there 
+    
+    assert (df_BV.values >= 0).all() , 'Negative Vol detected'  
+    assert (df_SV.values >= 0).all(), 'Negative Vol detected'
+    assert (df_E["Vol"].values >=0).all(), 'Negative Vol detected'
+    assert (df_MO["Vol"].values >=0).all(), 'Negative Vol detected'
+    
    #Cleans dataframes to not include first and last 30 min of trading hours and not include 88 
     valid_row_mask = (
-        (df_E["TOD"] >= 36000000) &
-        (df_E["TOD"] <= 55800000) &
-        (df_E["Type"] != 88)
+        (df_E["TOD"] >= config.MARKET_OPEN_TIME) &
+        (df_E["TOD"] <= config.MARKET_CLOSE_TIME) &
+        (df_E["Type"] != 88) &
+        (df_E["Type"] != 84)
         )
     
     df_E_without_noise = df_E[valid_row_mask]
@@ -90,8 +115,8 @@ def clean_data(raw_data):
     df_SP_without_noise = df_SP[valid_row_mask]
 
     valid_row_mask_MO = (
-        (df_MO["TOD"] >= 36000000) &
-        (df_MO["TOD"] <= 55800000)
+        (df_MO["TOD"] >= config.MARKET_OPEN_TIME) &
+        (df_MO["TOD"] <= config.MARKET_CLOSE_TIME)
         )
 
     df_MO_without_noise = df_MO[valid_row_mask_MO]
@@ -114,8 +139,6 @@ def data_regressors(rawdata, cleandata):
     
     
     df_E = cleandata["Event"]
-    df_E2 = rawdata["Event"]
-   
     
     #For our machine to make accurate predictions we have to shift forward each row in the LOB BuySell Vol and Price
     #i.e for row 1 in event normally, row 1 in the LOB data would correspond to what happened immediately after 
@@ -129,9 +152,6 @@ def data_regressors(rawdata, cleandata):
     df_SP = rawdata["SellPrice"].shift(1).loc[df_E.index]
     df_MO = cleandata['MO']
     
-    opening_time = 34200000
-    closing_time = 57600000
-    
     Regressors_df = pd.DataFrame()
     Regressors_df["TOD"] = df_E["TOD"]
     Regressors_df["BASpread"] = df_SP[0] - df_BP[0]
@@ -143,14 +163,14 @@ def data_regressors(rawdata, cleandata):
     #axis=1 does across cols, axis=0 does across rows
     Regressors_df["TotalVolImbalance"] = ((df_BV.sum(axis=1)-df_SV.sum(axis=1))/(df_BV.sum(axis=1)+ df_SV.sum(axis=1))).fillna(0)
     
-    hidden_vol = np.where(df_E["Type"] ==  84, df_E['Vol'], 0) #returns the vol of types 84 else zero in a new numpy array
-    cum_vol_pad = np.pad(np.cumsum(hidden_vol), (1,0), constant_values = 0) #says add a zero to the start, nothing to the back and then we take cumsum of all the vols
-    tod_values = df_E['TOD'].values
-    lookback = 5000 #Lookback time in MS for hidden vol trades
-    lookback_times = tod_values - lookback
-    start_indices = np.searchsorted(tod_values, lookback_times, side='left')    #Does binary search st for every lookback time we calculate the row index it woud land on in tod_values
-    current_indices = np.arange(1, len(tod_values) + 1)
-    Regressors_df["LookBackHiddenVol"] = cum_vol_pad[current_indices] - cum_vol_pad[start_indices]
+    #hidden_vol = np.where(df_E["Type"] ==  84, df_E['Vol'], 0) #returns the vol of types 84 else zero in a new numpy array
+    #cum_vol_pad = np.pad(np.cumsum(hidden_vol), (1,0), constant_values = 0) #says add a zero to the start, nothing to the back and then we take cumsum of all the vols
+    # tod_values = df_E['TOD'].values
+    # lookback = 5000 #Lookback time in MS for hidden vol trades
+    # lookback_times = tod_values - lookback
+    # start_indices = np.searchsorted(tod_values, lookback_times, side='left')    #Does binary search st for every lookback time we calculate the row index it woud land on in tod_values
+    # current_indices = np.arange(1, len(tod_values) + 1)
+    # Regressors_df["LookBackHiddenVol"] = cum_vol_pad[current_indices] - cum_vol_pad[start_indices]
     
     weights = [1/(i) for i in range(1,21)]
 
@@ -254,37 +274,12 @@ def data_regressors(rawdata, cleandata):
     
     Regressors_df['VolAhead'] = Vol_Ahead
     #we use log1p  which is log 1 + x since if an order is placed inside the spread it would have negative values and we cant take log of that 
-
-    Regressors_df['LogVolAhead'] = np.log1p(Regressors_df['VolAhead'])
-    train_mask = (
-            (df_E2["Type"] != 88) &
-            (df_E2["Type"] != 84) & #Here we do remove 84 since we cant train on something thats hidden i.e not in queue
-            #To remove after hour trading data
-            (df_E2["TOD"] <= 57601000)
-            )
-    train_event_df = df_E2[train_mask]
-
-    #Maps all the cancel or fill parts of LOs to df
-    outcome_df = train_event_df[train_event_df["Type"].isin([67,68,69,70])]
-
-    #This could still be useful if we just want to look at if a random order will be filled partially or fully so dont remove this yet, maybe put it in another function
-    #Groups by ID and looks at what happens last, i.e that will be fill or cancel, but also looks if there was a partial fill at any time during its life 
-    fill_map = outcome_df.groupby("ID")["Type"].apply(lambda x: x.isin([69,70]).any())
-
-    #Converts it to binary 1 for fill to use in logistic regression
-    fill_map = fill_map.astype(int)
-
-    #Now map it to my Regressors df feature matrix i made above
-
-    Regressors_df["Fill_NoFill"] = df_E["ID"].astype(int).map(fill_map)
-
-    Clean_Regression_Data = Regressors_df.dropna(subset = ["Fill_NoFill"])
     
     #Building a regime classifier which uses categorical variables to tell in what regime of day we are in
-    Regressors_df['Regime'] = np.where(Regressors_df['TOD'] < opening_time , 0,    #Pre Market                         
+    Regressors_df['Regime'] = np.where(Regressors_df['TOD'] < config.MARKET_OPEN_TIME , 0,    #Pre Market                         
                               np.where(Regressors_df['TOD'] < 36000000 , 1,    # 30 min vol after opening
                               np.where(Regressors_df['TOD'] < 55800000 , 2,    #Regular Market hours without first and last 30 min
-                              np.where(Regressors_df['TOD'] < closing_time , 3,    #30 min high volatilitiy time before closing
+                              np.where(Regressors_df['TOD'] < config.MARKET_CLOSE_TIME , 3,    #30 min high volatilitiy time before closing
                               4))))                                            #After market hours
     
     #need to alter the fill stuff maybe some sort of weighted splitting since the unit stuff if i were to use something like duplicating for that would just murder my RAM
@@ -292,7 +287,7 @@ def data_regressors(rawdata, cleandata):
     
     #orders that made it to the end of the day without being filled or canceled 
     
-    Regressors_df['TimeTillMarketClose'] = closing_time - df_E['TOD']
+    Regressors_df['TimeTillMarketClose'] = config.MARKET_CLOSE_TIME - df_E['TOD']
     
     #########Trying to make the continuous order tracker that correctly tracks partial fills and then lets the rest continue for the rest of the day as a new parent order
     
@@ -300,28 +295,21 @@ def data_regressors(rawdata, cleandata):
     Regressors_df['ID'] = df_E['ID']
     Regressors_df['Vol'] = df_E['Vol']
     
-    
-    
-    Regressors_df['PartialVols'] = np.where(Regressors_df['Type'].isin([67,68,69,70]), Regressors_df['Vol'] , 0)
-    
-    Regressors_df['OriginalVol'] = Regressors_df.groupby('ID')['Vol'].transform('first') #Looks at first entry and copies all entries to be like that, i.e the starting vol of any unique order id 
-    Regressors_df['VolTaken'] = Regressors_df.groupby('ID')['PartialVols'].cumsum()
+    Regressors_df['ExecutedVol'] = np.where(Regressors_df['Type'].isin([69, 70]), Regressors_df['Vol'], 0)
+    Regressors_df['CanceledVol'] = np.where(Regressors_df['Type'].isin([67, 68]), Regressors_df['Vol'], 0)
+
+    # Execute the double-flip reverse cumsum calculation
+    Regressors_df['TotalExecutedAfter'] = (Regressors_df.iloc[::-1].groupby('ID')['ExecutedVol'].cumsum().iloc[::-1] - Regressors_df['ExecutedVol'])
+    Regressors_df['TotalCanceledAfter'] = (Regressors_df.iloc[::-1].groupby('ID')['CanceledVol'].cumsum().iloc[::-1] - Regressors_df['CanceledVol'])
     
     #Vol of the new parent order
     Regressors_df['UnfilledAfter'] = Regressors_df['OriginalVol'] - Regressors_df['VolTaken']
     
-    #Look if the remaining vol filled or canceled 
-    Regressors_df['ExecutedVol'] = np.where(Regressors_df['Type'].isin([69,70]), Regressors_df['Vol'] , 0)
-    Regressors_df['CanceledVol'] = np.where(Regressors_df['Type'].isin([67,68]), Regressors_df['Vol'] , 0)
     
-    #How much vol was executed or canceled after this millisecond
-    
-    Regressors_df['TotalExecutedAfter'] = (Regressors_df.iloc[::-1].groupby('ID')['ExecutedVol'].cumsum().iloc[::-1] - Regressors_df['ExecutedVol'])
-    Regressors_df['TotalCanceledAfter'] = ((Regressors_df.iloc[::-1].groupby('ID')['CanceledVol'].cumsum().iloc[::-1]) - (Regressors_df['CanceledVol']))
     
     #Trying to make some sort of weighting
     
-    snapshot_state_df = Regressors_df[Regressors_df['Type'].isin([67,68,69,70])].copy()
+    snapshot_state_df = Regressors_df[Regressors_df['Type'].isin([66, 67, 69, 83])].copy()
     
     fills_df = snapshot_state_df[snapshot_state_df['TotalExecutedAfter'] > 0].copy()
     fills_df['FillNoFill'] = 1
@@ -329,102 +317,149 @@ def data_regressors(rawdata, cleandata):
     
     
     cancels_df = snapshot_state_df[snapshot_state_df['TotalCanceledAfter'] > 0].copy()
-    fills_df['FillNoFill'] = 0
-    fills_df['UnitWeight'] = fills_df['TotalCanceledAfter']
+    cancels_df['FillNoFill'] = 0
+    cancels_df['UnitWeight'] = cancels_df['TotalCanceledAfter']
     
     Clean_Regression_Data = pd.concat([fills_df , cancels_df], ignore_index= True)
     
-    #Has something partial happened to this order (1) or not (0)
-    Clean_Regression_Data['OriginalOrNotOrder'] = np.where(Clean_Regression_Data['Type'].isin([67,69]) , 1, 0)
-    Clean_Regression_Data['VolOfLastEvent'] = Clean_Regression_Data['Vol']
+    Clean_Regression_Data['Is_Initial_Placement'] = np.where(Clean_Regression_Data['Type'].isin([66, 83]), 1, 0)
+    Clean_Regression_Data['Is_Partial_Fill'] = np.where(Clean_Regression_Data['Type'] == 69, 1, 0)
+    Clean_Regression_Data['Is_Partial_Cancel'] = np.where(Clean_Regression_Data['Type'] == 67, 1, 0)
+    Clean_Regression_Data['Current_Event_Vol'] = Clean_Regression_Data['Vol']
+
+    Clean_Regression_Data = Clean_Regression_Data.sort_values(by = 'TOD')
     
     #Cols that either dont have necessary info or to prevent data leaking i.e we cant train on totalexecuted after since that happnes in the future
-    Cols_to_drop = ['ID', 'Type', 'Vol', 'TotalExecutedAfter', 'TotalCanceledAfter', 'ExecutedVol', 'CanceledVol']
+
+    Cols_to_drop = ['Type','ID', 'Vol', 'TotalExecutedAfter', 'TotalCanceledAfter', 'ExecutedVol', 'CanceledVol']
     
     Clean_Regression_Data = Clean_Regression_Data.drop(columns = Cols_to_drop)
     
     
     return Clean_Regression_Data
 
+rawdata = import_data(config.TRAIN_FILE_PATH, config.TRAIN_FILE_PATH_MO)
+cleandata = clean_data(rawdata)
+X = data_regressors(rawdata, cleandata)
 
-
-
-
-
-
-#print(rawdata['BuyPrice']rawdata['BuyPrice']['TOD'] = 40000000])
+print(rawdata['Event'][rawdata['Event']['Type'] == 67])
     
-# Revise this test logic its not quite correct yet
-# df_E = pd.DataFrame({
-#     'TOD': [36000055, 36000059, 36000062],
-#     'ID': [32402869, 32402869, 32402869],
-#     'Type': [66, 69, 70],  # Place, Partial Fill, Full Fill
-#     'Vol': [300, 200, 100]  # Volumes from your console
-# })
+#Revise this test logic its not quite correct yet
+#Check of the logic works for orders that were for example partially canceled and then filled or different types of orders with weird lives 
 
-# # Initialize the Regressors DataFrame with dummy market features
-# # We vary 'VolAhead' to simulate the order book changing in real-time
-# Regressors_df = pd.DataFrame()
-# Regressors_df['TOD'] = df_E['TOD']
-# Regressors_df['VolAhead'] = [5000, 1200, 0]  # Queue clears out as time passes
-# Regressors_df['DistanceToTouch'] = [2, 0, 0]   # Order moves to the touch line
 
-# print("--- STEP 1: INITIAL COMPILING GRID ---")
-# print(pd.concat([df_E[['ID', 'Type', 'Vol']], Regressors_df[['VolAhead', 'DistanceToTouch']]], axis=1))
-# print("\n" + "="*60 + "\n")
 
-# # =========================================================================
-# # 2. RUN THE CONTINUOUS TARGET LOGIC
-# # =========================================================================
-# Regressors_df['Type'] = df_E['Type']
-# Regressors_df['ID'] = df_E['ID']
-# Regressors_df['Vol'] = df_E['Vol']
+print(find_order_pattern(cleandata, 66, 67, 3, 70))
+print(order_life(211736361, cleandata))
+print(time_in_hours(57237043))
 
-# # Isolate exact event behaviors
-# Regressors_df['ExecutedVol'] = np.where(Regressors_df['Type'].isin([69, 70]), Regressors_df['Vol'], 0)
-# Regressors_df['CanceledVol'] = np.where(Regressors_df['Type'].isin([67, 68]), Regressors_df['Vol'], 0)
+#Just creating a dummy df from the info above
+df_E = pd.DataFrame({
+    'TOD': [57237043, 57241428, 57241429, 57241430, 57250845],
+    'ID': [211736361, 211736361, 211736361, 211736361, 211736361],
+    'Type': [66, 67, 67, 67, 70],  
+    'Vol': [3600, 100, 1200, 1800, 500]  
+})
 
-# # Execute the double-flip reverse cumsum calculation
-# Regressors_df['TotalExecutedAfter'] = (Regressors_df.iloc[::-1].groupby('ID')['ExecutedVol'].cumsum().iloc[::-1] - Regressors_df['ExecutedVol'])
-# Regressors_df['TotalCanceledAfter'] = (Regressors_df.iloc[::-1].groupby('ID')['CanceledVol'].cumsum().iloc[::-1] - Regressors_df['CanceledVol'])
+# Initialize the Regressors DataFrame with dummy market features
+# We vary 'VolAhead' to simulate the order book changing in real-time
+R_df = pd.DataFrame()
+R_df['TOD'] = df_E['TOD']
+R_df['Type'] = df_E['Type']
+R_df['ID'] = df_E['ID']
+R_df['Vol'] = df_E['Vol']
 
-# print("--- STEP 2: REVERSE CUMSUM RESULTS (Looking into the future) ---")
-# print(Regressors_df[['Type', 'Vol', 'ExecutedVol', 'TotalExecutedAfter']])
-# print("\n" + "="*60 + "\n")
+print("--- STEP 1: INITIAL COMPILING GRID ---")
+print(df_E)
+print("\n" + "="*60 + "\n")
 
-# # =========================================================================
-# # 3. STATE-SPACE FILTERING & SNAPSHOT EXTRACTION
-# # =========================================================================
-# # Isolate rows where order states are born or transformed
-# state_snapshots_df = Regressors_df[Regressors_df['Type'].isin([66, 83, 69])].copy()
+# =========================================================================
+# 2. RUN THE CONTINUOUS TARGET LOGIC
+# =========================================================================
 
-# print("--- STEP 3: STATE SNAPSHOTS RETAINED (Type 70 is dropped) ---")
-# print(state_snapshots_df[['TOD', 'Type', 'VolAhead', 'TotalExecutedAfter']])
-# print("\n" + "="*60 + "\n")
 
-# # =========================================================================
-# # 4. TARGET GENERATION AND MATRIX PURGE
-# # =========================================================================
-# # Generate the Success Rows
-# fills_df = state_snapshots_df[state_snapshots_df['TotalExecutedAfter'] > 0].copy()
-# fills_df['Fill_NoFill'] = 1
-# fills_df['Unit_Weight'] = fills_df['TotalExecutedAfter']
+# Isolate exact event behaviors
+R_df['ExecutedVol'] = np.where(R_df['Type'].isin([69, 70]), R_df['Vol'], 0)
+R_df['CanceledVol'] = np.where(R_df['Type'].isin([67, 68]), R_df['Vol'], 0)
 
-# # Generate the Failure Rows
-# cancels_df = state_snapshots_df[state_snapshots_df['TotalCanceledAfter'] > 0].copy()
-# cancels_df['Fill_NoFill'] = 0
-# cancels_df['Unit_Weight'] = cancels_df['TotalCanceledAfter']
+# Execute the double-flip reverse cumsum calculation
+R_df['TotalExecutedAfter'] = (R_df.iloc[::-1].groupby('ID')['ExecutedVol'].cumsum().iloc[::-1] - R_df['ExecutedVol'])
+R_df['TotalCanceledAfter'] = (R_df.iloc[::-1].groupby('ID')['CanceledVol'].cumsum().iloc[::-1] - R_df['CanceledVol'])
 
-# # Combine into final training array
-# Clean_Regression_Data = pd.concat([fills_df, cancels_df], ignore_index=True)
+print("--- STEP 2: REVERSE CUMSUM RESULTS (Looking into the future) ---")
+print(R_df[['Type', 'Vol', 'ExecutedVol', 'CanceledVol', 'TotalExecutedAfter', 'TotalCanceledAfter']])
+print("\n" + "="*60 + "\n")
 
-# # Feature extraction
-# Clean_Regression_Data['Is_Partial_Fill_Now'] = np.where(Clean_Regression_Data['Type'] == 69, 1, 0)
-# Clean_Regression_Data['Current_Event_Vol'] = Clean_Regression_Data['Vol']
+# =========================================================================
+# 3. STATE-SPACE FILTERING & SNAPSHOT EXTRACTION
+# =========================================================================
+# Isolate rows where order states are born or transformed
+state_snapshots_df = R_df[R_df['Type'].isin([66,67,69,83])].copy()
 
-# # Drop intermediate infrastructure tracking keys
-# cols_to_drop = ['ID', 'Type', 'Vol', 'ExecutedVol', 'CanceledVol', 'TotalExecutedAfter', 'TotalCanceledAfter']
-# Clean_Regression_Data = Clean_Regression_Data.drop(columns=cols_to_drop)
+print("--- STEP 3: STATE SNAPSHOTS RETAINED  ---")
+print(state_snapshots_df[['TOD', 'Type','TotalExecutedAfter', 'TotalCanceledAfter']])
+print("\n" + "="*60 + "\n")
 
-# print("--- STEP 4: FINAL CLEAN MACHINE LEARNING MATRIX ---")
-# print(Clean_Regression_Data)
+# =========================================================================
+# 4. TARGET GENERATION AND MATRIX PURGE
+# =========================================================================
+# Generate the Success Rows
+fills_df = state_snapshots_df[state_snapshots_df['TotalExecutedAfter'] > 0].copy()
+fills_df['FillNoFill'] = 1
+fills_df['Unit_Weight'] = fills_df['TotalExecutedAfter']
+
+# Generate the Failure Rows
+cancels_df = state_snapshots_df[state_snapshots_df['TotalCanceledAfter'] > 0].copy()
+cancels_df['FillNoFill'] = 0
+cancels_df['Unit_Weight'] = cancels_df['TotalCanceledAfter']
+
+# Combine into final training array
+Clean_Regression_Data = pd.concat([fills_df, cancels_df], ignore_index=True)
+
+# Feature extraction
+Clean_Regression_Data['Is_Initial_Placement'] = np.where(Clean_Regression_Data['Type'].isin([66, 83]), 1, 0)
+Clean_Regression_Data['Is_Partial_Fill'] = np.where(Clean_Regression_Data['Type'] == 69, 1, 0)
+Clean_Regression_Data['Is_Partial_Cancel'] = np.where(Clean_Regression_Data['Type'] == 67, 1, 0)
+Clean_Regression_Data['Current_Event_Vol'] = Clean_Regression_Data['Vol']
+
+Clean_Regression_Data = Clean_Regression_Data.sort_values(by = 'TOD')
+
+# Drop intermediate infrastructure tracking keys
+cols_to_drop = ['ID','Vol', 'ExecutedVol', 'CanceledVol', 'TotalExecutedAfter', 'TotalCanceledAfter']
+Clean_Regression_Data = Clean_Regression_Data.drop(columns=cols_to_drop)
+
+print("--- STEP 4: FINAL CLEAN MACHINE LEARNING MATRIX ---")
+print(Clean_Regression_Data)
+
+
+# def creating_simple_labels(train_event_df):
+    
+#     #My original code which simply labels an order as being cancelled if only a part of it is cancelled and then ignores the rest of that order
+#     #Its obviously wrong, but just saved it here in case i need it 
+    
+#     #Maps all the cancel or fill parts of LOs to df
+#     outcome_df = train_event_df[train_event_df["Type"].isin([67,68,69,70])]
+
+#     #This could still be useful if we just want to look at if a random order will be filled partially or fully so dont remove this yet, maybe put it in another function
+#     #Groups by ID and looks at what happens last, i.e that will be fill or cancel, but also looks if there was a partial fill at any time during its life 
+#     fill_map = outcome_df.groupby("ID")["Type"].apply(lambda x: x.isin([69,70]).any())
+
+#     #Converts it to binary 1 for fill to use in logistic regression
+#     fill_map = fill_map.astype(int)
+    
+#     return fill_map
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
