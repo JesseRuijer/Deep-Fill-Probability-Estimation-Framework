@@ -8,6 +8,10 @@ Created on Thu Jun 11 10:42:59 2026
 
 #Importing libraries,classes, functions from other scripts
 
+
+#Make it multi class, i.e first class is fill, second is active cancel and third is expired and also have to use softmax function then 
+#But it probs uses that automatically, but still ahve to then change my output variable y to like have it seperate for logistic and with three levels for lightgbm and neural net
+
 import lightgbm as lgb 
 from sklearn.calibration import CalibratedClassifierCV
 def train_lgbm_model(X_train, y_train):

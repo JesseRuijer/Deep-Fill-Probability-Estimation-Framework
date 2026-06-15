@@ -67,5 +67,3 @@ def find_order_pattern(df, start_type, middle_type, middle_count, end_type):
     return orders
     
     
-
-

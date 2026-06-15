@@ -10,12 +10,12 @@ Created on Thu Jun 11 10:04:48 2026
 
 MARKET_OPEN_TIME = 34200000 # 9:30 AM
 MARKET_CLOSE_TIME = 57600000 # 4 PM
+MARKET_CLOSE_TIME_INCLUDING_CANC_SPAM = 57660000 # 4:01 PM
 
-TRAIN_FILE_PATH = '../data/raw/INTC_NASDAQ/INTC_20140401_NASDAQ.mat'
-TRAIN_FILE_PATH_MO = '../data/raw/INTC_NASDAQ/Market Order/INTC_20140401.mat'
+SOMARKET_NOISE = 36000000 # 10 AM
+EOMARKET_NOISE =  55800000 # 3:30 PM
 
-TEST_FILE_PATH = '../data/raw/INTC_NASDAQ/INTC_20140424_NASDAQ.mat'
-TEST_FILE_PATH_MO = '../data/raw/INTC_NASDAQ/Market Order/INTC_20140424.mat'
+
 
 LOGISTIC_MODEL_FEATURES = ['AbsQImbalance', 'Weighted Vol Imbalance', 
               "DistanceToTouch", 'LogVolAhead', "LookBackHiddenVol"] 
@@ -27,3 +27,11 @@ LGBM_MODEL_FEATURES = ['AbsQImbalance', 'Weighted Vol Imbalance',
                                         'LOTrailingCountOrdersExecuted100ms', 'VolAhead']
 
 TARGET = 'FillNoFill'
+
+
+
+
+
+
+
+

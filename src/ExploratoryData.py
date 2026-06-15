@@ -14,6 +14,7 @@ import seaborn as sns
 from Functions import time_in_hours
 from DataAndFeatureEngineering import import_data, clean_data, data_regressors
 import config
+import os
         
 def run_exploratory_analysis(rawdata, cleandata, regressormatrix,feature, target_time):
         
@@ -67,7 +68,7 @@ def run_exploratory_analysis(rawdata, cleandata, regressormatrix,feature, target
     
     sns.boxplot(
         data = regressormatrix,
-        x = "FillNoFill" ,
+        x = config.TARGET ,
         y = feature,
         )
     plt.xlabel("Filled or Not")
@@ -75,8 +76,8 @@ def run_exploratory_analysis(rawdata, cleandata, regressormatrix,feature, target
     plt.title(f'Influence of {feature} on fill or no fill')
     plt.show()
     
-    sns.kdeplot(data=regressormatrix[regressormatrix['FillNoFill'] == 1], x = feature, color = 'blue', label = 'Filled (1)')
-    sns.kdeplot(data=regressormatrix[regressormatrix['FillNoFill'] == 0], x = feature, color = 'red', label = 'Not Filled (0)')
+    sns.kdeplot(data=regressormatrix[regressormatrix[config.TARGET] == 1], x = feature, color = 'blue', label = 'Filled (1)')
+    sns.kdeplot(data=regressormatrix[regressormatrix[config.TARGET] == 0], x = feature, color = 'red', label = 'Not Filled (0)')
     plt.xlabel(f'{feature}')
     plt.ylabel("density")
     plt.legend()
@@ -126,22 +127,26 @@ def run_exploratory_analysis(rawdata, cleandata, regressormatrix,feature, target
     
     
     
-if __name__ == "__main__":
-    
-    print(f'Starting Exploratory Data Analysis on {config.TRAIN_FILE_PATH} and {config.TRAIN_FILE_PATH_MO} \n')
+if __name__ == "__main__":  
     
     TARGET_TIME = 36000000
     FEATURE_ANALYSE = 'QImbalance'
+      
+    from FileManager import get_data_paths
+
+    main_path, mo_path = get_data_paths()
     
+    if main_path and mo_path:
+        rawdata = import_data(main_path, mo_path)
+        cleandata = clean_data(rawdata)
     
-    rawdata = import_data(config.TRAIN_FILE_PATH, config.TRAIN_FILE_PATH_MO)
-    cleandata = clean_data(rawdata)
-    regressormatrix = data_regressors(rawdata, cleandata)
+    print(f'Starting Exploratory Data Analysis on {os.path.basename(main_path)} and {os.path.basename(mo_path)} \n')
+   
+
+    regressormatrix = data_regressors(rawdata, cleandata)['Binary Matrix']
     
     run_exploratory_analysis(rawdata, cleandata, regressormatrix, feature = FEATURE_ANALYSE, target_time = TARGET_TIME)
-    
-    
-    
+
     
     
     

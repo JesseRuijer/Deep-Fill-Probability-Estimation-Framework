@@ -5,6 +5,8 @@ Created on Wed May 20 19:41:13 2026
 
 @author: jesseruijer
 """
+
+#Make a framework where it updates every 10 secs for the neural net for sure, for lightgbm and logistic maybe not
 #There are a lot more lob feature statistics i could add later make sure to add them to feature lists and corr plots
 #Work on data cleaning from yesterday and soln to the fill no fill variable
 #The label doesnt matter for 88 since theres no bid and ask side there
@@ -17,73 +19,104 @@ Created on Wed May 20 19:41:13 2026
 import pandas as pd
 import config
 import joblib
+import os
 
 from DataAndFeatureEngineering import import_data, clean_data, data_regressors
 from LightGBMEngine import train_lgbm_model
 from ModelEvaluation import test_model
 from LogisticRegressionEngine import train_logistic_model
+from FileManager import select_files_via_finder, get_data_paths, generate_dynamic_paths, get_ml_training_paths, get_batch_data_paths
 
 
 #Just a display feature in console so all columns are printed in console
 pd.set_option('display.max_columns', None)
 
 def prep_data_daily(file_path, file_path_mo):
-    print(f'Runs full pipeline for {file_path} and {file_path_mo}')
+    print(f'Runs full pipeline for {os.path.basename(file_path)}')
     rawdata = import_data(file_path, file_path_mo)
     cleandata = clean_data(rawdata)
-    regressormatrix = data_regressors(rawdata, cleandata)
-    
-    return regressormatrix
-
+    matrices = data_regressors(rawdata, cleandata)
+    return {
+        'Binary Matrix': matrices['Binary Matrix'], 
+        'Multi Matrix': matrices['Multi Matrix']
+        }
 
 def save_data():
     print('Builds parquet files for easy storage and optimisation')
-    train_matrix = prep_data_daily(config.TRAIN_FILE_PATH, config.TRAIN_FILE_PATH_MO)
-  
-    test_matrix = prep_data_daily(config.TEST_FILE_PATH, config.TEST_FILE_PATH_MO)
     
+    batches_to_save = get_batch_data_paths()
     
-    #Save matrix as a parquet file
-    train_matrix.to_parquet("../data/processed/INTC_train_matrix_2014_04_01.parquet")
-    test_matrix.to_parquet("../data/processed/INTC_test_matrix_2014_04_24.parquet")
-   
+    if not batches_to_save:
+        print("No files were selected, pipleline canceled")
+        return
+    
+    print(f"\nSuccessfully queued {len(batches_to_save)} days for processing. Starting engine...")
+    
+    #Loop through the list of files you selected
+    for main_path, mo_path in batches_to_save:
+        binary_file_dest, multi_file_dest = generate_dynamic_paths(main_path)
+        
+        print(f'\n--- Processing: {os.path.basename(main_path)} ---')
+        
+        matrices = prep_data_daily(main_path, mo_path)
+
+        matrices['Binary Matrix'].to_parquet(binary_file_dest)
+        matrices['Multi Matrix'].to_parquet(multi_file_dest)
+        
+        print(f'Saved -> {os.path.basename(binary_file_dest)}')
+        print(f'Saved -> {os.path.basename(multi_file_dest)}')
+        
+    print('\nBatch processing complete!')
+    
+
 def run_project():
     
-    print('Loading Data')
+    #Selecting files to use
     
-    train_matrix = pd.read_parquet("../data/processed/INTC_train_matrix_2014_04_01.parquet")
-    test_matrix = pd.read_parquet("../data/processed/INTC_test_matrix_2014_04_24.parquet")
+    paths = get_ml_training_paths()
     
- 
+    if not paths:
+        print("Model training aborted. No training files selected.")
+        return
     
-    logistic_regX = train_matrix[config.LOGISTIC_MODEL_FEATURES]
-    logistic_regY = train_matrix[config.TARGET]
-    
-    lgbm_X = train_matrix[config.LGBM_MODEL_FEATURES]
-    lgbm_Y = train_matrix[config.TARGET]
-    
-    base_lr, calibrated_lr, scalar_lr = train_logistic_model(logistic_regX, logistic_regY)
-    
-    base_lgbm, calibrated_lgbm = train_lgbm_model(lgbm_X, lgbm_Y)
-   
-    print('Training and Testing Model')
-    
-    logistic_test = test_model(
-        test_data = test_matrix, 
-        base_model = base_lr,
-        calibrated_model = calibrated_lr,
-        scalar = scalar_lr,
-        model_name = 'Logistic Regression',
-        features = config.LOGISTIC_MODEL_FEATURES
+    if paths['train_bin'] and paths['test_bin']:
+        print(f"\n[DETECTED BINARY DATA] Executing Logistic Regression")
+        
+        train_matrix_bin = pd.read_parquet(paths['train_bin'])
+        test_matrix_bin = pd.read_parquet(paths['test_bin'])
+        
+        logistic_regX = train_matrix_bin[config.LOGISTIC_MODEL_FEATURES]
+        logistic_regY = train_matrix_bin[config.TARGET]
+        
+        base_lr, calibrated_lr, scalar_lr = train_logistic_model(logistic_regX, logistic_regY)
+        
+        logistic_test = test_model(
+            test_data = test_matrix_bin, 
+            base_model = base_lr,
+            calibrated_model = calibrated_lr,
+            scalar = scalar_lr,
+            model_name = 'Logistic Regression',
+            features = config.LOGISTIC_MODEL_FEATURES
         )
-    
-    lgbm_test = test_model(
-        test_data = test_matrix, 
-        base_model = base_lgbm,
-        calibrated_model = calibrated_lgbm,
-        scalar = None,
-        model_name = 'Light Gradient Boosted Model Regression',
-        features = config.LGBM_MODEL_FEATURES
+        
+    if paths['train_multi'] and paths['test_multi']:
+        print(f"\n[DETECTED MULTI DATA] Executing LightGBM")
+        
+        train_matrix_multi = pd.read_parquet(paths['train_multi'])
+        test_matrix_multi = pd.read_parquet(paths['test_multi'])
+        
+        lgbm_X = train_matrix_multi[config.LGBM_MODEL_FEATURES]
+        lgbm_Y = train_matrix_multi[config.TARGET]
+        
+        base_lgbm, calibrated_lgbm = train_lgbm_model(lgbm_X, lgbm_Y)
+        
+        lgbm_test = test_model(
+            test_data = test_matrix_multi, 
+            base_model = base_lgbm,
+            calibrated_model = calibrated_lgbm,
+            scalar = None,
+            model_name = 'Light Gradient Boosted Model Regression',
+            features = config.LGBM_MODEL_FEATURES
         )
 
 
@@ -92,7 +125,7 @@ if __name__ == "__main__":
     
     #When theres new data uncomment this below and run once to store the data, if running same data leave this commented
     
-    # save_data()
+    save_data()
     
     #Only run the whole project if explicitly call main.py
     run_project()

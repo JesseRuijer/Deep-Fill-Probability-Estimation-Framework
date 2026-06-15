@@ -252,3 +252,68 @@ Created on Mon Jun  1 13:48:14 2026
 # #########################################################################################
 
 
+
+####################Some parquet stuff i used before and some data storage stuff in config##############################
+
+    # train_matrices = prep_data_daily(config.TRAIN_FILE_PATH, config.TRAIN_FILE_PATH_MO)
+    # test_matrices = prep_data_daily(config.TEST_FILE_PATH, config.TEST_FILE_PATH_MO)
+    
+    
+    # #Save matrix as a parquet file for binary
+    # train_matrices['Binary Training Matrix'].to_parquet(config.TRAIN_BINARY_OUT)
+    # test_matrices['Binary Training Matrix'].to_parquet(config.TEST_BINARY_OUT)
+    
+    # #Save matrix as a parquet file for binary
+    # train_matrices['Multi Training Matrix'].to_parquet(config.TRAIN_MULTI_OUT)
+    # test_matrices['Multi Training Matrix'].to_parquet(config.TEST_MULTI_OUT)
+
+
+# #May not be needed anymore when using my new and improved file manager file
+# TRAIN_FILE_PATH = '../data/raw/INTC_NASDAQ/INTC_20140401_NASDAQ.mat'
+# TRAIN_FILE_PATH_MO = '../data/raw/INTC_NASDAQ/Market Order/INTC_20140401.mat'
+
+# TEST_FILE_PATH = '../data/raw/INTC_NASDAQ/INTC_20140424_NASDAQ.mat'
+# TEST_FILE_PATH_MO = '../data/raw/INTC_NASDAQ/Market Order/INTC_20140424.mat'
+
+# TRAIN_BINARY_OUT = "../data/processed/INTC_train_BINARY_2014_04_01.parquet"
+# TEST_BINARY_OUT  = "../data/processed/INTC_test_BINARY_2014_04_24.parquet"
+
+# TRAIN_MULTI_OUT  = "../data/processed/INTC_train_MULTI_2014_04_01.parquet"
+# TEST_MULTI_OUT   = "../data/processed/INTC_test_MULTI_2014_04_24.parquet"
+
+########################################################################################################################
+
+
+
+#######################The orginal FillNoFill code###########################################3
+
+# def creating_simple_labels(train_event_df):
+    
+#     #My original code which simply labels an order as being cancelled if only a part of it is cancelled and then ignores the rest of that order
+#     #Its obviously wrong, but just saved it here in case i need it 
+    
+#     #Maps all the cancel or fill parts of LOs to df
+#     outcome_df = train_event_df[train_event_df["Type"].isin([67,68,69,70])]
+
+#     #This could still be useful if we just want to look at if a random order will be filled partially or fully so dont remove this yet, maybe put it in another function
+#     #Groups by ID and looks at what happens last, i.e that will be fill or cancel, but also looks if there was a partial fill at any time during its life 
+#     fill_map = outcome_df.groupby("ID")["Type"].apply(lambda x: x.isin([69,70]).any())
+
+#     #Converts it to binary 1 for fill to use in logistic regression
+#     fill_map = fill_map.astype(int)
+    
+#     return fill_map
+
+
+
+
+
+
+
+
+
+
+
+
+
+

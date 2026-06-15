@@ -14,6 +14,9 @@ from sklearn.preprocessing import StandardScaler
 
 ###################Starting logistic regression###########################
 
+
+#has to properly get the weights from dataengineering
+
 def train_logistic_model(X_train, y_train):
     
    #Logistic regression 
