@@ -13,13 +13,14 @@ Created on Wed May 20 19:41:13 2026
 #Is there crossing in the graphs before the market opens maybe my graphs overlap
 #Mabye the vol of 88 at eod is the amount of vol and the price could maybe be midprice or some other price
 #Make something to access the feature matrix at a time of day and that it doesnt display empty df if the ms isnt right it should then round down to the nearest time
-#maybe i also need to scale down the prices by dividing them by 10000 for the logistic regression but not sure ƒplots
+#maybe i also need to scale down the prices by dividing them by 10000 for the logistic regression but not sure 
 
 #Importing libraries,classes, functions from other scripts
 import pandas as pd
 import config
 import joblib
 import os
+import gc
 
 from DataAndFeatureEngineering import import_data, clean_data, data_regressors
 from LightGBMEngine import train_lgbm_model
@@ -66,6 +67,10 @@ def save_data():
         print(f'Saved -> {os.path.basename(binary_file_dest)}')
         print(f'Saved -> {os.path.basename(multi_file_dest)}')
         
+        #Once processed delete the giant matrices like cleandata etc from RAM and flush the memory 
+        del matrices
+        gc.collect()
+        
     print('\nBatch processing complete!')
     
 
@@ -80,7 +85,7 @@ def run_project():
         return
     
     if paths['train_bin'] and paths['test_bin']:
-        print(f"\n[DETECTED BINARY DATA] Executing Logistic Regression")
+        print('\n[DETECTED BINARY DATA] Executing Logistic Regression')
         
         train_matrix_bin = pd.read_parquet(paths['train_bin'])
         test_matrix_bin = pd.read_parquet(paths['test_bin'])
@@ -88,7 +93,9 @@ def run_project():
         logistic_regX = train_matrix_bin[config.LOGISTIC_MODEL_FEATURES]
         logistic_regY = train_matrix_bin[config.TARGET]
         
-        base_lr, calibrated_lr, scalar_lr = train_logistic_model(logistic_regX, logistic_regY)
+        fill_weights = train_matrix_bin['UnitWeight']
+        
+        base_lr, calibrated_lr, scalar_lr = train_logistic_model(logistic_regX, logistic_regY, fill_weights)
         
         logistic_test = test_model(
             test_data = test_matrix_bin, 
@@ -96,11 +103,12 @@ def run_project():
             calibrated_model = calibrated_lr,
             scalar = scalar_lr,
             model_name = 'Logistic Regression',
-            features = config.LOGISTIC_MODEL_FEATURES
+            features = config.LOGISTIC_MODEL_FEATURES,
+            is_multi = False
         )
         
     if paths['train_multi'] and paths['test_multi']:
-        print(f"\n[DETECTED MULTI DATA] Executing LightGBM")
+        print('\n[DETECTED MULTI DATA] Executing LightGBM')
         
         train_matrix_multi = pd.read_parquet(paths['train_multi'])
         test_matrix_multi = pd.read_parquet(paths['test_multi'])
@@ -108,7 +116,9 @@ def run_project():
         lgbm_X = train_matrix_multi[config.LGBM_MODEL_FEATURES]
         lgbm_Y = train_matrix_multi[config.TARGET]
         
-        base_lgbm, calibrated_lgbm = train_lgbm_model(lgbm_X, lgbm_Y)
+        fill_weights = train_matrix_multi['UnitWeight']
+        
+        base_lgbm, calibrated_lgbm = train_lgbm_model(lgbm_X, lgbm_Y, fill_weights)
         
         lgbm_test = test_model(
             test_data = test_matrix_multi, 
@@ -116,7 +126,8 @@ def run_project():
             calibrated_model = calibrated_lgbm,
             scalar = None,
             model_name = 'Light Gradient Boosted Model Regression',
-            features = config.LGBM_MODEL_FEATURES
+            features = config.LGBM_MODEL_FEATURES,
+            is_multi = True
         )
 
 
@@ -125,7 +136,7 @@ if __name__ == "__main__":
     
     #When theres new data uncomment this below and run once to store the data, if running same data leave this commented
     
-    save_data()
+    #save_data()
     
     #Only run the whole project if explicitly call main.py
     run_project()

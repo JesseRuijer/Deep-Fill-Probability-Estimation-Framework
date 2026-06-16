@@ -165,14 +165,14 @@ def data_regressors(rawdata, cleandata):
     #axis=1 does across cols, axis=0 does across rows
     Regressors_df["TotalVolImbalance"] = ((df_BV.sum(axis=1)-df_SV.sum(axis=1))/(df_BV.sum(axis=1)+ df_SV.sum(axis=1))).fillna(0)
     
-    #hidden_vol = np.where(df_E["Type"] ==  84, df_E['Vol'], 0) #returns the vol of types 84 else zero in a new numpy array
-    #cum_vol_pad = np.pad(np.cumsum(hidden_vol), (1,0), constant_values = 0) #says add a zero to the start, nothing to the back and then we take cumsum of all the vols
-    # tod_values = df_E['TOD'].values
-    # lookback = 5000 #Lookback time in MS for hidden vol trades
-    # lookback_times = tod_values - lookback
-    # start_indices = np.searchsorted(tod_values, lookback_times, side='left')    #Does binary search st for every lookback time we calculate the row index it woud land on in tod_values
-    # current_indices = np.arange(1, len(tod_values) + 1)
-    # Regressors_df["LookBackHiddenVol"] = cum_vol_pad[current_indices] - cum_vol_pad[start_indices]
+    hidden_vol = np.where(df_E["Type"] ==  84, df_E['Vol'], 0) #returns the vol of types 84 else zero in a new numpy array
+    cum_vol_pad = np.pad(np.cumsum(hidden_vol), (1,0), constant_values = 0) #says add a zero to the start, nothing to the back and then we take cumsum of all the vols
+    tod_values = df_E['TOD'].values
+    lookback = 5000 #Lookback time in MS for hidden vol trades
+    lookback_times = tod_values - lookback
+    start_indices = np.searchsorted(tod_values, lookback_times, side='left')    #Does binary search st for every lookback time we calculate the row index it woud land on in tod_values
+    current_indices = np.arange(1, len(tod_values) + 1)
+    Regressors_df["LookBackHiddenVol"] = cum_vol_pad[current_indices] - cum_vol_pad[start_indices]
     
     weights = [1/(i) for i in range(1,21)]
 
@@ -277,7 +277,7 @@ def data_regressors(rawdata, cleandata):
         )
     
     Regressors_df['VolAhead'] = Vol_Ahead
-    #we use log1p  which is log 1 + x since if an order is placed inside the spread it would have negative values and we cant take log of that 
+    Regressors_df['LogVolAhead'] = np.log1p(Vol_Ahead)     #we use log1p  which is log 1 + x since if an order is placed inside the spread it would have negative values and we cant take log of that 
     
     #Building a regime classifier which uses categorical variables to tell in what regime of day we are in
     Regressors_df['Regime'] = np.where(Regressors_df['TOD'] < config.MARKET_OPEN_TIME , 0,    #Pre Market                         
@@ -332,12 +332,12 @@ def data_regressors(rawdata, cleandata):
     # Generate the Success Rows
     fills_bin_df = state_snapshot_df[state_snapshot_df['TotalExecutedAfter'] > 0].copy()
     fills_bin_df[config.TARGET] = 1
-    fills_bin_df['Unit_Weight'] = fills_bin_df['TotalExecutedAfter']
+    fills_bin_df['UnitWeight'] = fills_bin_df['TotalExecutedAfter']
 
     # Generate the Failure Rows
     fail_bin_df = state_snapshot_df[state_snapshot_df['TotalFailureAfter'] > 0].copy()
     fail_bin_df[config.TARGET] = 0
-    fail_bin_df['Unit_Weight'] = fail_bin_df['TotalFailureAfter']
+    fail_bin_df['UnitWeight'] = fail_bin_df['TotalFailureAfter']
 
     # Combine into final training array
     Binary_Regression_Matrix = pd.concat([fills_bin_df, fail_bin_df], ignore_index=True)
@@ -396,11 +396,13 @@ if __name__ == "__main__":
             
         rawdata = import_data(main_path, mo_path)
         cleandata = clean_data(rawdata)
-        X = data_regressors(rawdata, cleandata)
+        X = data_regressors(rawdata, cleandata)['Binary Matrix']
         
         print(find_order_pattern(cleandata, 66, 67, 3, 70))
         print(order_life(211736361, cleandata))
         print(time_in_hours(57237043))  
+        
+        print(X['UnitWeight'])
                
         # # Dummy code to show how the output variable regulation works 
         # #Just creating a dummy df from the info above

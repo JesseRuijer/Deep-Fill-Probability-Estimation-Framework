@@ -17,11 +17,25 @@ from sklearn.preprocessing import StandardScaler
 
 #has to properly get the weights from dataengineering
 
-def train_logistic_model(X_train, y_train):
+def train_logistic_model(X_train, y_train, weights,params = None, for_tuning = False):
+    
+    params = {
+        'max_iter': 1000
+        #Further tuning
+        
+        }
     
    #Logistic regression 
    #Might use somethiing of platt scaling to wrap the log res model as log res doesnt work very well with data where the output is very skewed, i.e here we have much more cancels then fills
-    base_logistic_model = LogisticRegression(max_iter=1000) # max iter higher then the standard 100 to take into account the noisy data we have
+    base_logistic_model = LogisticRegression(**params) # max iter higher then the standard 100 to take into account the noisy data we have
+    
+        
+    if for_tuning: #This is just for speed optimsation for using Optuna as for that you just need the base model so dont want to waste time calibrating
+        return base_logistic_model, None, None
+    
+    
+    
+    
     calibrated_model = CalibratedClassifierCV(estimator=base_logistic_model, method='sigmoid', cv=5 ) #Do some research if and why 5 is good value for cross validation in ML
     scalar = StandardScaler()
     
@@ -29,16 +43,17 @@ def train_logistic_model(X_train, y_train):
     #below i included price related features but if the price changes they dont follow the same distribution
     #on a given day anymore and the whole model breaks, so now the model only looks at volume
     #and position dynamics
+
     
 
     
     X_train_standardised = scalar.fit_transform(X_train) #Here we fit and transform
     #Fit Scikit logistic regrssion
     
-    calibrated_logistic_model = calibrated_model.fit(X_train_standardised, y_train)
+    calibrated_logistic_model = calibrated_model.fit(X_train_standardised, y_train, sample_weight = weights)
     
     #Just saved the base model as well here, maybe thats useful for log odss not sure
-    base_logistic_model.fit(X_train_standardised, y_train)
+    base_logistic_model.fit(X_train_standardised, y_train, sample_weight = weights)
     
     return base_logistic_model, calibrated_logistic_model, scalar
     

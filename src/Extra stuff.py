@@ -305,7 +305,37 @@ Created on Mon Jun  1 13:48:14 2026
 #     return fill_map
 
 
-
+##########################Paste this into dataandfeatureengineering sandbox to prove the MO and the main files are merged together and saved as parquet###################################3
+ # import pandas as pd
+ # import os
+ 
+ # # 1. Point directly to one of the new files your batch processor just made
+ # test_file = "../data/processed/INTC_BINARY_2014_04_01.parquet"
+ 
+ # if os.path.exists(test_file):
+ #     print(f"Loading {os.path.basename(test_file)}...")
+ #     df = pd.read_parquet(test_file)
+     
+ #     # 2. Print the size of the matrix (Should be hundreds of thousands of rows, and lots of columns)
+ #     print(f"\nMatrix Shape: {df.shape[0]} rows, {df.shape[1]} columns")
+     
+ #     # 3. THE ULTIMATE PROOF: Check for the MO Target Column
+ #     # If the MO file didn't merge, 'FillNoFill' mathematically cannot exist in this dataframe.
+ #     if 'FillNoFill' in df.columns:
+ #         print("\nSUCCESS: 'FillNoFill' column found! The MO data was successfully merged.")
+         
+ #         # Let's see how many orders were actually filled vs not filled on this day
+ #         print("\nFill/No Fill Distribution:")
+ #         print(df['FillNoFill'].value_counts())
+ #     else:
+ #         print("\nERROR: 'FillNoFill' is missing. The MO merge failed.")
+         
+ #     # 4. (Optional) Print all columns just so you can visually inspect them
+ #     # print("\nAll Columns in Parquet:")
+ #     # print(df.columns.tolist())
+     
+ # else:
+ #     print("File not found. Check the file path!")
 
 
 

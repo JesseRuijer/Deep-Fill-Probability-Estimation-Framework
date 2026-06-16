@@ -10,23 +10,45 @@ Created on Thu Jun 11 10:42:59 2026
 
 
 #Make it multi class, i.e first class is fill, second is active cancel and third is expired and also have to use softmax function then 
-#But it probs uses that automatically, but still ahve to then change my output variable y to like have it seperate for logistic and with three levels for lightgbm and neural net
+#But it probs uses that automatically (thats true it automatically uses softmax when you give it three distinct output vars), but still ahve to then change my output variable y to like have it seperate for logistic and with three levels for lightgbm and neural net
 
 import lightgbm as lgb 
 from sklearn.calibration import CalibratedClassifierCV
-def train_lgbm_model(X_train, y_train):
+def train_lgbm_model(X_train, y_train, weights, params = None, for_tuning = False):
 
     # light GBM 
-
-    base_lgbm = lgb.LGBMClassifier(
-        n_jobs = -1, #Using all available threads in cpu 
-        n_estimators = 150, # number of sequential trees  
-        learning_rate = 0.05, # scales contribution of each individual tree
-        num_leaves = 31, #max num of leaves, i.e terminal nodes, allowed in each tree 
-        random_state = 69 , #just set random seed for reproducability
-        #is_unbalance = True # deactivated this because use calibrated class later but look more into this telling the loss function about the skewed output var i think, not sure yet
-        ) 
-
+    
+    if params is None:
+        params = {
+        
+        #Structural
+        'objective' : 'multiclass', # Our Output var is multiclass for lgbm
+        'num_class' : 3, # How many diff classes (0,1,2 are the classes in our case)
+        'boosting_type' : 'gbdt', #The default gradient boosting
+        'metric' : 'multi_logloss', #Metric to measure perforance
+        'n_jobs' : -1, #Using all available threads in cpu 
+        'random_state' : 69 , #just set random seed for reproducability
+        
+        #Overall Tuning
+        'n_estimators' : 150, # number of sequential trees, i.e number of boosting rounds 
+        'learning_rate' : 0.011, # scales contribution of each individual tree
+        'num_leaves' : 30, #max num of leaves, i.e terminal nodes, allowed in each tree 
+        'min_child_samples': 1914 #Minimum number of data points required to create a new split in a leaf node
+        
+        #Fine Tuning only use this after completion of tuning above and maybe not even at all, look at https://www.geeksforgeeks.org/machine-learning/lightgbm-regularization-parameters/
+        
+            }
+    
+    
+    base_lgbm = lgb.LGBMClassifier(**params) #** is for unpacking the library from above  
+    
+    base_lgbm_model = base_lgbm.fit(X_train, y_train, sample_weight = weights)
+    
+    
+    if for_tuning: #This is just for speed optimsation for using Optuna as for that you just need the base model so dont want to waste time calibrating
+        return base_lgbm_model
+    
+    
     #calibrating the model, trees use stepfunctions, so use isotonic to match that or smooth it out??, do more research on this
     # im pretty sure trees dont require scalar and only care about relative ordering 
 
@@ -36,9 +58,7 @@ def train_lgbm_model(X_train, y_train):
         cv = 5
         )
     
-    base_lgbm_model = base_lgbm.fit(X_train, y_train)
-    
-    calibrated_lgbm_model = calibrated_lgbm.fit(X_train, y_train)
+    calibrated_lgbm_model = calibrated_lgbm.fit(X_train, y_train, sample_weight = weights)
     
     return base_lgbm_model, calibrated_lgbm_model
 
