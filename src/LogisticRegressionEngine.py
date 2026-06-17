@@ -15,20 +15,25 @@ from sklearn.preprocessing import StandardScaler
 ###################Starting logistic regression###########################
 
 
-#has to properly get the weights from dataengineering
-
 def train_logistic_model(X_train, y_train, weights,params = None, for_tuning = False):
     
-    params = {
-        'max_iter': 1000
-        #Further tuning
+    if params == None:
+        params = {
+            'max_iter' : 1000,
+            'n_jobs' : -1,
+            'random_state' : 69,
+            
+            'penalty' : 'l1',
+            'solver': 'saga',
+            'C': 0.00010720311501308609
+            }
         
-        }
-    
    #Logistic regression 
    #Might use somethiing of platt scaling to wrap the log res model as log res doesnt work very well with data where the output is very skewed, i.e here we have much more cancels then fills
     base_logistic_model = LogisticRegression(**params) # max iter higher then the standard 100 to take into account the noisy data we have
-    
+        
+    #Just saved the base model as well here, maybe thats useful for log odss not sure
+    base_logistic_model.fit(X_train, y_train, sample_weight = weights)
         
     if for_tuning: #This is just for speed optimsation for using Optuna as for that you just need the base model so dont want to waste time calibrating
         return base_logistic_model, None, None
@@ -51,8 +56,6 @@ def train_logistic_model(X_train, y_train, weights,params = None, for_tuning = F
     #Fit Scikit logistic regrssion
     
     calibrated_logistic_model = calibrated_model.fit(X_train_standardised, y_train, sample_weight = weights)
-    
-    #Just saved the base model as well here, maybe thats useful for log odss not sure
     base_logistic_model.fit(X_train_standardised, y_train, sample_weight = weights)
     
     return base_logistic_model, calibrated_logistic_model, scalar

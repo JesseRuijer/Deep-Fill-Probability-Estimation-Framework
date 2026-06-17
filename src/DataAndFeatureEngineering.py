@@ -154,7 +154,18 @@ def data_regressors(rawdata, cleandata):
     df_SP = rawdata["SellPrice"].shift(1).loc[df_E.index]
     df_MO = cleandata['MO']
     
+
+    
+    
     Regressors_df = pd.DataFrame()
+    
+    Regressors_df['Price'] = df_E['Price']
+    Regressors_df['SideOfBook' ] = df_E["SideOfBook"]
+    
+    Regressors_df['BestBid'] = df_BP[0]
+    Regressors_df['BestAsk'] = df_SP[0]
+    
+    
     Regressors_df["TOD"] = df_E["TOD"]
     Regressors_df["BASpread"] = df_SP[0] - df_BP[0]
     #below fill.na(0) means it will fill imbalcne with 0 if theres a NaN situation
@@ -184,7 +195,7 @@ def data_regressors(rawdata, cleandata):
     added_vol_day = rawdata['Event'][rawdata['Event']['Type'].isin([66,83])]['Vol'].sum()
     Regressors_df['CancelationRatio'] = canceled_vol_day / added_vol_day
     
-    direction_of_order = df_E["SideOfBook"].values
+    direction_of_order = df_E["SideOfBook"].values  # 1 is buy side, 0 is sell side
     price_of_order = df_E["Price"].values
     best_bid = df_BP[0].values
     best_ask = df_SP[0].values
@@ -251,7 +262,7 @@ def data_regressors(rawdata, cleandata):
     
     Regressors_df["DistanceToTouch"] = distance_to_touch   #How far a placed LO is from best bid or best ask
     
-  
+    Regressors_df['DistanceToMidprice'] = np.where(df_E['SideOfBook'] == 1, Regressors_df['Midprice'] - df_E['Price'] , df_E['Price'] - Regressors_df['Midprice'] )
     
     #Calculates how far order is awaay from best bid or best ask
     
@@ -301,6 +312,8 @@ def data_regressors(rawdata, cleandata):
     Regressors_df['ID'] = df_E['ID']
     Regressors_df['Vol'] = df_E['Vol']
     
+    Regressors_df['TimeSincePlacement'] = Regressors_df['TOD'] - Regressors_df.groupby('ID')['TOD'].transform('min')  #Time in ms since order was placed
+    
     Regressors_df['ExecutedVol'] = np.where(Regressors_df['Type'].isin([69, 70]), Regressors_df['Vol'], 0)
     Regressors_df['ActiveCanceledVol'] = np.where(((Regressors_df['Type'].isin([67, 68])) & (Regressors_df['TOD'] < config.MARKET_CLOSE_TIME)), Regressors_df['Vol'], 0)
     Regressors_df['ExpiredVol'] = np.where(((Regressors_df['Type'].isin([67, 68])) & (Regressors_df['TOD'] >= config.MARKET_CLOSE_TIME)), Regressors_df['Vol'], 0)
@@ -308,6 +321,127 @@ def data_regressors(rawdata, cleandata):
     Regressors_df['TotalExecutedAfter'] = (Regressors_df.iloc[::-1].groupby('ID')['ExecutedVol'].cumsum().iloc[::-1] - Regressors_df['ExecutedVol'])
     Regressors_df['TotalActiveCanceledAfter'] = (Regressors_df.iloc[::-1].groupby('ID')['ActiveCanceledVol'].cumsum().iloc[::-1] - Regressors_df['ActiveCanceledVol'])
     Regressors_df['TotalExpiredAfter'] = (Regressors_df.iloc[::-1].groupby('ID')['ExpiredVol'].cumsum().iloc[::-1] - Regressors_df['ExpiredVol'])
+    
+    #Trying to create the 'Heartbeat' logic where for an orders life it takes a snapshot of LOB every 10 seconds or so or other custom time ofc
+    
+    hb_order_info = Regressors_df.groupby('ID').agg(     #agg just puts all this info into one row, syntax like Death( tod, max) means we give this new column name to the old col name tod where we perform the operation max to it
+        InitialPlacementTime = ('TOD', 'min'),
+        DeathTime = ('TOD', 'max'),
+        Price = ('Price', 'first'),
+        Side = ('SideOfBook' , 'first')
+        ).reset_index()     #To remove the native extra indexing pandas does
+    
+    heartbeat_interval = config.HEARTBEAT_INTERVAL
+    
+    hb_order_info['Duration'] = hb_order_info['DeathTime'] - hb_order_info['InitialPlacementTime']
+    hb_order_info['NumberOfHeartBeats'] = (hb_order_info['Duration'] // heartbeat_interval).astype(int)
+    
+    valid_orders = hb_order_info[hb_order_info['NumberOfHeartBeats'] > 0]
+    
+    #Initializing vectorized grid
+    
+    ids_repeated = np.repeat(valid_orders['ID'].values , valid_orders['NumberOfHeartBeats'].values)
+    starts_repeated = np.repeat(valid_orders['InitialPlacementTime'], valid_orders['NumberOfHeartBeats'])
+    
+    #Building base df
+    
+    heartbeats_df = pd.DataFrame({'ID' : ids_repeated, 'BaseTime' : starts_repeated})
+    heartbeats_df['Step'] = (heartbeats_df.groupby('ID').cumcount() + 1) * heartbeat_interval   # creates col with 1 * 10000 as first entry, 2*10000 as second entry etc
+    heartbeats_df['TOD'] = heartbeats_df['BaseTime'] + heartbeats_df['Step']
+    
+    heartbeats_df = heartbeats_df.merge(hb_order_info[['ID' , 'Price', 'Side', 'InitialPlacementTime']], on='ID')
+    
+    #Extracting features that are not order specific but are same for all LOs at a given TOD
+    
+    market_time_general_features = Regressors_df[['TOD', 'BASpread', 'QImbalance', "TotalVolImbalance", "AbsQImbalance", 'Midprice', 'Microprice',
+                                                  'TimeTillMarketClose', 'BestBid', 'BestAsk']].copy()
+    #Do the vol ahead calculations for the heartbeat snapshots and after that delete them from ram 
+    
+    for i in range(20):
+        market_time_general_features[f'BP_{i}'] = df_BP[i].values
+        market_time_general_features[f'BV_{i}'] = df_BV[i].values
+        market_time_general_features[f'SP_{i}'] = df_SP[i].values
+        market_time_general_features[f'SV_{i}'] = df_SV[i].values   
+    
+    market_time_general_features = market_time_general_features.sort_values('TOD').drop_duplicates(subset = ['TOD'] , keep = 'last')    #Look at last event if multiple events happened at same TOD, else programme will crash, ik this isnt optimal but theres not really any other way to sort them for the moment if they come in at the same tod i think
+    
+    
+    
+    heartbeats_df = heartbeats_df.sort_values('TOD')
+    
+    #Manual fix to allow merge below
+    
+    heartbeats_df['TOD'] = heartbeats_df['TOD'].astype('int64')
+    market_time_general_features['TOD'] = market_time_general_features['TOD'].astype('int64')
+    
+    #Merge heartbeats sorted by time with last known (direction = backward) market state before the heartbeat
+    hb_order_info_with_market_general_features = pd.merge_asof(
+        heartbeats_df,
+        market_time_general_features,
+        on = 'TOD',
+        direction = 'backward'
+        )
+    
+    #Now recalculate the dynamic features, i.e features that change per order ID we look at 
+    
+    hb_order_info_with_market_general_features['DistanceToTouch'] = np.where( #np.where works like an if condition, its this, else do this
+          
+          hb_order_info_with_market_general_features['Side'] == 1,
+          hb_order_info_with_market_general_features['BestBid'] - hb_order_info_with_market_general_features['Price'],
+          hb_order_info_with_market_general_features['Price'] - hb_order_info_with_market_general_features['BestAsk']
+          
+          )
+    
+    hb_order_info_with_market_general_features['DistanceToMidprice'] = np.where( hb_order_info_with_market_general_features['Side'] == 1, 
+                                                                                hb_order_info_with_market_general_features['Midprice'] -  hb_order_info_with_market_general_features['Price'] ,  
+                                                                                hb_order_info_with_market_general_features['Price'] -  hb_order_info_with_market_general_features['Midprice'] )
+    
+    
+    hb_order_info_with_market_general_features['TimeSincePlacement'] = hb_order_info_with_market_general_features['TOD'] - hb_order_info_with_market_general_features['InitialPlacementTime']
+    
+
+
+    
+    total_buy_vol_ahead = np.zeros(len(hb_order_info_with_market_general_features))
+    total_sell_vol_ahead = np.zeros(len(hb_order_info_with_market_general_features))
+    price_of_order = hb_order_info_with_market_general_features['Price'].values
+    
+    for i in range(20):
+        lvl_buy_price = hb_order_info_with_market_general_features[f'BP_{i}'].values
+        lvl_buy_vol = hb_order_info_with_market_general_features[f'BV_{i}'].values
+        lvl_sell_price = hb_order_info_with_market_general_features[f'SP_{i}'].values
+        lvl_sell_vol = hb_order_info_with_market_general_features[f'SV_{i}'].values
+        
+        
+        total_buy_vol_ahead += np.where( lvl_buy_price >= price_of_order, lvl_buy_vol,0)
+        total_sell_vol_ahead += np.where(lvl_sell_price <= price_of_order, lvl_sell_vol, 0)
+        
+    Vol_Ahead = np.where(
+        hb_order_info_with_market_general_features['Side'] == 1,
+        total_buy_vol_ahead,
+        total_sell_vol_ahead
+        )
+    
+    hb_order_info_with_market_general_features['VolAhead'] = Vol_Ahead
+    
+    hb_order_info_with_market_general_features['LogVolAhead'] = np.log1p(hb_order_info_with_market_general_features['VolAhead'])  
+    
+    #Remove the for loop info from ram as not needed anymore
+    
+    cols_to_drop = [col for col in hb_order_info_with_market_general_features.columns if col.startswith(('BP', 'BV', 'SP', 'SV'))]
+    hb_order_info_with_market_general_features = hb_order_info_with_market_general_features.drop(columns = cols_to_drop)
+    
+    
+   # Put a custom label on this to keep track of these heartbeat snapshots since they arent snapshots of when an actual event takes place  
+    hb_order_info_with_market_general_features['Type'] = 26 
+    
+    #Format them in with the state_snapshot df later
+    
+    hb_order_info_with_market_general_features['Is_Initial_Placement'] = 0
+    hb_order_info_with_market_general_features['Is_Partial_Fill'] = 0
+    hb_order_info_with_market_general_features['Is_Partial_Cancel'] = 0
+    
+    
     
     state_snapshot_df = Regressors_df[Regressors_df['Type'].isin([66, 67, 69, 83])].copy()
     
@@ -326,7 +460,40 @@ def data_regressors(rawdata, cleandata):
         )
     
     state_snapshot_df = state_snapshot_df[safe_mask]
+
+    #Target inheritance for merging afterwards
     
+    order_event_targets = state_snapshot_df[['TOD', 'ID','TotalExecutedAfter', 'TotalFailureAfter', 'TotalActiveCanceledAfter', 'TotalExpiredAfter']].copy()
+    order_event_targets = order_event_targets.sort_values('TOD').drop_duplicates(subset = ['ID', 'TOD'], keep = 'last')
+    
+    hb_order_info_with_market_general_features = hb_order_info_with_market_general_features.sort_values('TOD')
+    
+    #Inheriting targets from the most actual event happening
+    
+    #Manual fix to allow merge below
+    
+    hb_order_info_with_market_general_features['TOD'] = hb_order_info_with_market_general_features['TOD'].astype('int64')
+    order_event_targets['TOD'] = order_event_targets['TOD'].astype('int64')
+    
+    hb_order_info_with_market_general_features['ID'] = hb_order_info_with_market_general_features['ID'].astype('int64')
+    order_event_targets['ID'] = order_event_targets['ID'].astype('int64')
+    
+    hb_with_targets = pd.merge_asof(
+        hb_order_info_with_market_general_features,
+        order_event_targets,
+        on = 'TOD', #Look backwards from TOD
+        by = 'ID',  #look only at this ID
+        direction = 'backward'
+        )
+       
+    
+    
+    state_snapshot_df = pd.concat([state_snapshot_df, hb_with_targets], ignore_index = True)
+    
+    state_snapshot_df = state_snapshot_df.sort_values('TOD')    
+
+
+
     #Binary for logistic
     
     # Generate the Success Rows
@@ -360,16 +527,17 @@ def data_regressors(rawdata, cleandata):
     
     Multi_Class_Regression_Matrix = pd.concat([fills_multi_df, active_cancels_multi_df, expired_multi_df], ignore_index=True)
     Multi_Class_Regression_Matrix = Multi_Class_Regression_Matrix.sort_values(by = 'TOD')
-    
-    
+
     
     #Cols that either dont have necessary info or to prevent data leaking i.e we cant train on totalexecuted after since that happnes in the future
 
-    cols_to_drop = ['Type','ID','Vol', 'ExecutedVol', 'ActiveCanceledVol', 'ExpiredVol' 
+    cols_to_drop = ['Type','ID','Vol', 'ExecutedVol', 'ActiveCanceledVol', 'ExpiredVol' , 'Price', 'SideOfBook'
                     ,'TotalExecutedAfter', 'TotalActiveCanceledAfter', 'TotalExpiredAfter', 'TotalFailureAfter' ]    
    
     Binary_Regression_Matrix = Binary_Regression_Matrix.drop(columns=cols_to_drop)
     Multi_Class_Regression_Matrix = Multi_Class_Regression_Matrix.drop(columns=cols_to_drop)
+    
+    print(Binary_Regression_Matrix.iloc[20000])
     
     return {
         
@@ -398,11 +566,11 @@ if __name__ == "__main__":
         cleandata = clean_data(rawdata)
         X = data_regressors(rawdata, cleandata)['Binary Matrix']
         
-        print(find_order_pattern(cleandata, 66, 67, 3, 70))
-        print(order_life(211736361, cleandata))
-        print(time_in_hours(57237043))  
+        # print(find_order_pattern(cleandata, 66, 67, 3, 70))
+        # print(order_life(211736361, cleandata))
+        # print(time_in_hours(57237043))  
         
-        print(X['UnitWeight'])
+        # print(X['UnitWeight'])
                
         # # Dummy code to show how the output variable regulation works 
         # #Just creating a dummy df from the info above

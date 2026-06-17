@@ -18,15 +18,17 @@ EOMARKET_NOISE =  55800000 # 3:30 PM
 
 
 LOGISTIC_MODEL_FEATURES = ['AbsQImbalance', 'Weighted Vol Imbalance', 
-              "DistanceToTouch", 'LogVolAhead', "LookBackHiddenVol"] 
+              "DistanceToTouch", 'LogVolAhead', "LookBackHiddenVol", 'TimeSincePlacement', 'DistanceToMidprice'] 
 
 LGBM_MODEL_FEATURES = ['AbsQImbalance', 'Weighted Vol Imbalance', 
               "DistanceToTouch", 'LogVolAhead', "LookBackHiddenVol" ,'BASpread', 'QImbalance', 'TotalVolImbalance', 'Midprice', 'Microprice', 
                                         'MOTrailingVol100ms', 'MOTrailingOrders100ms', 'LOTrailingVolPlaced100ms', 'LOTrailingCountOrdersPlaced100ms', 
                                         'LOTrailingVolCanceled100ms', 'LOTrailingCountOrdersCanceled100ms', 'LOTrailingVolExecuted100ms',
-                                        'LOTrailingCountOrdersExecuted100ms', 'VolAhead']
+                                        'LOTrailingCountOrdersExecuted100ms', 'VolAhead', 'TimeSincePlacement', 'DistanceToMidprice']
 
 TARGET = 'FillNoFill'
+
+HEARTBEAT_INTERVAL = 10000
 
 
 
