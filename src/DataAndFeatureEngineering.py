@@ -137,10 +137,8 @@ def clean_data(raw_data):
     
 def data_regressors(rawdata, cleandata):
     
-    #Maybe make a seperate data regressors code for regression and for the lightgbm and neural nets or include it in one
-    #But theyll have different outputs
-    
     df_E = cleandata["Event"]
+    df_MO = cleandata['MO']
     
     #For our machine to make accurate predictions we have to shift forward each row in the LOB BuySell Vol and Price
     #i.e for row 1 in event normally, row 1 in the LOB data would correspond to what happened immediately after 
@@ -152,30 +150,36 @@ def data_regressors(rawdata, cleandata):
     df_SV = rawdata["SellVol"].shift(1).loc[df_E.index]
     df_BP = rawdata["BuyPrice"].shift(1).loc[df_E.index]
     df_SP = rawdata["SellPrice"].shift(1).loc[df_E.index]
-    df_MO = cleandata['MO']
     
+    mask_add = df_E['Type'].isin([66,83])
+    mask_cancel = df_E['Type'].isin([67,68])
+    mask_execute = df_E['Type'].isin([69,70])
 
-    
-    
     Regressors_df = pd.DataFrame()
     
+    ########## Basic Features #######################3
     Regressors_df['Price'] = df_E['Price']
+    Regressors_df["TOD"] = df_E["TOD"]
     Regressors_df['SideOfBook' ] = df_E["SideOfBook"]
-    
     Regressors_df['BestBid'] = df_BP[0]
     Regressors_df['BestAsk'] = df_SP[0]
+    Regressors_df['BidSize'] = df_BV[0]
+    Regressors_df['AskSize'] = df_SV[0]
+    Regressors_df["BASpread"] = Regressors_df['BestAsk'] - Regressors_df['BestBid']
+    Regressors_df["Midprice"] = (Regressors_df['BestBid'] + Regressors_df['BestAsk'])/2
+    Regressors_df["Microprice"] = ((Regressors_df['BidSize']*Regressors_df['BestAsk'])+(Regressors_df['BestAsk']*Regressors_df['BestBid']))/(Regressors_df['BidSize'] + Regressors_df['BestAsk'])
     
-    
-    Regressors_df["TOD"] = df_E["TOD"]
-    Regressors_df["BASpread"] = df_SP[0] - df_BP[0]
-    #below fill.na(0) means it will fill imbalcne with 0 if theres a NaN situation
-    #Q imbalance is just using the best bid and ask volumes
-    Regressors_df["QImbalance"] = ((df_BV[0]-df_SV[0])/(df_BV[0]+ df_SV[0])).fillna(0)
+    #Imbalances
+    Regressors_df["QImbalance"] = ((Regressors_df['BidSize']-Regressors_df['AskSize'])/(Regressors_df['BidSize']+ Regressors_df['AskSize'])).fillna(0)  #fill.na(0) means it will fill imbalcne with 0 if theres a NaN situation
     Regressors_df["AbsQImbalance"] = Regressors_df["QImbalance"].abs()
-    #Total Vol imbalance uses sum of the 20 cols provided in the data
-    #axis=1 does across cols, axis=0 does across rows
-    Regressors_df["TotalVolImbalance"] = ((df_BV.sum(axis=1)-df_SV.sum(axis=1))/(df_BV.sum(axis=1)+ df_SV.sum(axis=1))).fillna(0)
+    Regressors_df["TotalVolImbalance"] = ((df_BV.sum(axis=1)-df_SV.sum(axis=1))/(df_BV.sum(axis=1)+ df_SV.sum(axis=1))).fillna(0)   #Total Vol imbalance uses sum of the 20 cols provided in the data axis=1 does across cols, axis=0 does across rows
     
+    weights = [1/(i) for i in range(1,21)]
+    Regressors_df["WeightedVolImbalance"] = (((weights*df_BV).sum(axis=1)-(weights*df_SV).sum(axis=1))/((weights*df_BV).sum(axis=1)+ (weights*df_SV).sum(axis=1))).fillna(0)
+    
+    ############ Trailing and Regime Features ##################
+    
+    #HiddenVol
     hidden_vol = np.where(df_E["Type"] ==  84, df_E['Vol'], 0) #returns the vol of types 84 else zero in a new numpy array
     cum_vol_pad = np.pad(np.cumsum(hidden_vol), (1,0), constant_values = 0) #says add a zero to the start, nothing to the back and then we take cumsum of all the vols
     tod_values = df_E['TOD'].values
@@ -185,90 +189,54 @@ def data_regressors(rawdata, cleandata):
     current_indices = np.arange(1, len(tod_values) + 1)
     Regressors_df["LookBackHiddenVol"] = cum_vol_pad[current_indices] - cum_vol_pad[start_indices]
     
-    weights = [1/(i) for i in range(1,21)]
-
-    Regressors_df["Weighted Vol Imbalance"] = (((weights*df_BV).sum(axis=1)-(weights*df_SV).sum(axis=1))/((weights*df_BV).sum(axis=1)+ (weights*df_SV).sum(axis=1))).fillna(0)
-    Regressors_df["Midprice"] = (df_BP[0]+df_SP[0])/2
-    Regressors_df["Microprice"] = ((df_BV[0]*df_SP[0])+(df_SV[0]*df_BP[0]))/(df_BV[0]+df_SV[0])
-    
+    #Cancelation Ratio
     canceled_vol_day = rawdata['Event'][rawdata['Event']['Type'].isin([67,68])]['Vol'].sum()
     added_vol_day = rawdata['Event'][rawdata['Event']['Type'].isin([66,83])]['Vol'].sum()
     Regressors_df['CancelationRatio'] = canceled_vol_day / added_vol_day
     
-    direction_of_order = df_E["SideOfBook"].values  # 1 is buy side, 0 is sell side
-    price_of_order = df_E["Price"].values
-    best_bid = df_BP[0].values
-    best_ask = df_SP[0].values
+    #Building a regime classifier which uses categorical variables to tell in what regime of day we are in
+    Regressors_df['Regime'] = np.where(Regressors_df['TOD'] < config.MARKET_OPEN_TIME , 0,    #Pre Market                         
+                              np.where(Regressors_df['TOD'] < config.SOMARKET_NOISE , 1,    # 30 min vol after opening
+                              np.where(Regressors_df['TOD'] < config.EOMARKET_NOISE , 2,    #Regular Market hours without first and last 30 min
+                              np.where(Regressors_df['TOD'] < config.MARKET_CLOSE_TIME , 3,    #30 min high volatilitiy time before closing
+                              4))))                                            #After market hours
     
-    distance_to_touch = np.where( #np.where works like an if condition, its this, else do this
-        
-        direction_of_order == 1,
-        best_bid - price_of_order,
-        price_of_order - best_ask
-        
-        )
-    ###########################Creating some non linear features#######################
-    MO_tod_values = df_MO['TOD'].values #remeber .values makes it into np array since using for loops for this or pandas functions would take forever
-    MO_vol_values = df_MO['Vol'].values
+    Regressors_df['TimeTillMarketClose'] = config.MARKET_CLOSE_TIME - Regressors_df['TOD']
+    Regressors_df['IsFinalMinute'] = np.where(Regressors_df['TimeTillMarketClose'] <= 60000, 1, 0) #Just a handhold just for logistic regression to implement that cancelations at eod are not as valuable as cancelations during day  
     
-    cum_mo_vol = np.pad(np.cumsum(MO_vol_values), (1,0), constant_values = 0)      #pads to add a zero at thes start and then cumsum calculates the running total so to know the order arrival rate between two different times you just calculate the difference in their total running values
+    def trailing_calc(tod_source, vol_source, lookback):
+        cum_vol = np.pad(np.cumsum(vol_source), (1,0), constant_values = 0)      #pads to add a zero at thes start and then cumsum calculates the running total so to know the order arrival rate between two different times you just calculate the difference in their total running values
+        start_indices = np.searchsorted(tod_source, df_E['TOD'].values - lookback, side = 'left')   #Finds the row indices where the lookback window starts and below where it finishes
+        end_indices = np.searchsorted(tod_source, df_E['TOD'].values - lookback, side = 'right') 
+        return (cum_vol[end_indices] - cum_vol[start_indices]), (end_indices - start_indices)
     
-    lookback_intensity = 100 # time we want to look back for in ms
-    event_tod_values = df_E['TOD'].values
-    lookback_starting_times = event_tod_values - lookback_intensity
+    #Trailing Features
+    Regressors_df['MOTrailingVol'] = trailing_calc(df_MO['TOD'].values, df_MO['Vol'].values, config.LOOKBACK_WINDOW)[0]
+    Regressors_df['MOTrailingOrders'] = trailing_calc(df_MO['TOD'].values, df_MO['Vol'].values, config.LOOKBACK_WINDOW)[1]
     
-    mo_start_indices = np.searchsorted(MO_tod_values, lookback_starting_times, side = 'left')   #Finds the row indices where the lookback window starts and below where it finishes
-    mo_end_indices = np.searchsorted(MO_tod_values, event_tod_values, side = 'right') 
+    Regressors_df['LOTrailingVolPlaced'] = trailing_calc(df_E.loc[mask_add, 'TOD'].values,  df_E.loc[mask_add, 'Vol'].values, config.LOOKBACK_WINDOW)[0]
+    Regressors_df['LOTrailingCountOrdersPlaced'] = trailing_calc(df_E.loc[mask_add, 'TOD'].values,  df_E.loc[mask_add, 'Vol'].values, config.LOOKBACK_WINDOW)[1]
+
+    Regressors_df['LOTrailingVolCanceled'] = trailing_calc(df_E.loc[mask_cancel, 'TOD'].values,  df_E.loc[mask_cancel, 'Vol'].values, config.LOOKBACK_WINDOW)[0]
+    Regressors_df['LOTrailingCountOrdersCanceled'] = trailing_calc(df_E.loc[mask_cancel, 'TOD'].values,  df_E.loc[mask_cancel, 'Vol'].values, config.LOOKBACK_WINDOW)[1]
     
-    Regressors_df['MOTrailingVol100ms'] = cum_mo_vol[mo_end_indices] -  cum_mo_vol[mo_start_indices]
-    Regressors_df['MOTrailingOrders100ms'] = mo_end_indices - mo_start_indices
+    Regressors_df['LOTrailingVolExecuted'] =  trailing_calc(df_E.loc[mask_execute, 'TOD'].values,  df_E.loc[mask_execute, 'Vol'].values, config.LOOKBACK_WINDOW)[0]
+    Regressors_df['LOTrailingCountOrdersExecuted'] = trailing_calc(df_E.loc[mask_execute, 'TOD'].values,  df_E.loc[mask_execute, 'Vol'].values, config.LOOKBACK_WINDOW)[1]
     
-    #Building something similar for the LOs, the adding and the cancelation activities
-    mask_add = df_E['Type'].isin([66,83])
-    mask_cancel = df_E['Type'].isin([67,68])
-    mask_execute = df_E['Type'].isin([69,70])
     
-    lo_add_vals_tod = df_E.loc[mask_add, 'TOD'].values
-    lo_add_vals_vol = df_E.loc[mask_add, 'Vol'].values
+    ########## Dynamic Features #####################
     
-    lo_cancel_vals_tod = df_E.loc[mask_cancel, 'TOD'].values
-    lo_cancel_vals_vol = df_E.loc[mask_cancel, 'Vol'].values
+    #Distance to touch How far a placed LO is from best bid or best ask    
+    Regressors_df["DistanceToTouch"] =  np.where(   
+        Regressors_df["SideOfBook"].values == 1, # 1 is buy side, 0 is sell side
+        Regressors_df['BestBid'].values - Regressors_df['Price'].values,
+        Regressors_df['Price'].values - Regressors_df['BestAsk'].values
+        ) 
     
-    lo_execute_vals_tod = df_E.loc[mask_execute, 'TOD'].values
-    lo_execute_vals_vol = df_E.loc[mask_execute, 'Vol'].values
-    
-    added_lo_cumsum = np.pad(np.cumsum(lo_add_vals_vol), (1,0) , constant_values = 0)
-    cancel_lo_cumsum = np.pad(np.cumsum(lo_cancel_vals_vol), (1,0) , constant_values = 0)
-    execute_lo_cumsum = np.pad(np.cumsum(lo_execute_vals_vol), (1,0) , constant_values = 0)
-    
-    added_lo_start_indices = np.searchsorted(lo_add_vals_tod, lookback_starting_times, side = 'left')   #Finds the row indices where the lookback window starts and below where it finishes
-    added_lo_end_indices = np.searchsorted(lo_add_vals_tod, event_tod_values, side = 'right') 
-   
-    cancel_lo_start_indices = np.searchsorted(lo_cancel_vals_tod, lookback_starting_times, side = 'left')   #Finds the row indices where the lookback window starts and below where it finishes
-    cancel_lo_end_indices = np.searchsorted(lo_cancel_vals_tod, event_tod_values, side = 'right') 
-    
-    execute_lo_start_indices = np.searchsorted(lo_execute_vals_tod, lookback_starting_times, side = 'left')   #Finds the row indices where the lookback window starts and below where it finishes
-    execute_lo_end_indices = np.searchsorted(lo_execute_vals_tod, event_tod_values, side = 'right') 
-    
-    Regressors_df['LOTrailingVolPlaced100ms'] = added_lo_cumsum[added_lo_end_indices] -  added_lo_cumsum[added_lo_start_indices]
-    Regressors_df['LOTrailingCountOrdersPlaced100ms'] = added_lo_end_indices - added_lo_start_indices
-   
-    Regressors_df['LOTrailingVolCanceled100ms'] = cancel_lo_cumsum[cancel_lo_end_indices] -  cancel_lo_cumsum[cancel_lo_start_indices]
-    Regressors_df['LOTrailingCountOrdersCanceled100ms'] = cancel_lo_end_indices - cancel_lo_start_indices
-    
-    Regressors_df['LOTrailingVolExecuted100ms'] =  execute_lo_cumsum[execute_lo_end_indices] -   execute_lo_cumsum[execute_lo_start_indices]
-    Regressors_df['LOTrailingCountOrdersExecuted100ms'] = execute_lo_end_indices - execute_lo_start_indices
-    ###########################################
-    
-    Regressors_df["DistanceToTouch"] = distance_to_touch   #How far a placed LO is from best bid or best ask
-    
-    Regressors_df['DistanceToMidprice'] = np.where(df_E['SideOfBook'] == 1, Regressors_df['Midprice'] - df_E['Price'] , df_E['Price'] - Regressors_df['Midprice'] )
-    
-    #Calculates how far order is awaay from best bid or best ask
+    Regressors_df['DistanceToMidprice'] = np.where(Regressors_df['SideOfBook'] == 1, Regressors_df['Midprice'] - Regressors_df['Price'] , Regressors_df['Price'] - Regressors_df['Midprice'] )
     
     #Vol Ahead looks at for a given placed limit order how much volume is ahead of it until best price
     #We create an empty array for all tods an event was placed, loop through all 20 levels of the order book prices we have and add volume to it if its in front of our order
-    
     total_buy_vol_ahead = np.zeros(len(df_E))
     total_sell_vol_ahead = np.zeros(len(df_E))
     
@@ -278,11 +246,11 @@ def data_regressors(rawdata, cleandata):
         lvl_sell_price = df_SP[i].values
         lvl_sell_vol = df_SV[i].values
         
-        total_buy_vol_ahead += np.where( lvl_buy_price >= price_of_order, lvl_buy_vol,0)
-        total_sell_vol_ahead += np.where(lvl_sell_price <= price_of_order, lvl_sell_vol, 0)
+        total_buy_vol_ahead += np.where( lvl_buy_price >= Regressors_df['Price'], lvl_buy_vol,0)
+        total_sell_vol_ahead += np.where(lvl_sell_price <= Regressors_df['Price'], lvl_sell_vol, 0)
         
     Vol_Ahead = np.where(
-        direction_of_order == 1,
+        Regressors_df["SideOfBook"].values == 1,
         total_buy_vol_ahead,
         total_sell_vol_ahead
         )
@@ -290,38 +258,36 @@ def data_regressors(rawdata, cleandata):
     Regressors_df['VolAhead'] = Vol_Ahead
     Regressors_df['LogVolAhead'] = np.log1p(Vol_Ahead)     #we use log1p  which is log 1 + x since if an order is placed inside the spread it would have negative values and we cant take log of that 
     
-    #Building a regime classifier which uses categorical variables to tell in what regime of day we are in
-    Regressors_df['Regime'] = np.where(Regressors_df['TOD'] < config.MARKET_OPEN_TIME , 0,    #Pre Market                         
-                              np.where(Regressors_df['TOD'] < config.SOMARKET_NOISE , 1,    # 30 min vol after opening
-                              np.where(Regressors_df['TOD'] < config.EOMARKET_NOISE , 2,    #Regular Market hours without first and last 30 min
-                              np.where(Regressors_df['TOD'] < config.MARKET_CLOSE_TIME , 3,    #30 min high volatilitiy time before closing
-                              4))))                                            #After market hours
     
-    #need to alter the fill stuff maybe some sort of weighted splitting since the unit stuff if i were to use something like duplicating for that would just murder my RAM
-    #might make a third classificaiton which is not filled at end of day and therefore cancelled, which is different then being canceled during day 
     
-    #orders that made it to the end of the day without being filled or canceled 
-    
-    Regressors_df['TimeTillMarketClose'] = config.MARKET_CLOSE_TIME - df_E['TOD']
-    
-    Regressors_df['IsFinalMinute'] = np.where(Regressors_df['TimeTillMarketClose'] <= 60000, 1, 0) #Just a handhold just for logistic regression to implement that cancelations at eod are not as valuable as cancelations during day  
-    
-    #########Trying to make the continuous order tracker that correctly tracks partial fills and then lets the rest continue for the rest of the day as a new parent order
+   ######### Target Generation, i.e targetting fills cancels etc #########################
     
     Regressors_df['Type'] = df_E['Type']
     Regressors_df['ID'] = df_E['ID']
     Regressors_df['Vol'] = df_E['Vol']
+    Regressors_df['InitialPlacementTime'] = Regressors_df.groupby('ID')['TOD'].transform('min')  #Time in ms since order was placed
+    Regressors_df['TimeSincePlacement'] = Regressors_df['TOD'] - Regressors_df['InitialPlacementTime']
     
-    Regressors_df['TimeSincePlacement'] = Regressors_df['TOD'] - Regressors_df.groupby('ID')['TOD'].transform('min')  #Time in ms since order was placed
+    Regressors_df['ExecutedVol'] = np.where(mask_execute, Regressors_df['Vol'], 0)
+    Regressors_df['ActiveCanceledVol'] = np.where(((mask_cancel) & (Regressors_df['TOD'] < config.MARKET_CLOSE_TIME)), Regressors_df['Vol'], 0)
+    Regressors_df['ExpiredVol'] = np.where(((mask_cancel) & (Regressors_df['TOD'] >= config.MARKET_CLOSE_TIME)), Regressors_df['Vol'], 0)
     
-    Regressors_df['ExecutedVol'] = np.where(Regressors_df['Type'].isin([69, 70]), Regressors_df['Vol'], 0)
-    Regressors_df['ActiveCanceledVol'] = np.where(((Regressors_df['Type'].isin([67, 68])) & (Regressors_df['TOD'] < config.MARKET_CLOSE_TIME)), Regressors_df['Vol'], 0)
-    Regressors_df['ExpiredVol'] = np.where(((Regressors_df['Type'].isin([67, 68])) & (Regressors_df['TOD'] >= config.MARKET_CLOSE_TIME)), Regressors_df['Vol'], 0)
+    #Remaining Vol = (Total Order Sum) - (Running Sum)
+    Regressors_df['TotalExecutedAfter'] = Regressors_df.groupby('ID')['ExecutedVol'].transform('sum') - Regressors_df.groupby('ID')['ExecutedVol'].cumsum()
+    Regressors_df['TotalActiveCanceledAfter'] = Regressors_df.groupby('ID')['ActiveCanceledVol'].transform('sum') - Regressors_df.groupby('ID')['ActiveCanceledVol'].cumsum()
+    Regressors_df['TotalExpiredAfter'] = Regressors_df.groupby('ID')['ExpiredVol'].transform('sum') - Regressors_df.groupby('ID')['ExpiredVol'].cumsum()
+    Regressors_df['TotalFailureAfter'] = Regressors_df['TotalActiveCanceledAfter'] + Regressors_df['TotalExpiredAfter']
+    #Filtering out full executions and full cancels as they dont predict anything anymore as the order is dead after that  
+    state_snapshot_df = Regressors_df[Regressors_df['Type'].isin([66, 67, 69, 83])].copy() 
     
-    Regressors_df['TotalExecutedAfter'] = (Regressors_df.iloc[::-1].groupby('ID')['ExecutedVol'].cumsum().iloc[::-1] - Regressors_df['ExecutedVol'])
-    Regressors_df['TotalActiveCanceledAfter'] = (Regressors_df.iloc[::-1].groupby('ID')['ActiveCanceledVol'].cumsum().iloc[::-1] - Regressors_df['ActiveCanceledVol'])
-    Regressors_df['TotalExpiredAfter'] = (Regressors_df.iloc[::-1].groupby('ID')['ExpiredVol'].cumsum().iloc[::-1] - Regressors_df['ExpiredVol'])
+    # Feature extraction
+    state_snapshot_df['Is_Initial_Placement'] = np.where(state_snapshot_df['Type'].isin([66, 83]), 1, 0)
+    state_snapshot_df['Is_Partial_Fill'] = np.where(state_snapshot_df['Type'] == 69, 1, 0)
+    state_snapshot_df['Is_Partial_Cancel'] = np.where(state_snapshot_df['Type'] == 67, 1, 0)
+    #state_snapshot_df['Current_Event_Vol'] = state_snapshot_df['Vol']
     
+    
+    ########### Heartbeat Engine ##########################
     #Trying to create the 'Heartbeat' logic where for an orders life it takes a snapshot of LOB every 10 seconds or so or other custom time ofc
     
     hb_order_info = Regressors_df.groupby('ID').agg(     #agg just puts all this info into one row, syntax like Death( tod, max) means we give this new column name to the old col name tod where we perform the operation max to it
@@ -351,21 +317,28 @@ def data_regressors(rawdata, cleandata):
     
     heartbeats_df = heartbeats_df.merge(hb_order_info[['ID' , 'Price', 'Side', 'InitialPlacementTime']], on='ID')
     
-    #Extracting features that are not order specific but are same for all LOs at a given TOD
     
-    market_time_general_features = Regressors_df[['TOD', 'BASpread', 'QImbalance', "TotalVolImbalance", "AbsQImbalance", 'Midprice', 'Microprice',
-                                                  'TimeTillMarketClose', 'BestBid', 'BestAsk']].copy()
-    #Do the vol ahead calculations for the heartbeat snapshots and after that delete them from ram 
     
+   #Look at last event if multiple events happened at same TOD, else programme will crash, ik this isnt optimal but theres not really any other way to sort them for the moment if they come in at the same tod i think
+    # 1. Find exact row indices to keep by sorting ONLY the TOD column (Lightning fast)
+    # We use reset_index() so we can grab the original row numbers after dropping duplicates
+    
+    
+    #Manually order the list since we might have some skips from deleting 84s and 88s
+    temp_tod = Regressors_df[['TOD']].copy()
+    temp_tod['position'] = np.arange(len(temp_tod))
+    
+    keep_indices = temp_tod.sort_values('TOD').drop_duplicates('TOD', keep='last')['position'].values
+    
+    # 2. Extract Universal Features ONLY for those specific rows
+    market_time_general_features = Regressors_df.iloc[keep_indices][config.UNIVERSAL_FEATURES].copy()
+    
+    # 3. Attach the heavy LOB arrays ONLY for those rows
     for i in range(20):
-        market_time_general_features[f'BP_{i}'] = df_BP[i].values
-        market_time_general_features[f'BV_{i}'] = df_BV[i].values
-        market_time_general_features[f'SP_{i}'] = df_SP[i].values
-        market_time_general_features[f'SV_{i}'] = df_SV[i].values   
-    
-    market_time_general_features = market_time_general_features.sort_values('TOD').drop_duplicates(subset = ['TOD'] , keep = 'last')    #Look at last event if multiple events happened at same TOD, else programme will crash, ik this isnt optimal but theres not really any other way to sort them for the moment if they come in at the same tod i think
-    
-    
+        market_time_general_features[f'BP_{i}'] = df_BP[i].values[keep_indices]
+        market_time_general_features[f'BV_{i}'] = df_BV[i].values[keep_indices]
+        market_time_general_features[f'SP_{i}'] = df_SP[i].values[keep_indices]
+        market_time_general_features[f'SV_{i}'] = df_SV[i].values[keep_indices]
     
     heartbeats_df = heartbeats_df.sort_values('TOD')
     
@@ -396,11 +369,7 @@ def data_regressors(rawdata, cleandata):
                                                                                 hb_order_info_with_market_general_features['Midprice'] -  hb_order_info_with_market_general_features['Price'] ,  
                                                                                 hb_order_info_with_market_general_features['Price'] -  hb_order_info_with_market_general_features['Midprice'] )
     
-    
     hb_order_info_with_market_general_features['TimeSincePlacement'] = hb_order_info_with_market_general_features['TOD'] - hb_order_info_with_market_general_features['InitialPlacementTime']
-    
-
-
     
     total_buy_vol_ahead = np.zeros(len(hb_order_info_with_market_general_features))
     total_sell_vol_ahead = np.zeros(len(hb_order_info_with_market_general_features))
@@ -411,7 +380,6 @@ def data_regressors(rawdata, cleandata):
         lvl_buy_vol = hb_order_info_with_market_general_features[f'BV_{i}'].values
         lvl_sell_price = hb_order_info_with_market_general_features[f'SP_{i}'].values
         lvl_sell_vol = hb_order_info_with_market_general_features[f'SV_{i}'].values
-        
         
         total_buy_vol_ahead += np.where( lvl_buy_price >= price_of_order, lvl_buy_vol,0)
         total_sell_vol_ahead += np.where(lvl_sell_price <= price_of_order, lvl_sell_vol, 0)
@@ -440,26 +408,6 @@ def data_regressors(rawdata, cleandata):
     hb_order_info_with_market_general_features['Is_Initial_Placement'] = 0
     hb_order_info_with_market_general_features['Is_Partial_Fill'] = 0
     hb_order_info_with_market_general_features['Is_Partial_Cancel'] = 0
-    
-    
-    
-    state_snapshot_df = Regressors_df[Regressors_df['Type'].isin([66, 67, 69, 83])].copy()
-    
-    state_snapshot_df['TotalFailureAfter'] = state_snapshot_df['TotalActiveCanceledAfter'] + state_snapshot_df['TotalExpiredAfter']
-    
-    # Feature extraction
-    state_snapshot_df['Is_Initial_Placement'] = np.where(state_snapshot_df['Type'].isin([66, 83]), 1, 0)
-    state_snapshot_df['Is_Partial_Fill'] = np.where(state_snapshot_df['Type'] == 69, 1, 0)
-    state_snapshot_df['Is_Partial_Cancel'] = np.where(state_snapshot_df['Type'] == 67, 1, 0)
-    state_snapshot_df['Current_Event_Vol'] = state_snapshot_df['Vol']
-    
-    #Remove the cols from regression matrix of the noisy first and last 30 min of trading, but this can be undone later if want to train the model on the whole of cleandata
-    safe_mask = (
-        (state_snapshot_df['TOD'] >= config.SOMARKET_NOISE ) &
-        (state_snapshot_df['TOD'] <= config.EOMARKET_NOISE)
-        )
-    
-    state_snapshot_df = state_snapshot_df[safe_mask]
 
     #Target inheritance for merging afterwards
     
@@ -467,8 +415,6 @@ def data_regressors(rawdata, cleandata):
     order_event_targets = order_event_targets.sort_values('TOD').drop_duplicates(subset = ['ID', 'TOD'], keep = 'last')
     
     hb_order_info_with_market_general_features = hb_order_info_with_market_general_features.sort_values('TOD')
-    
-    #Inheriting targets from the most actual event happening
     
     #Manual fix to allow merge below
     
@@ -478,6 +424,8 @@ def data_regressors(rawdata, cleandata):
     hb_order_info_with_market_general_features['ID'] = hb_order_info_with_market_general_features['ID'].astype('int64')
     order_event_targets['ID'] = order_event_targets['ID'].astype('int64')
     
+    #Inheriting targets from the most actual event happening
+    
     hb_with_targets = pd.merge_asof(
         hb_order_info_with_market_general_features,
         order_event_targets,
@@ -485,24 +433,27 @@ def data_regressors(rawdata, cleandata):
         by = 'ID',  #look only at this ID
         direction = 'backward'
         )
-       
     
+    hb_with_targets.fillna({'TotalExecutedAfter': 0, 'TotalFailureAfter': 0, 'TotalActiveCanceledAfter': 0, 'TotalExpiredAfter': 0}, inplace=True)
     
-    state_snapshot_df = pd.concat([state_snapshot_df, hb_with_targets], ignore_index = True)
+    #Combining Heartbeats with real events, filtering out noise
     
-    state_snapshot_df = state_snapshot_df.sort_values('TOD')    
-
+    final_state_df = pd.concat([state_snapshot_df, hb_with_targets], ignore_index = True)
+    final_state_df = final_state_df.sort_values('TOD')    
+    #Remove the cols from regression matrix of the noisy first and last 30 min of trading, but this can be undone later if want to train the model on the whole of cleandata
+    
+    final_state_df = final_state_df[(final_state_df['TOD'] >= config.SOMARKET_NOISE ) & (final_state_df['TOD'] <= config.EOMARKET_NOISE)]
 
 
     #Binary for logistic
     
     # Generate the Success Rows
-    fills_bin_df = state_snapshot_df[state_snapshot_df['TotalExecutedAfter'] > 0].copy()
+    fills_bin_df = final_state_df[final_state_df['TotalExecutedAfter'] > 0].copy()
     fills_bin_df[config.TARGET] = 1
     fills_bin_df['UnitWeight'] = fills_bin_df['TotalExecutedAfter']
 
     # Generate the Failure Rows
-    fail_bin_df = state_snapshot_df[state_snapshot_df['TotalFailureAfter'] > 0].copy()
+    fail_bin_df = final_state_df[final_state_df['TotalFailureAfter'] > 0].copy()
     fail_bin_df[config.TARGET] = 0
     fail_bin_df['UnitWeight'] = fail_bin_df['TotalFailureAfter']
 
@@ -512,16 +463,15 @@ def data_regressors(rawdata, cleandata):
     
     #Multiclass for other engines
     
-    fills_multi_df = state_snapshot_df[state_snapshot_df['TotalExecutedAfter'] > 0].copy()
+    fills_multi_df = final_state_df[final_state_df['TotalExecutedAfter'] > 0].copy()
     fills_multi_df[config.TARGET] = 1
     fills_multi_df['UnitWeight'] = fills_multi_df['TotalExecutedAfter']
     
-    
-    active_cancels_multi_df = state_snapshot_df[state_snapshot_df['TotalActiveCanceledAfter'] > 0].copy()
+    active_cancels_multi_df = final_state_df[final_state_df['TotalActiveCanceledAfter'] > 0].copy()
     active_cancels_multi_df[config.TARGET] = 0
     active_cancels_multi_df['UnitWeight'] = active_cancels_multi_df['TotalActiveCanceledAfter']
     
-    expired_multi_df = state_snapshot_df[state_snapshot_df['TotalExpiredAfter'] > 0].copy()
+    expired_multi_df = final_state_df[final_state_df['TotalExpiredAfter'] > 0].copy()
     expired_multi_df[config.TARGET] = 2
     expired_multi_df['UnitWeight'] = expired_multi_df['TotalExpiredAfter']
     
@@ -531,13 +481,12 @@ def data_regressors(rawdata, cleandata):
     
     #Cols that either dont have necessary info or to prevent data leaking i.e we cant train on totalexecuted after since that happnes in the future
 
-    cols_to_drop = ['Type','ID','Vol', 'ExecutedVol', 'ActiveCanceledVol', 'ExpiredVol' , 'Price', 'SideOfBook'
-                    ,'TotalExecutedAfter', 'TotalActiveCanceledAfter', 'TotalExpiredAfter', 'TotalFailureAfter' ]    
+    cols_to_drop = ['ActiveCanceledVol', 'BaseTime', 'ExecutedVol', 'ExpiredVol', 'ID', 'InitialPlacementTime', 'Price', 
+                    'Side', 'SideOfBook', 'Step', 'TotalActiveCanceledAfter', 'TotalExecutedAfter', 'TotalExpiredAfter', 'TotalFailureAfter', 'Type', 'Vol']
+        
    
     Binary_Regression_Matrix = Binary_Regression_Matrix.drop(columns=cols_to_drop)
     Multi_Class_Regression_Matrix = Multi_Class_Regression_Matrix.drop(columns=cols_to_drop)
-    
-    print(Binary_Regression_Matrix.iloc[20000])
     
     return {
         
@@ -567,9 +516,9 @@ if __name__ == "__main__":
         X = data_regressors(rawdata, cleandata)['Binary Matrix']
         
         # print(find_order_pattern(cleandata, 66, 67, 3, 70))
-        # print(order_life(211736361, cleandata))
+        print(order_life(211736361, cleandata))
         # print(time_in_hours(57237043))  
-        
+        #print(X[X['ID'] == 211736361])
         # print(X['UnitWeight'])
                
         # # Dummy code to show how the output variable regulation works 
@@ -618,7 +567,7 @@ if __name__ == "__main__":
         # R_df['TotalActiveCanceledAfter'] = (R_df.iloc[::-1].groupby('ID')['ActiveCanceledVol'].cumsum().iloc[::-1] - R_df['ActiveCanceledVol'])
         # R_df['TotalExpiredAfter'] = (R_df.iloc[::-1].groupby('ID')['ExpiredVol'].cumsum().iloc[::-1] - R_df['ExpiredVol'])
 
-        # print("--- STEP 2: REVERSE CUMSUM RESULTS (Looking into the future) ---")
+        # print("--- STEP 2: Vol After Now (Looking into the future) ---")
         # print(R_df[['Type', 'Vol', 'ExecutedVol', 'ActiveCanceledVol','ExpiredVol' ,'TotalExecutedAfter', 'TotalActiveCanceledAfter', 'TotalExpiredAfter']])
         # print("\n" + "="*60 + "\n")
 
@@ -661,6 +610,88 @@ if __name__ == "__main__":
 
         # print("--- STEP 4: FINAL CLEAN MACHINE LEARNING MATRIX ---")
         # print(Clean_Regression_Data)
+        
+        # =========================================================================
+        # DUMMY DEMONSTRATION: HEARTBEAT & TARGET INHERITANCE ENGINE
+        # =========================================================================
+        print("\n" + "="*80)
+        print("--- HEARTBEAT & TARGET INHERITANCE DEMONSTRATION ---")
+        print("="*80 + "\n")
+
+        # STEP 1: Simulate a single order that lives for 35 seconds
+        # t=0 (Place), t=15000 (Partial Fill), t=35000 (Cancel)
+        df_dummy = pd.DataFrame({
+            'TOD': [100000, 115000, 135000],  
+            'ID': [999, 999, 999],
+            'Type': [66, 69, 68],             
+            'Vol': [1000, 400, 600]
+        })
+        
+        print("STEP 1: RAW EVENTS OVER 35 SECONDS")
+        print(df_dummy)
+        print("\n" + "-"*60 + "\n")
+
+        # STEP 2: Calculate Actual Event Targets (Using the fast Math Trick!)
+        df_dummy['ExecutedVol'] = np.where(df_dummy['Type'].isin([69, 70]), df_dummy['Vol'], 0)
+        df_dummy['CanceledVol'] = np.where(df_dummy['Type'].isin([67, 68]), df_dummy['Vol'], 0)
+        
+        df_dummy['TotalExecutedAfter'] = df_dummy.groupby('ID')['ExecutedVol'].transform('sum') - df_dummy.groupby('ID')['ExecutedVol'].cumsum()
+        df_dummy['TotalCanceledAfter'] = df_dummy.groupby('ID')['CanceledVol'].transform('sum') - df_dummy.groupby('ID')['CanceledVol'].cumsum()
+        
+        print("STEP 2: TARGETS CALCULATED FOR REAL EVENTS")
+        print(df_dummy[['TOD', 'Type', 'Vol', 'TotalExecutedAfter', 'TotalCanceledAfter']])
+        print("\n" + "-"*60 + "\n")
+
+        # STEP 3: Generate Heartbeats (10s intervals = 10000ms)
+        interval = 10000
+        duration = 135000 - 100000
+        num_beats = duration // interval  # 35000 // 10000 = 3 heartbeats
+        
+        hb_df = pd.DataFrame({
+            'ID': [999] * num_beats,
+            'TOD': 100000 + (np.arange(1, num_beats + 1) * interval)
+        })
+        hb_df['Type'] = 26 # Custom flag for Heartbeats
+        
+        print("STEP 3: GENERATE ARTIFICIAL HEARTBEAT TIMESTAMPS (Every 10s)")
+        print(hb_df)
+        print("\n" + "-"*60 + "\n")
+
+        # STEP 4: Target Inheritance via merge_asof
+        hb_df = hb_df.sort_values('TOD')
+        df_dummy = df_dummy.sort_values('TOD')
+        
+        # Force datatypes to prevent merge crash
+        hb_df['TOD'] = hb_df['TOD'].astype('int64')
+        df_dummy['TOD'] = df_dummy['TOD'].astype('int64')
+        
+        hb_with_targets = pd.merge_asof(
+            hb_df,
+            df_dummy[['TOD', 'TotalExecutedAfter', 'TotalCanceledAfter']],
+            on='TOD',
+            direction='backward'
+        )
+        
+        print("STEP 4: HEARTBEATS LOOK BACKWARDS AND INHERIT TARGETS")
+        print(hb_with_targets)
+        print("\n" + "-"*60 + "\n")
+
+        # STEP 5: Stack and Sort to see the final combined timeline!
+        final_view = pd.concat([
+            df_dummy[['TOD', 'Type', 'Vol', 'TotalExecutedAfter', 'TotalCanceledAfter', 'ID']],
+            hb_with_targets
+        ], ignore_index=True).sort_values('TOD').fillna({'Vol': 0})
+        
+        # Convert floats to ints for cleaner printing
+        final_view['TotalExecutedAfter'] = final_view['TotalExecutedAfter'].astype(int)
+        final_view['TotalCanceledAfter'] = final_view['TotalCanceledAfter'].astype(int)
+        final_view['Vol'] = final_view['Vol'].astype(int)
+        
+        print("STEP 5: FINAL COMBINED CHRONOLOGICAL TIMELINE")
+        print("Notice how Heartbeat 1 thinks there are 400 shares left to execute,")
+        print("but Heartbeat 2 knows the execution already happened!")
+        print("-" * 65)
+        print(final_view.to_string(index=False))
 
 
 
