@@ -33,9 +33,9 @@ def train_lgbm_model(X_train, y_train, weights, params = None, for_tuning = Fals
         
         #Overall Tuning
         'n_estimators' : 150, # number of sequential trees, i.e number of boosting rounds 
-        'learning_rate' : 0.011, # scales contribution of each individual tree
-        'num_leaves' : 30, #max num of leaves, i.e terminal nodes, allowed in each tree 
-        'min_child_samples': 1914 #Minimum number of data points required to create a new split in a leaf node
+        'learning_rate' : 0.04229172250536176, # scales contribution of each individual tree
+        'num_leaves' : 27, #max num of leaves, i.e terminal nodes, allowed in each tree 
+        'min_child_samples': 1231 #Minimum number of data points required to create a new split in a leaf node
         
         #Fine Tuning only use this after completion of tuning above and maybe not even at all, look at https://www.geeksforgeeks.org/machine-learning/lightgbm-regularization-parameters/
         

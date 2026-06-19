@@ -29,18 +29,21 @@ def plot_lgbm_importances(base_model, features):
     print("\n--- Extracting LightGBM Feature Importances ---")
     
     # LightGBM stores how many times a feature was used to split the data
-    importances = base_model.feature_importances_
+    importances = base_model.booster_.feature_importance(importance_type = 'gain')
+    
+    #Double check the basic model initialized with the importance type gain 
+        
     
     importance_df = pd.DataFrame({
         'Feature': features,
-        'Importance (Splits)': importances
-    }).sort_values(by='Importance (Splits)', ascending=False)
+        'Importance (Gain)': importances
+    }).sort_values(by='Importance (Gain)', ascending=False)
     
     # Plotting the results
     plt.figure(figsize=(12, 8))
-    sns.barplot(x='Importance (Splits)', y='Feature', data=importance_df, palette='viridis')
-    plt.title('LightGBM Feature Importances (Tree Splits)')
-    plt.xlabel('Number of times feature was used to split data')
+    sns.barplot(x='Importance (Gain)', y='Feature', data=importance_df, palette='viridis')
+    plt.title('LightGBM Feature Importances (Total Information Gain)')
+    plt.xlabel('Total Gain (Reduction in LogLoss) (entropy based)')
     plt.tight_layout()
     plt.show()
     
@@ -109,7 +112,7 @@ def test_model(test_data, base_model, calibrated_model, scalar, model_name, feat
    
     dummy_fill_prob = np.average(y_true, weights = test_data['UnitWeight'])
     dummy_y_pred_prob = np.full(len(y_true), dummy_fill_prob) #just creates an array of length y true with dummy fill probs
-    print(f"Baseline Fill percentage is {(dummy_fill_prob * 100):.4f} %")
+    print(f"Baseline Fill percentage is {(dummy_fill_prob * 100):.4f} \n where the Dummy Fill prob is a measure of the total volume that got placed throughout the day that eventually resulted in a fill, rather than a simple counter of the individual order tickets%")
     
     
     #because were making a probability engine using logistic regression we must look at brier score and log loss to evaulte it
@@ -135,6 +138,8 @@ def test_model(test_data, base_model, calibrated_model, scalar, model_name, feat
     axes[0,0].plot([0,1], [0,1], color = 'grey', label = "Perfect Calibration") # axes[0] means we're talking about the left figure then [0,1] , [0,1] are x list and y list and are read vertically so the first point is 0,0 and the second point is 1,1 and a line is drawn between them i.e the perfect prediction line i think but check this
     axes[0,0].plot(engine_prob_pred, engine_true, color = 'b' ,label = f'{model_name}')
     axes[0,0].set_title('Calibration curve')
+    axes[0,0].set_xlim(0, 0.2)
+    axes[0,0].set_ylim(0, 0.2)
     axes[0,0].set_xlabel('Average Predicted Probability of Fill')
     axes[0,0].set_ylabel('Average Actual Fill Rate')
     axes[0,0].legend()
@@ -185,7 +190,7 @@ def test_model(test_data, base_model, calibrated_model, scalar, model_name, feat
     
     
         
-    if model_name == "Light Gradient Boosted Model Regression":
+    if model_name == "Light Gradient Boosted Model":
         plot_lgbm_importances(base_model, features)
         
 

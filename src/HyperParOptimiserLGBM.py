@@ -15,8 +15,8 @@ from sklearn.metrics import average_precision_score
 
 #Loading data in 
 
-train_matrix = pd.read_parquet('/Users/jesseruijer/Documents/Summer Research/data/processed/INTC_MULTI_2014_04_01.parquet')
-val_matrix = pd.read_parquet('/Users/jesseruijer/Documents/Summer Research/data/processed/INTC_MULTI_2014_04_02.parquet') #Validation data different from training and testing data ofc
+train_matrix = pd.read_parquet('/Users/jesseruijer/Documents/Summer Research/data/processed/INTC_MULTI_2014_04_01.parquet').sample(frac = 0.15, random_state = 67)
+val_matrix = pd.read_parquet('/Users/jesseruijer/Documents/Summer Research/data/processed/INTC_MULTI_2014_04_02.parquet').sample(frac = 0.15, random_state = 67) #Validation data different from training and testing data ofc
 
 X_train = train_matrix[config.LGBM_MODEL_FEATURES]
 y_train = train_matrix[config.TARGET]
@@ -38,7 +38,7 @@ def objective(trial):
     'metric' : 'multi_logloss', #Metric to measure perforance
     'n_jobs' : -1, #Using all available threads in cpu 
     'random_state' : 69 , #just set random seed for reproducability
-    'n_estimators' : 150, # number of sequential trees, i.e number of boosting rounds 
+    'n_estimators' : 100, # number of sequential trees, i.e number of boosting rounds 
     
     #Fine tune these below, note that for example learning rate and n_estimators both influence number of sequential trees, so thats why im changingin only one at a time
     
@@ -73,7 +73,7 @@ if __name__ == '__main__':
     #Running search for optimal params
     
     study = optuna.create_study(direction = 'maximize') # Since our criterion for finetuning is average precision score (AUC of Precision Recall) we aim to maximisze
-    study.optimize(objective, n_trials = 60)
+    study.optimize(objective, n_trials = 40)
     
     print(f' Best average prediction score was {study.best_value:.3f}')
     print('Optimised structural pars')

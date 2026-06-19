@@ -12,6 +12,7 @@ import scipy.io
 import pandas as pd
 import numpy as np
 import config
+import gc
 from Functions import order_life, find_order_pattern, time_in_hours
 
 #Just a display feature in console so all columns are printed in console
@@ -304,6 +305,7 @@ def data_regressors(rawdata, cleandata):
     
     valid_orders = hb_order_info[hb_order_info['NumberOfHeartBeats'] > 0]
     
+    
     #Initializing vectorized grid
     
     ids_repeated = np.repeat(valid_orders['ID'].values , valid_orders['NumberOfHeartBeats'].values)
@@ -312,12 +314,12 @@ def data_regressors(rawdata, cleandata):
     #Building base df
     
     heartbeats_df = pd.DataFrame({'ID' : ids_repeated, 'BaseTime' : starts_repeated})
-    heartbeats_df['Step'] = (heartbeats_df.groupby('ID').cumcount() + 1) * heartbeat_interval   # creates col with 1 * 10000 as first entry, 2*10000 as second entry etc
+    heartbeat_counts = valid_orders['NumberOfHeartBeats'].values
+    
+    heartbeats_df['Step'] = np.concatenate([np.arange(1, c + 1) for c in heartbeat_counts]) * config.HEARTBEAT_INTERVAL   # creates col with 1 * 10000 as first entry, 2*10000 as second entry etc
     heartbeats_df['TOD'] = heartbeats_df['BaseTime'] + heartbeats_df['Step']
     
     heartbeats_df = heartbeats_df.merge(hb_order_info[['ID' , 'Price', 'Side', 'InitialPlacementTime']], on='ID')
-    
-    
     
    #Look at last event if multiple events happened at same TOD, else programme will crash, ik this isnt optimal but theres not really any other way to sort them for the moment if they come in at the same tod i think
     # 1. Find exact row indices to keep by sorting ONLY the TOD column (Lightning fast)
@@ -332,6 +334,10 @@ def data_regressors(rawdata, cleandata):
     
     # 2. Extract Universal Features ONLY for those specific rows
     market_time_general_features = Regressors_df.iloc[keep_indices][config.UNIVERSAL_FEATURES].copy()
+    
+    del Regressors_df
+    del temp_tod
+    gc.collect()
     
     # 3. Attach the heavy LOB arrays ONLY for those rows
     for i in range(20):
@@ -439,6 +445,11 @@ def data_regressors(rawdata, cleandata):
     #Combining Heartbeats with real events, filtering out noise
     
     final_state_df = pd.concat([state_snapshot_df, hb_with_targets], ignore_index = True)
+    
+    del state_snapshot_df
+    del hb_with_targets
+    gc.collect()
+    
     final_state_df = final_state_df.sort_values('TOD')    
     #Remove the cols from regression matrix of the noisy first and last 30 min of trading, but this can be undone later if want to train the model on the whole of cleandata
     
@@ -478,6 +489,14 @@ def data_regressors(rawdata, cleandata):
     Multi_Class_Regression_Matrix = pd.concat([fills_multi_df, active_cancels_multi_df, expired_multi_df], ignore_index=True)
     Multi_Class_Regression_Matrix = Multi_Class_Regression_Matrix.sort_values(by = 'TOD')
 
+    
+    #Now count how many heartbeats including events there were, and divide the weights by that so all in all the total weight is what it should be
+    
+    Binary_Regression_Matrix['RowCount'] = Binary_Regression_Matrix.groupby('ID')['ID'].transform('count')
+    Multi_Class_Regression_Matrix['RowCount'] = Multi_Class_Regression_Matrix.groupby('ID')['ID'].transform('count')
+    
+    Binary_Regression_Matrix['UnitWeight'] = Binary_Regression_Matrix['UnitWeight'] / Binary_Regression_Matrix['RowCount']
+    Multi_Class_Regression_Matrix['UnitWeight'] = Multi_Class_Regression_Matrix['UnitWeight'] / Multi_Class_Regression_Matrix['RowCount']
     
     #Cols that either dont have necessary info or to prevent data leaking i.e we cant train on totalexecuted after since that happnes in the future
 
@@ -611,87 +630,87 @@ if __name__ == "__main__":
         # print("--- STEP 4: FINAL CLEAN MACHINE LEARNING MATRIX ---")
         # print(Clean_Regression_Data)
         
-        # =========================================================================
-        # DUMMY DEMONSTRATION: HEARTBEAT & TARGET INHERITANCE ENGINE
-        # =========================================================================
-        print("\n" + "="*80)
-        print("--- HEARTBEAT & TARGET INHERITANCE DEMONSTRATION ---")
-        print("="*80 + "\n")
+        # # =========================================================================
+        # # DUMMY DEMONSTRATION: HEARTBEAT & TARGET INHERITANCE ENGINE
+        # # =========================================================================
+        # print("\n" + "="*80)
+        # print("--- HEARTBEAT & TARGET INHERITANCE DEMONSTRATION ---")
+        # print("="*80 + "\n")
 
-        # STEP 1: Simulate a single order that lives for 35 seconds
-        # t=0 (Place), t=15000 (Partial Fill), t=35000 (Cancel)
-        df_dummy = pd.DataFrame({
-            'TOD': [100000, 115000, 135000],  
-            'ID': [999, 999, 999],
-            'Type': [66, 69, 68],             
-            'Vol': [1000, 400, 600]
-        })
+        # # STEP 1: Simulate a single order that lives for 35 seconds
+        # # t=0 (Place), t=15000 (Partial Fill), t=35000 (Cancel)
+        # df_dummy = pd.DataFrame({
+        #     'TOD': [100000, 115000, 135000],  
+        #     'ID': [999, 999, 999],
+        #     'Type': [66, 69, 68],             
+        #     'Vol': [1000, 400, 600]
+        # })
         
-        print("STEP 1: RAW EVENTS OVER 35 SECONDS")
-        print(df_dummy)
-        print("\n" + "-"*60 + "\n")
+        # print("STEP 1: RAW EVENTS OVER 35 SECONDS")
+        # print(df_dummy)
+        # print("\n" + "-"*60 + "\n")
 
-        # STEP 2: Calculate Actual Event Targets (Using the fast Math Trick!)
-        df_dummy['ExecutedVol'] = np.where(df_dummy['Type'].isin([69, 70]), df_dummy['Vol'], 0)
-        df_dummy['CanceledVol'] = np.where(df_dummy['Type'].isin([67, 68]), df_dummy['Vol'], 0)
+        # # STEP 2: Calculate Actual Event Targets (Using the fast Math Trick!)
+        # df_dummy['ExecutedVol'] = np.where(df_dummy['Type'].isin([69, 70]), df_dummy['Vol'], 0)
+        # df_dummy['CanceledVol'] = np.where(df_dummy['Type'].isin([67, 68]), df_dummy['Vol'], 0)
         
-        df_dummy['TotalExecutedAfter'] = df_dummy.groupby('ID')['ExecutedVol'].transform('sum') - df_dummy.groupby('ID')['ExecutedVol'].cumsum()
-        df_dummy['TotalCanceledAfter'] = df_dummy.groupby('ID')['CanceledVol'].transform('sum') - df_dummy.groupby('ID')['CanceledVol'].cumsum()
+        # df_dummy['TotalExecutedAfter'] = df_dummy.groupby('ID')['ExecutedVol'].transform('sum') - df_dummy.groupby('ID')['ExecutedVol'].cumsum()
+        # df_dummy['TotalCanceledAfter'] = df_dummy.groupby('ID')['CanceledVol'].transform('sum') - df_dummy.groupby('ID')['CanceledVol'].cumsum()
         
-        print("STEP 2: TARGETS CALCULATED FOR REAL EVENTS")
-        print(df_dummy[['TOD', 'Type', 'Vol', 'TotalExecutedAfter', 'TotalCanceledAfter']])
-        print("\n" + "-"*60 + "\n")
+        # print("STEP 2: TARGETS CALCULATED FOR REAL EVENTS")
+        # print(df_dummy[['TOD', 'Type', 'Vol', 'TotalExecutedAfter', 'TotalCanceledAfter']])
+        # print("\n" + "-"*60 + "\n")
 
-        # STEP 3: Generate Heartbeats (10s intervals = 10000ms)
-        interval = 10000
-        duration = 135000 - 100000
-        num_beats = duration // interval  # 35000 // 10000 = 3 heartbeats
+        # # STEP 3: Generate Heartbeats (10s intervals = 10000ms)
+        # interval = 10000
+        # duration = 135000 - 100000
+        # num_beats = duration // interval  # 35000 // 10000 = 3 heartbeats
         
-        hb_df = pd.DataFrame({
-            'ID': [999] * num_beats,
-            'TOD': 100000 + (np.arange(1, num_beats + 1) * interval)
-        })
-        hb_df['Type'] = 26 # Custom flag for Heartbeats
+        # hb_df = pd.DataFrame({
+        #     'ID': [999] * num_beats,
+        #     'TOD': 100000 + (np.arange(1, num_beats + 1) * interval)
+        # })
+        # hb_df['Type'] = 26 # Custom flag for Heartbeats
         
-        print("STEP 3: GENERATE ARTIFICIAL HEARTBEAT TIMESTAMPS (Every 10s)")
-        print(hb_df)
-        print("\n" + "-"*60 + "\n")
+        # print("STEP 3: GENERATE ARTIFICIAL HEARTBEAT TIMESTAMPS (Every 10s)")
+        # print(hb_df)
+        # print("\n" + "-"*60 + "\n")
 
-        # STEP 4: Target Inheritance via merge_asof
-        hb_df = hb_df.sort_values('TOD')
-        df_dummy = df_dummy.sort_values('TOD')
+        # # STEP 4: Target Inheritance via merge_asof
+        # hb_df = hb_df.sort_values('TOD')
+        # df_dummy = df_dummy.sort_values('TOD')
         
-        # Force datatypes to prevent merge crash
-        hb_df['TOD'] = hb_df['TOD'].astype('int64')
-        df_dummy['TOD'] = df_dummy['TOD'].astype('int64')
+        # # Force datatypes to prevent merge crash
+        # hb_df['TOD'] = hb_df['TOD'].astype('int64')
+        # df_dummy['TOD'] = df_dummy['TOD'].astype('int64')
         
-        hb_with_targets = pd.merge_asof(
-            hb_df,
-            df_dummy[['TOD', 'TotalExecutedAfter', 'TotalCanceledAfter']],
-            on='TOD',
-            direction='backward'
-        )
+        # hb_with_targets = pd.merge_asof(
+        #     hb_df,
+        #     df_dummy[['TOD', 'TotalExecutedAfter', 'TotalCanceledAfter']],
+        #     on='TOD',
+        #     direction='backward'
+        # )
         
-        print("STEP 4: HEARTBEATS LOOK BACKWARDS AND INHERIT TARGETS")
-        print(hb_with_targets)
-        print("\n" + "-"*60 + "\n")
+        # print("STEP 4: HEARTBEATS LOOK BACKWARDS AND INHERIT TARGETS")
+        # print(hb_with_targets)
+        # print("\n" + "-"*60 + "\n")
 
-        # STEP 5: Stack and Sort to see the final combined timeline!
-        final_view = pd.concat([
-            df_dummy[['TOD', 'Type', 'Vol', 'TotalExecutedAfter', 'TotalCanceledAfter', 'ID']],
-            hb_with_targets
-        ], ignore_index=True).sort_values('TOD').fillna({'Vol': 0})
+        # # STEP 5: Stack and Sort to see the final combined timeline!
+        # final_view = pd.concat([
+        #     df_dummy[['TOD', 'Type', 'Vol', 'TotalExecutedAfter', 'TotalCanceledAfter', 'ID']],
+        #     hb_with_targets
+        # ], ignore_index=True).sort_values('TOD').fillna({'Vol': 0})
         
-        # Convert floats to ints for cleaner printing
-        final_view['TotalExecutedAfter'] = final_view['TotalExecutedAfter'].astype(int)
-        final_view['TotalCanceledAfter'] = final_view['TotalCanceledAfter'].astype(int)
-        final_view['Vol'] = final_view['Vol'].astype(int)
+        # # Convert floats to ints for cleaner printing
+        # final_view['TotalExecutedAfter'] = final_view['TotalExecutedAfter'].astype(int)
+        # final_view['TotalCanceledAfter'] = final_view['TotalCanceledAfter'].astype(int)
+        # final_view['Vol'] = final_view['Vol'].astype(int)
         
-        print("STEP 5: FINAL COMBINED CHRONOLOGICAL TIMELINE")
-        print("Notice how Heartbeat 1 thinks there are 400 shares left to execute,")
-        print("but Heartbeat 2 knows the execution already happened!")
-        print("-" * 65)
-        print(final_view.to_string(index=False))
+        # print("STEP 5: FINAL COMBINED CHRONOLOGICAL TIMELINE")
+        # print("Notice how Heartbeat 1 thinks there are 400 shares left to execute,")
+        # print("but Heartbeat 2 knows the execution already happened!")
+        # print("-" * 65)
+        # print(final_view.to_string(index=False))
 
 
 

@@ -6,14 +6,11 @@ Created on Wed May 20 19:41:13 2026
 @author: jesseruijer
 """
 
-#Make a framework where it updates every 10 secs for the neural net for sure, for lightgbm and logistic maybe not
+#Use SHAP on logistic and lgbm to look at all features and determine which are important
+#Mabye make a partial dependence plot where the calibration curve updates as time passes
 #There are a lot more lob feature statistics i could add later make sure to add them to feature lists and corr plots
-#Work on data cleaning from yesterday and soln to the fill no fill variable
 #The label doesnt matter for 88 since theres no bid and ask side there
-#Is there crossing in the graphs before the market opens maybe my graphs overlap
 #Mabye the vol of 88 at eod is the amount of vol and the price could maybe be midprice or some other price
-#Make something to access the feature matrix at a time of day and that it doesnt display empty df if the ms isnt right it should then round down to the nearest time
-#maybe i also need to scale down the prices by dividing them by 10000 for the logistic regression but not sure 
 
 #Importing libraries,classes, functions from other scripts
 import pandas as pd
@@ -37,6 +34,11 @@ def prep_data_daily(file_path, file_path_mo):
     rawdata = import_data(file_path, file_path_mo)
     cleandata = clean_data(rawdata)
     matrices = data_regressors(rawdata, cleandata)
+    
+    del rawdata
+    del cleandata
+    gc.collect()
+    
     return {
         'Binary Matrix': matrices['Binary Matrix'], 
         'Multi Matrix': matrices['Multi Matrix']
@@ -125,7 +127,7 @@ def run_project():
             base_model = base_lgbm,
             calibrated_model = calibrated_lgbm,
             scalar = None,
-            model_name = 'Light Gradient Boosted Model Regression',
+            model_name = 'Light Gradient Boosted Model',
             features = config.LGBM_MODEL_FEATURES,
             is_multi = True
         )
