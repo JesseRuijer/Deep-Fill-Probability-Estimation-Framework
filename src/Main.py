@@ -86,55 +86,66 @@ def run_project():
         print("Model training aborted. No training files selected.")
         return
     
+    # if paths['train_bin'] and paths['test_bin']:
+    #     print('\n[DETECTED BINARY DATA] Executing Logistic Regression')
+        
+
+        
+    #     logistic_regX = train_matrix_bin[config.LOGISTIC_MODEL_FEATURES]
+    #     logistic_regY = train_matrix_bin[config.TARGET]
+        
+    #     fill_weights = train_matrix_bin['UnitWeight']
+        
+    #     base_lr, calibrated_lr, scalar_lr = train_logistic_model(logistic_regX, logistic_regY, fill_weights)
+        
+    #     logistic_test = test_model(
+    #         test_data = test_matrix_bin, 
+    #         base_model = base_lr,
+    #         calibrated_model = calibrated_lr,
+    #         scalar = scalar_lr,
+    #         model_name = 'Logistic Regression',
+    #         features = config.LOGISTIC_MODEL_FEATURES,
+    #         is_multi = False
+    #     )
+        
     if paths['train_bin'] and paths['test_bin']:
-        print('\n[DETECTED BINARY DATA] Executing Logistic Regression')
+        print('\n[DETECTED Bin DATA] Executing LightGBM')
         
         train_matrix_bin = pd.read_parquet(paths['train_bin'])
         test_matrix_bin = pd.read_parquet(paths['test_bin'])
         
-        logistic_regX = train_matrix_bin[config.LOGISTIC_MODEL_FEATURES]
-        logistic_regY = train_matrix_bin[config.TARGET]
+        # train_matrix_multi = pd.read_parquet(paths['train_multi'])
+        # test_matrix_multi = pd.read_parquet(paths['test_multi'])
+        
+        lgbm_X = train_matrix_bin[config.LGBM_MODEL_FEATURES]
+        lgbm_Y = train_matrix_bin[config.TARGET]
         
         fill_weights = train_matrix_bin['UnitWeight']
-        
-        base_lr, calibrated_lr, scalar_lr = train_logistic_model(logistic_regX, logistic_regY, fill_weights)
-        
-        logistic_test = test_model(
-            test_data = test_matrix_bin, 
-            base_model = base_lr,
-            calibrated_model = calibrated_lr,
-            scalar = scalar_lr,
-            model_name = 'Logistic Regression',
-            features = config.LOGISTIC_MODEL_FEATURES,
-            is_multi = False
-        )
-        
-    if paths['train_multi'] and paths['test_multi']:
-        print('\n[DETECTED MULTI DATA] Executing LightGBM')
-        
-        train_matrix_multi = pd.read_parquet(paths['train_multi'])
-        test_matrix_multi = pd.read_parquet(paths['test_multi'])
-        
-        lgbm_X = train_matrix_multi[config.LGBM_MODEL_FEATURES]
-        lgbm_Y = train_matrix_multi[config.TARGET]
-        
-        fill_weights = train_matrix_multi['UnitWeight']
         
         base_lgbm, calibrated_lgbm = train_lgbm_model(lgbm_X, lgbm_Y, fill_weights)
         
         lgbm_test = test_model(
-            test_data = test_matrix_multi, 
+            test_data = test_matrix_bin, 
             base_model = base_lgbm,
             calibrated_model = calibrated_lgbm,
             scalar = None,
             model_name = 'Light Gradient Boosted Model',
             features = config.LGBM_MODEL_FEATURES,
-            is_multi = True
+            is_multi = False
         )
 
 
     
 if __name__ == "__main__":
+    
+    #Manually nukes matrices from previous runs we dont need in RAM anymore
+    if 'rawdata' in locals(): del rawdata
+    if 'cleandata' in locals(): del cleandata
+    if 'Binary_Regression_Matrix' in locals(): del Binary_Regression_Matrix
+    if 'Multi_Class_Regression_Matrix' in locals(): del Multi_Class_Regression_Matrix
+    if 'X' in locals(): del X
+    
+    gc.collect()
     
     #When theres new data uncomment this below and run once to store the data, if running same data leave this commented
     

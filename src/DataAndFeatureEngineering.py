@@ -59,6 +59,18 @@ def import_data(file_path, file_path_MO):
         7: "BorS",
         8: "MME"}, inplace = True)
     
+    # The LOB Arrays are the heaviest things in RAM. Force them to 32-bit floats.
+    df_BV = df_BV.astype('float32')
+    df_SV = df_SV.astype('float32')
+    df_BP = df_BP.astype('float32')
+    df_SP = df_SP.astype('float32')
+    
+    # Force Event and MO volumes/prices to 32-bit where applicable
+    df_Event['Vol'] = df_Event['Vol'].astype('float32')
+    df_Event['Price'] = df_Event['Price'].astype('float32')
+    
+    df_MO['Vol'] = df_MO['Vol'].astype('float32')
+    
     #the dictionary
     data_set = {
         "Event" : df_Event,
@@ -152,6 +164,15 @@ def data_regressors(rawdata, cleandata):
     df_BP = rawdata["BuyPrice"].shift(1).loc[df_E.index]
     df_SP = rawdata["SellPrice"].shift(1).loc[df_E.index]
     
+    #Some small calculations for which I still needed rawdata and cleandata
+    canceled_vol_day = rawdata['Event'][rawdata['Event']['Type'].isin([67,68])]['Vol'].sum()
+    added_vol_day = rawdata['Event'][rawdata['Event']['Type'].isin([66,83])]['Vol'].sum()
+    
+    #Removing all dictionary references after not needing them anymore
+    rawdata.clear()
+    cleandata.clear()
+    gc.collect()
+    
     mask_add = df_E['Type'].isin([66,83])
     mask_cancel = df_E['Type'].isin([67,68])
     mask_execute = df_E['Type'].isin([69,70])
@@ -191,8 +212,6 @@ def data_regressors(rawdata, cleandata):
     Regressors_df["LookBackHiddenVol"] = cum_vol_pad[current_indices] - cum_vol_pad[start_indices]
     
     #Cancelation Ratio
-    canceled_vol_day = rawdata['Event'][rawdata['Event']['Type'].isin([67,68])]['Vol'].sum()
-    added_vol_day = rawdata['Event'][rawdata['Event']['Type'].isin([66,83])]['Vol'].sum()
     Regressors_df['CancelationRatio'] = canceled_vol_day / added_vol_day
     
     #Building a regime classifier which uses categorical variables to tell in what regime of day we are in
@@ -211,19 +230,33 @@ def data_regressors(rawdata, cleandata):
         end_indices = np.searchsorted(tod_source, df_E['TOD'].values - lookback, side = 'right') 
         return (cum_vol[end_indices] - cum_vol[start_indices]), (end_indices - start_indices)
     
+    mo_buy = df_MO['BorS'] == -1
+    mo_sell = df_MO['BorS'] == 1
+    
     #Trailing Features
-    Regressors_df['MOTrailingVol'] = trailing_calc(df_MO['TOD'].values, df_MO['Vol'].values, config.LOOKBACK_WINDOW)[0]
-    Regressors_df['MOTrailingOrders'] = trailing_calc(df_MO['TOD'].values, df_MO['Vol'].values, config.LOOKBACK_WINDOW)[1]
     
+    #Qimbalance ratio sortof but then for trailing MOs
+    Regressors_df['MOTrailingVolBuy'] = trailing_calc(df_MO.loc[mo_buy , 'TOD'].values, df_MO.loc[mo_buy , 'Vol'].values, config.LOOKBACK_WINDOW)[0]
+    Regressors_df['MOTrailingVolSell'] = trailing_calc(df_MO.loc[mo_sell , 'TOD'].values, df_MO.loc[mo_sell , 'Vol'].values, config.LOOKBACK_WINDOW)[0]
+    Regressors_df['MOTrailingVolRatio'] = ((Regressors_df['MOTrailingVolSell'] - Regressors_df['MOTrailingVolBuy']) / (Regressors_df['MOTrailingVolBuy'] + Regressors_df['MOTrailingVolSell'])).fillna(0)
+    
+   #Qimbalance ratio sortof but then for trailing LOs for Placed and canceled
     Regressors_df['LOTrailingVolPlaced'] = trailing_calc(df_E.loc[mask_add, 'TOD'].values,  df_E.loc[mask_add, 'Vol'].values, config.LOOKBACK_WINDOW)[0]
-    Regressors_df['LOTrailingCountOrdersPlaced'] = trailing_calc(df_E.loc[mask_add, 'TOD'].values,  df_E.loc[mask_add, 'Vol'].values, config.LOOKBACK_WINDOW)[1]
-
     Regressors_df['LOTrailingVolCanceled'] = trailing_calc(df_E.loc[mask_cancel, 'TOD'].values,  df_E.loc[mask_cancel, 'Vol'].values, config.LOOKBACK_WINDOW)[0]
-    Regressors_df['LOTrailingCountOrdersCanceled'] = trailing_calc(df_E.loc[mask_cancel, 'TOD'].values,  df_E.loc[mask_cancel, 'Vol'].values, config.LOOKBACK_WINDOW)[1]
-    
     Regressors_df['LOTrailingVolExecuted'] =  trailing_calc(df_E.loc[mask_execute, 'TOD'].values,  df_E.loc[mask_execute, 'Vol'].values, config.LOOKBACK_WINDOW)[0]
-    Regressors_df['LOTrailingCountOrdersExecuted'] = trailing_calc(df_E.loc[mask_execute, 'TOD'].values,  df_E.loc[mask_execute, 'Vol'].values, config.LOOKBACK_WINDOW)[1]
     
+    Regressors_df['LOTrailingPlaceCancelRatio'] = ((Regressors_df['LOTrailingVolPlaced'] - Regressors_df['LOTrailingVolCanceled']) / (Regressors_df['LOTrailingVolPlaced'] + Regressors_df['LOTrailingVolCanceled'])).fillna(0)
+    Regressors_df['LOTrailingPlaceExecuteRatio'] = ((Regressors_df['LOTrailingVolPlaced'] - Regressors_df['LOTrailingVolExecuted']) / (Regressors_df['LOTrailingVolPlaced'] + Regressors_df['LOTrailingVolExecuted'])).fillna(0)
+
+    
+    #Amount of orders
+    Regressors_df['MOTrailingOrders'] = trailing_calc(df_MO['TOD'].values, df_MO['Vol'].values, config.LOOKBACK_WINDOW)[1]
+    Regressors_df['LOTrailingCountOrdersPlaced'] = trailing_calc(df_E.loc[mask_add, 'TOD'].values,  df_E.loc[mask_add, 'Vol'].values, config.LOOKBACK_WINDOW)[1]
+    Regressors_df['LOTrailingCountOrdersCanceled'] = trailing_calc(df_E.loc[mask_cancel, 'TOD'].values,  df_E.loc[mask_cancel, 'Vol'].values, config.LOOKBACK_WINDOW)[1]
+    Regressors_df['LOTrailingCountOrdersExecuted'] = trailing_calc(df_E.loc[mask_execute, 'TOD'].values,  df_E.loc[mask_execute, 'Vol'].values, config.LOOKBACK_WINDOW)[1]
+ 
+    del df_MO
+    gc.collect()
     
     ########## Dynamic Features #####################
     
@@ -266,6 +299,10 @@ def data_regressors(rawdata, cleandata):
     Regressors_df['Type'] = df_E['Type']
     Regressors_df['ID'] = df_E['ID']
     Regressors_df['Vol'] = df_E['Vol']
+    
+    del df_E
+    gc.collect()
+    
     Regressors_df['InitialPlacementTime'] = Regressors_df.groupby('ID')['TOD'].transform('min')  #Time in ms since order was placed
     Regressors_df['TimeSincePlacement'] = Regressors_df['TOD'] - Regressors_df['InitialPlacementTime']
     
@@ -347,6 +384,9 @@ def data_regressors(rawdata, cleandata):
         market_time_general_features[f'SV_{i}'] = df_SV[i].values[keep_indices]
     
     heartbeats_df = heartbeats_df.sort_values('TOD')
+    
+    del df_BP, df_BV, df_SP, df_SV
+    gc.collect()
     
     #Manual fix to allow merge below
     
@@ -451,6 +491,29 @@ def data_regressors(rawdata, cleandata):
     gc.collect()
     
     final_state_df = final_state_df.sort_values('TOD')    
+    
+    #Some derivative related features, looking back in time, doing those here is the perfect place as we now have a chronological timeline of real events and hearbeats so we can easily look back
+    
+    df_past = final_state_df[['ID', 'TOD', 'LogVolAhead', 'DistanceToTouch']].copy()
+    
+    df_past['TOD_+_1000'] = df_past['TOD'] + config.FEATURE_DELTA
+    
+    final_state_df = pd.merge_asof(
+        final_state_df,
+        df_past.sort_values('TOD_+_1000'),
+        by = 'ID',
+        left_on = 'TOD',
+        right_on = 'TOD_+_1000',
+        direction = 'backward',
+        suffixes = ['', '_past']    #Suffixes given to col names in left and right df that are merged
+        )
+    
+    final_state_df['DeltaLogVolAhead'] = final_state_df['LogVolAhead'] - final_state_df['LogVolAhead_past']
+    
+    final_state_df['DeltaDistanceToTouch'] = final_state_df['DistanceToTouch'] - final_state_df['DistanceToTouch_past']
+    
+    final_state_df.fillna({'DeltaLogVolAhead': 0, 'DeltaDistanceToTouch': 0}, inplace=True)
+    
     #Remove the cols from regression matrix of the noisy first and last 30 min of trading, but this can be undone later if want to train the model on the whole of cleandata
     
     final_state_df = final_state_df[(final_state_df['TOD'] >= config.SOMARKET_NOISE ) & (final_state_df['TOD'] <= config.EOMARKET_NOISE)]
@@ -497,15 +560,42 @@ def data_regressors(rawdata, cleandata):
     
     Binary_Regression_Matrix['UnitWeight'] = Binary_Regression_Matrix['UnitWeight'] / Binary_Regression_Matrix['RowCount']
     Multi_Class_Regression_Matrix['UnitWeight'] = Multi_Class_Regression_Matrix['UnitWeight'] / Multi_Class_Regression_Matrix['RowCount']
+   
+    #Compressing matrices to save RAM
+    matrices_to_compress = [Binary_Regression_Matrix, Multi_Class_Regression_Matrix]
+    for matrix in matrices_to_compress:
+        for col in matrix.columns:
+            col_type = matrix[col].dtype
+            # Compress 64-bit floats to 32-bit
+            if col_type == 'float64':
+                matrix[col] = matrix[col].astype('float32')
+                
+            # Compress 64-bit integers to 32-bit
+            elif col_type == 'int64':
+                matrix[col] = matrix[col].astype('int32') 
+   
+   
     
     #Cols that either dont have necessary info or to prevent data leaking i.e we cant train on totalexecuted after since that happnes in the future
 
-    cols_to_drop = ['ActiveCanceledVol', 'BaseTime', 'ExecutedVol', 'ExpiredVol', 'ID', 'InitialPlacementTime', 'Price', 
-                    'Side', 'SideOfBook', 'Step', 'TotalActiveCanceledAfter', 'TotalExecutedAfter', 'TotalExpiredAfter', 'TotalFailureAfter', 'Type', 'Vol']
+    cols_to_drop = ['TOD','ActiveCanceledVol', 'BaseTime', 'ExecutedVol', 'ExpiredVol', 'ID', 'InitialPlacementTime', 'Price', 
+                    'Side', 'SideOfBook', 'Step', 'TotalActiveCanceledAfter', 'TotalExecutedAfter', 'TotalExpiredAfter', 'TotalFailureAfter', 'Type', 'Vol', 'MOTrailingVolBuy',
+                    'MOTrailingVolSell', 'LOTrailingVolPlaced', 'LOTrailingVolCanceled', 'LOTrailingVolExecuted', 'TOD_+_1000', 'TOD_past', 'LogVolAhead_past', 'DistanceToTouch_past', 'RowCount']
         
    
     Binary_Regression_Matrix = Binary_Regression_Matrix.drop(columns=cols_to_drop)
     Multi_Class_Regression_Matrix = Multi_Class_Regression_Matrix.drop(columns=cols_to_drop)
+    
+    # #Check for NaNs
+    # matrix = Binary_Regression_Matrix # Or Multi_Class_Regression_Matrix
+    # nan_cols = matrix.columns[matrix.isna().any()].tolist()
+    
+    # if nan_cols:
+    #     print("!!! DANGER: NaNs detected in columns:", nan_cols)
+    #     # Force a fill to prevent the crash, but this tells you which ones to fix
+    #     matrix.fillna(0, inplace=True)
+    # else:
+    #     print("Success: No NaNs detected.")
     
     return {
         

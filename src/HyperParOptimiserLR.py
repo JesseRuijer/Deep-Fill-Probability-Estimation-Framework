@@ -36,21 +36,21 @@ y_val = val_matrix[config.TARGET]
 
 def objective(trial):
     
-    penalty = trial.suggest_categorical('penalty', ['l1', 'l2'])    #l1 is lasso penalty, adds absolute value of weights to the errors, focusses on deleting weak features,  i.e assigning them weight zero
+    penalty = trial.suggest_categorical('penalty', ['l2'])    #l1 too slow for large data and i sortof know which features i want to use but maybe if i have time i can run it again with including l1. l1 is lasso penalty, adds absolute value of weights to the errors, focusses on deleting weak features,  i.e assigning them weight zero
                                                                     #l2 is ridge, adds square of weights to error calculation, focusses on keeping all features weights relatively small and balanced, since i expect vol to have a massive impact, for our situation l1 might be better
     if penalty == 'l1':
         solver = 'saga'
         
     else:
-        solver = trial.suggest_categorical('solver', ['lbfgs', 'saga', 'newton-cholesky'])
+        solver = trial.suggest_categorical('solver', ['lbfgs', 'newton-cholesky'])  #removed saga here since thats just too slow for large datasets
     
     #Define search space
     
     params = {
         #Basic 
-        'max_iter': 2000, 
+        'max_iter': 500, 
         'random_state': 69,
-        'n_jobs': -1 if solver != 'saga' else None, # saga doesn't fully support n_jobs in sklearn
+        'n_jobs': 1,
         
         #Optuna tuning pars
         'penalty': penalty,
@@ -62,11 +62,12 @@ def objective(trial):
     
     #Train
     
-    model, _, _ = train_logistic_model(X_train, y_train, weights_train, params = params, for_tuning = True)
+    model, _, scalar = train_logistic_model(X_train, y_train, weights_train, params = params, for_tuning = True)
     
     #Predict on validation data
+    X_val_scaled = scalar.transform(X_val)
     
-    preds = model.predict_proba(X_val)[:,1]
+    preds = model.predict_proba(X_val_scaled)[:,1]
     
     #Performance metrics
     #I believe for hyperpar tuning the precision recall is best for our situation i.e placing a lot of emphasis on TPs, true positives

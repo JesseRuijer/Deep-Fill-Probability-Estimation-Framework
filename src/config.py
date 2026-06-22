@@ -14,6 +14,8 @@ HEARTBEAT_INTERVAL = 10000
 
 LOOKBACK_WINDOW = 100
 
+FEATURE_DELTA = 1000
+
 MARKET_OPEN_TIME = 34200000 # 9:30 AM
 MARKET_CLOSE_TIME = 57600000 # 4 PM
 MARKET_CLOSE_TIME_INCLUDING_CANC_SPAM = 57660000 # 4:01 PM
@@ -27,8 +29,13 @@ EOMARKET_NOISE =  55800000 # 3:30 PM
 
 LOGISTIC_MODEL_FEATURES = [
     'AbsQImbalance', 
+    'DeltaLogVolAhead',
+    'DeltaDistanceToTouch',
     'DistanceToTouch', 
     'LogVolAhead', 
+    'LOTrailingPlaceCancelRatio',
+    'LOTrailingPlaceExecuteRatio',
+    'MOTrailingVolRatio',
     'TimeSincePlacement', 
     'TimeTillMarketClose', 
     'WeightedVolImbalance'
@@ -36,9 +43,14 @@ LOGISTIC_MODEL_FEATURES = [
 
 LGBM_MODEL_FEATURES = [
     'AbsQImbalance', 
+    'DeltaLogVolAhead',
+    'DeltaDistanceToTouch',
     'DistanceToTouch', 
     'LogVolAhead', 
+    'LOTrailingPlaceCancelRatio',
+    'LOTrailingPlaceExecuteRatio',
     'Microprice', 
+    'MOTrailingVolRatio',
     'TimeSincePlacement', 
     'TotalVolImbalance', 
     'WeightedVolImbalance'
@@ -57,13 +69,12 @@ UNIVERSAL_FEATURES = [          # Features that apply to any LO, so for ex midpr
     'LOTrailingCountOrdersCanceled', 
     'LOTrailingCountOrdersExecuted', 
     'LOTrailingCountOrdersPlaced', 
-    'LOTrailingVolCanceled', 
-    'LOTrailingVolExecuted', 
-    'LOTrailingVolPlaced', 
+    'LOTrailingPlaceCancelRatio',
+    'LOTrailingPlaceExecuteRatio',
     'Microprice', 
     'Midprice', 
     'MOTrailingOrders', 
-    'MOTrailingVol', 
+    'MOTrailingVolRatio',
     'QImbalance', 
     'Regime', 
     'TimeTillMarketClose', 
@@ -73,6 +84,8 @@ UNIVERSAL_FEATURES = [          # Features that apply to any LO, so for ex midpr
 ]
 
 DYNAMIC_FEATURES = [    #Features that change (in general) depending on the LO you look at
+    'DeltaLogVolAhead',
+    'DeltaDistanceToTouch',
     'DistanceToMidprice', 
     'DistanceToTouch', 
     'InitialPlacementTime',
@@ -89,6 +102,8 @@ ALL_FEATURES = [
     'BestBid', 
     'BidSize', 
     'CancelationRatio', 
+    'DeltaLogVolAhead',
+    'DeltaDistanceToTouch',
     'DistanceToMidprice', 
     'DistanceToTouch', 
     'InitialPlacementTime', 
@@ -98,15 +113,13 @@ ALL_FEATURES = [
     'LOTrailingCountOrdersCanceled', 
     'LOTrailingCountOrdersExecuted', 
     'LOTrailingCountOrdersPlaced', 
-    'LOTrailingVolCanceled', 
-    'LOTrailingVolExecuted', 
-    'LOTrailingVolPlaced', 
+    'LOTrailingPlaceCancelRatio',
+    'LOTrailingPlaceExecuteRatio',
     'Microprice', 
     'Midprice', 
     'MOTrailingOrders', 
-    'MOTrailingVol', 
+    'MOTrailingVolRatio',
     'QImbalance', 
-    'Regime', 
     'TimeSincePlacement', 
     'TimeTillMarketClose', 
     'TOD', 

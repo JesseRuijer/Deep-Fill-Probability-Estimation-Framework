@@ -24,10 +24,10 @@ def train_lgbm_model(X_train, y_train, weights, params = None, for_tuning = Fals
         params = {
         
         #Structural
-        'objective' : 'multiclass', # Our Output var is multiclass for lgbm
-        'num_class' : 3, # How many diff classes (0,1,2 are the classes in our case)
+        'objective' : 'binary', # Our Output var is multiclass for lgbm
+        #'num_class' : 3, # How many diff classes (0,1,2 are the classes in our case)
         'boosting_type' : 'gbdt', #The default gradient boosting
-        'metric' : 'multi_logloss', #Metric to measure perforance
+        'metric' : 'binary_logloss', #Metric to measure perforance
         'n_jobs' : -1, #Using all available threads in cpu 
         'random_state' : 69 , #just set random seed for reproducability
         

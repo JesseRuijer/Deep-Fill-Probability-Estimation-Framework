@@ -39,12 +39,12 @@ def train_logistic_model(X_train, y_train, weights,params = None, for_tuning = F
     base_logistic_model.fit(X_train_standardised, y_train, sample_weight = weights)
         
     if for_tuning: #This is just for speed optimsation for using Optuna as for that you just need the base model so dont want to waste time calibrating
-        return base_logistic_model, None, None
+        return base_logistic_model, None, scalar
     
     
     
     
-    calibrated_model = CalibratedClassifierCV(estimator=base_logistic_model, method='sigmoid', cv=5 ) #Do some research if and why 5 is good value for cross validation in ML
+    calibrated_model = CalibratedClassifierCV(estimator=base_logistic_model, method='isotonic', cv=5 ) #Do some research if and why 5 is good value for cross validation in ML, its because that splits into 5 folds of 20% where each time we train on 80 and test on 20 and thats like the industry standard i think
   
     
     #Look at the required assumptions for logistic regression, i think need iid and for example
@@ -59,7 +59,6 @@ def train_logistic_model(X_train, y_train, weights,params = None, for_tuning = F
     #Fit Scikit logistic regrssion
     
     calibrated_logistic_model = calibrated_model.fit(X_train_standardised, y_train, sample_weight = weights)
-    base_logistic_model.fit(X_train_standardised, y_train, sample_weight = weights)
     
     return base_logistic_model, calibrated_logistic_model, scalar
     
