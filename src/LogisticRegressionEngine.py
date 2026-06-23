@@ -25,7 +25,7 @@ def train_logistic_model(X_train, y_train, weights,params = None, for_tuning = F
             
             'penalty' : 'l2', #Used to be l1 from optuna but after introducing heartbeats it was just too slow
             'solver': 'lbfgs', #Used to be saga from optuna but after introducing heartbeats it was just too slow
-            'C': 0.00010720311501308609,
+            'C': 0.00010257912203796099,
             'verbose' : 2 #Prints progress to console
             }
         
@@ -35,7 +35,7 @@ def train_logistic_model(X_train, y_train, weights,params = None, for_tuning = F
    #Might use somethiing of platt scaling to wrap the log res model as log res doesnt work very well with data where the output is very skewed, i.e here we have much more cancels then fills
     base_logistic_model = LogisticRegression(**params) # max iter higher then the standard 100 to take into account the noisy data we have
         
-    #Just saved the base model as well here, maybe thats useful for log odss not sure
+    #Saved the base model as well here, maybe thats useful for log odss not sure
     base_logistic_model.fit(X_train_standardised, y_train, sample_weight = weights)
         
     if for_tuning: #This is just for speed optimsation for using Optuna as for that you just need the base model so dont want to waste time calibrating

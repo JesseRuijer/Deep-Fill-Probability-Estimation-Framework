@@ -18,8 +18,6 @@ def train_lgbm_model(X_train, y_train, weights, params = None, for_tuning = Fals
 
     # light GBM 
     
-    # ig maybe here i could also use optuna to tune the solving method like in log reg 
-    
     if params is None:
         params = {
         

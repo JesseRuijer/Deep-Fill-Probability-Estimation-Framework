@@ -338,11 +338,39 @@ Created on Mon Jun  1 13:48:14 2026
  #     print("File not found. Check the file path!")
  
  
- 
+####### Some remnants from when i used multi as output var on lgbm####################
+# train_matrix_multi = pd.read_parquet(paths['train_multi'])
+# test_matrix_multi = pd.read_parquet(paths['test_multi'])
 
 
-
-
+# ---------------------------------------------------------
+        # MICROSTRUCTURE DIAGNOSTIC CHECK
+        # ---------------------------------------------------------
+        best_bid = cleandata["BuyPrice"][0]
+        best_ask = cleandata["SellPrice"][0]
+        spreads = best_ask - best_bid
+        
+        # Filter out zero/negative spreads (data artifacts from crossed books during halts)
+        valid_spreads = spreads[spreads > 0]
+        
+        # Find the minimum tick size dynamically 
+        min_tick = valid_spreads.min()
+        
+        pct_at_min_spread = (valid_spreads == min_tick).mean() * 100
+        avg_spread_in_ticks = valid_spreads.mean() / min_tick
+        
+        print("\n--- MICROSTRUCTURE PROFILE ---")
+        print(f"Minimum Tick Size: {min_tick}")
+        print(f"Average Spread: {avg_spread_in_ticks:.2f} ticks")
+        print(f"Time at Minimum Spread: {pct_at_min_spread:.1f}%")
+        
+        if pct_at_min_spread > 85:
+            print("Verdict: HEAVILY TICK-CONSTRAINED (Large Tick)")
+        elif pct_at_min_spread > 50:
+            print("Verdict: MODERATELY TICK-CONSTRAINED")
+        else:
+            print("Verdict: SMALL TICK (Fragmented Book)")
+        print("------------------------------\n")
 
 
 

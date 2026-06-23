@@ -24,6 +24,7 @@ weights_train = train_matrix['UnitWeight']
 
 X_val = val_matrix[config.LGBM_MODEL_FEATURES]
 y_val = val_matrix[config.TARGET]
+val_weights = val_matrix['UnitWeight']
 
 
 def objective(trial):
@@ -32,10 +33,10 @@ def objective(trial):
     
     params = {
 
-    'objective' : 'multiclass', # Our Output var is multiclass for lgbm
-    'num_class' : 3, # How many diff classes (0,1,2 are the classes in our case)
+    'objective' : 'binary', # Our Output var is multiclass for lgbm
+    #'num_class' : 3, # How many diff classes (0,1,2 are the classes in our case)
     'boosting_type' : 'gbdt', #The default gradient boosting
-    'metric' : 'multi_logloss', #Metric to measure perforance
+    'metric' : 'binary_logloss', #Metric to measure perforance
     'n_jobs' : -1, #Using all available threads in cpu 
     'random_state' : 69 , #just set random seed for reproducability
     'n_estimators' : 100, # number of sequential trees, i.e number of boosting rounds 
@@ -61,7 +62,7 @@ def objective(trial):
     
     y_val_bin = np.where(y_val == 1, 1, 0)
     
-    score = average_precision_score(y_val_bin, preds)
+    score = average_precision_score(y_val_bin, preds, sample_weight = val_weights)
     
     return score
 

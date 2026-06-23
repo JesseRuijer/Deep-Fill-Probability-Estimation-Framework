@@ -23,8 +23,8 @@ from sklearn.metrics import average_precision_score
 
 #Loading data in 
 
-train_matrix = pd.read_parquet('/Users/jesseruijer/Documents/Summer Research/data/processed/INTC_MULTI_2014_04_01.parquet')
-val_matrix = pd.read_parquet('/Users/jesseruijer/Documents/Summer Research/data/processed/INTC_MULTI_2014_04_02.parquet') #Validation data different from training and testing data ofc
+train_matrix = pd.read_parquet('/Users/jesseruijer/Documents/Summer Research/data/processed/INTC_MULTI_2014_04_01.parquet').sample(frac = 0.15, random_state = 67)
+val_matrix = pd.read_parquet('/Users/jesseruijer/Documents/Summer Research/data/processed/INTC_MULTI_2014_04_02.parquet').sample(frac = 0.15, random_state = 67) #Validation data different from training and testing data ofc
 
 X_train = train_matrix[config.LOGISTIC_MODEL_FEATURES]
 y_train = train_matrix[config.TARGET]
@@ -32,23 +32,20 @@ weights_train = train_matrix['UnitWeight']
 
 X_val = val_matrix[config.LOGISTIC_MODEL_FEATURES]
 y_val = val_matrix[config.TARGET]
+val_weights = val_matrix['UnitWeight']
 
 
 def objective(trial):
     
     penalty = trial.suggest_categorical('penalty', ['l2'])    #l1 too slow for large data and i sortof know which features i want to use but maybe if i have time i can run it again with including l1. l1 is lasso penalty, adds absolute value of weights to the errors, focusses on deleting weak features,  i.e assigning them weight zero
                                                                     #l2 is ridge, adds square of weights to error calculation, focusses on keeping all features weights relatively small and balanced, since i expect vol to have a massive impact, for our situation l1 might be better
-    if penalty == 'l1':
-        solver = 'saga'
-        
-    else:
-        solver = trial.suggest_categorical('solver', ['lbfgs', 'newton-cholesky'])  #removed saga here since thats just too slow for large datasets
+    solver = trial.suggest_categorical('solver', ['lbfgs', 'sag'])  #removed saga here since thats just too slow for large datasets
     
     #Define search space
     
     params = {
         #Basic 
-        'max_iter': 500, 
+        'max_iter': 150, #Can always set this higher for final rigorous training later  
         'random_state': 69,
         'n_jobs': 1,
         
@@ -74,14 +71,14 @@ def objective(trial):
     
     y_val_bin = np.where(y_val == 1, 1, 0)
     
-    score = average_precision_score(y_val_bin, preds)
+    score = average_precision_score(y_val_bin, preds, sample_weight = val_weights)
     
     return score
 
 
 
 if __name__ == '__main__':
-    print("Staring Optuna Optimalisation")
+    print("Starting Optuna Optimalisation")
     
     #Running search for optimal params
     

@@ -9,6 +9,7 @@ Created on Thu Jun 11 11:17:44 2026
 import pandas as pd
 import numpy as np
 import seaborn as sns
+
 import matplotlib.pyplot as plt
 
 from sklearn.metrics import (
@@ -23,6 +24,7 @@ from sklearn.calibration import calibration_curve
 
 import config 
 
+#For Shap and importance plots you have to use the base model 
 
 def plot_lgbm_importances(base_model, features):
     #Visualising the important features in LGBM
@@ -48,6 +50,7 @@ def plot_lgbm_importances(base_model, features):
     plt.show()
     
     return importance_df
+    
 
 def test_model(test_data, base_model, calibrated_model, scalar, model_name, features, is_multi):
     
@@ -193,7 +196,10 @@ def test_model(test_data, base_model, calibrated_model, scalar, model_name, feat
     axes[0,1].set_ylabel('Fills correctly identified as Fills / All Actual Fills')  #Recall = TP /(TP + FN) = Sensitivity = True Positive Rate
     axes[0,1].legend()
     
-    #Precision recall curve
+    #Precision recall curve 
+    # a point of x = 0.16, y = 0.4 means the following: if we set our treshold to 16% so out of all the true fills
+    # we only capture 16% then out of all the  orders our model flagged as a fill, 40% were actual fills 
+    
     engine_precision, engine_recall, engine_treshold = precision_recall_curve(y_true, y_pred_prob_vis, sample_weight = weights)
     axes[1,0].plot(engine_recall, engine_precision, color = 'b', label = f'{model_name} PR')
     axes[1,0].set_xlabel('Recall')
@@ -207,8 +213,8 @@ def test_model(test_data, base_model, calibrated_model, scalar, model_name, feat
     
     #Plot predicted probability distriubiton, use log scale on y axis since many more cancels then fills
     
-    axes[1, 1].hist(y_pred_prob_vis[y_true == 0], bins=50, alpha=0.3, color='red', label='Actual Cancels/Expires (0)', density = True)
-    axes[1, 1].hist(y_pred_prob_vis[y_true == 1], bins=50, alpha=0.3, color='green', label='Actual Fills (1)', density = True)
+    axes[1, 1].hist(y_pred_prob_vis[y_true == 0], bins=50, alpha=0.3, color='red', label='Actual Cancels/Expires (0)', log = True)
+    axes[1, 1].hist(y_pred_prob_vis[y_true == 1], bins=50, alpha=0.3, color='green', label='Actual Fills (1)', log = True)
     axes[1, 1].set_title(f'Distribution of Predicted Probabilities (Log Scale) for {model_name}')
     axes[1, 1].set_xlabel('Predicted Probability of Fill')
     axes[1, 1].set_ylabel('Number of Orders (Log Scale)')
@@ -230,6 +236,7 @@ def test_model(test_data, base_model, calibrated_model, scalar, model_name, feat
         
     if model_name == "Light Gradient Boosted Model":
         plot_lgbm_importances(base_model, features)
+
         
 
 # def predict_order_fill_prob(features):
