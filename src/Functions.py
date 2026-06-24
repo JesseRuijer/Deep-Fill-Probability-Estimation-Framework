@@ -8,8 +8,8 @@ Created on Mon Jun  1 14:27:25 2026
 
 #Importing libraries,classes, functions from other scripts
 
+import numpy as np
 
-    
 
 def time_in_hours(ms_past_midnight):
     
@@ -66,4 +66,29 @@ def find_order_pattern(df, start_type, middle_type, middle_count, end_type):
     
     return orders
     
+def speedmetric(df, feature_list):
+    
+    result = {}
+    
+    for metric in feature_list:
+        event = df[f'Event{metric}'].values
+        clock = event = df[f'Clock{metric}'].values
+        
+        speed_array = np.divide(
+                    event, 
+                    clock, 
+                    out=np.zeros_like(event, dtype = float), 
+                    where=(clock != 0)
+                )
+        result[f'Speed{metric}'] = speed_array
+        
+    return result
+
+
+
+def trailing_calc(tod_targets, tod_source, vol_source, lookback):
+    cum_vol = np.pad(np.cumsum(vol_source), (1,0), constant_values = 0)      #pads to add a zero at thes start and then cumsum calculates the running total so to know the order arrival rate between two different times you just calculate the difference in their total running values
+    start_indices = np.searchsorted(tod_source, tod_targets - lookback, side = 'left')   #Finds the row indices where the lookback window starts and below where it finishes
+    end_indices = np.searchsorted(tod_source, tod_targets , side = 'right') 
+    return (cum_vol[end_indices] - cum_vol[start_indices]), (end_indices - start_indices)
     

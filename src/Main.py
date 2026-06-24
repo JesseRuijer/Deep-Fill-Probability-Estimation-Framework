@@ -6,6 +6,8 @@ Created on Wed May 20 19:41:13 2026
 @author: jesseruijer
 """
 
+
+#For the features some clock time, some event time, some combined as maybe a fraction to capture speed 
 #Use SHAP on logistic and lgbm to look at all features and determine which are important
 #Mabye make a partial dependence plot where the calibration curve updates as time passes
 #There are a lot more lob feature statistics i could add later make sure to add them to feature lists and corr plots

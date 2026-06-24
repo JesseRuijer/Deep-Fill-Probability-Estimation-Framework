@@ -14,6 +14,8 @@ HEARTBEAT_INTERVAL = 10000
 
 LOOKBACK_WINDOW = 100
 
+EVENT_TIME_DELTA = 50 # look back 50 event ticks
+
 FEATURE_DELTA = 1000
 
 MARKET_OPEN_TIME = 34200000 # 9:30 AM
@@ -102,6 +104,7 @@ UNIVERSAL_FEATURES = [          # Features that apply to any LO, so for ex midpr
     'BestBid', 
     'BidSize', 
     'CancelationRatio', 
+    'DeltaMidprice',
     'IsFinalMinute', 
     'LookBackHiddenVol',
     'LOTrailingCountOrdersCanceled', 
@@ -114,6 +117,7 @@ UNIVERSAL_FEATURES = [          # Features that apply to any LO, so for ex midpr
     'Midprice', 
     'MOTrailingOrders', 
     'MOTrailingVolRatio',
+    'OrderFlowImbalance',
     'QImbalance', 
     'Regime', 
     'RollingMidPrice',
@@ -126,14 +130,12 @@ UNIVERSAL_FEATURES = [          # Features that apply to any LO, so for ex midpr
 DYNAMIC_FEATURES = [    #Features that change (in general) depending on the LO you look at
     'DeltaLogVolAhead',
     'DeltaDistanceToTouch',
-    'DeltaMidprice',
     'DeltaDistanceToMidprice',
     'DistanceToMicroprice', 
     'DistanceToTouch', 
     'InitialPlacementTime',
     'LogVolAhead', 
     'MOCount10ms',
-    'OrderFlowImbalance',
     'QueuePositionRatio',
     'TimeSincePlacement', 
     'TimeSinceLastMO',
