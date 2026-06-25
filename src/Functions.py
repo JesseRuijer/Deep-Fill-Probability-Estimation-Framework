@@ -72,7 +72,7 @@ def speedmetric(df, feature_list):
     
     for metric in feature_list:
         event = df[f'Event{metric}'].values
-        clock = event = df[f'Clock{metric}'].values
+        clock = df[f'Clock{metric}'].values
         
         speed_array = np.divide(
                     event, 

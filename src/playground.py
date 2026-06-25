@@ -35,3 +35,33 @@ speed_array = np.divide(
 
 print(speed_array)
 
+import pandas as pd
+
+
+df = pd.DataFrame({
+    'OrderID': [997, 998, 999],
+    'InitialVolume': [100, 500, 1000]
+})
+
+
+df2 = pd.DataFrame({
+    'OrderID2': [997, 998, 999],
+    'InitialVolume2': [100, 500, 1000]
+})
+
+print("--- Original DataFrame ---")
+print(df)
+print(df.T)
+
+test_dic = {
+    'SpeedDeltaMidprice': [0.5, 1.2, 0.0],
+    'SpeedLogVolAhead': [10.5, 8.1, 4.2],
+    'JustSomeBacon': [7, 7, 7]
+}
+
+# df = df.assign(**test_dic)
+
+# print("\n--- After Unpacking Dictionary ---")
+# print(df)
+
+pd.concat([df, df2])

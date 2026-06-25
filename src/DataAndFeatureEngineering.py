@@ -150,6 +150,7 @@ def clean_data(raw_data):
     
 def data_regressors(rawdata, cleandata, clear_RAM = True):
     
+    #Importing Dataframes
     df_E = cleandata["Event"]
     df_MO = cleandata['MO']
     
@@ -173,11 +174,14 @@ def data_regressors(rawdata, cleandata, clear_RAM = True):
         rawdata.clear()
         cleandata.clear()
         gc.collect()
-    
+        
+    #Creating masks
     mask_add = df_E['Type'].isin([66,83])
     mask_cancel = df_E['Type'].isin([67,68])
     mask_execute = df_E['Type'].isin([69,70])
-
+    
+    
+    #Initializing main feature dataframe
     Regressors_df = pd.DataFrame()
     
     ########## Basic Features #######################
@@ -197,12 +201,154 @@ def data_regressors(rawdata, cleandata, clear_RAM = True):
     Regressors_df["Microprice"] = ((Regressors_df['BidSize']*Regressors_df['BestAsk'])+(Regressors_df['AskSize']*Regressors_df['BestBid']))/(Regressors_df['BidSize'] + Regressors_df['AskSize'])
     Regressors_df['MicroMidDeviation'] = Regressors_df['Microprice'] - Regressors_df['Midprice']
     
-    #Calcuated this here instead of below as this needs to be on actual events instead of on heartbeats, as if 100 orders all give a heartbeat at the same time this measure for volatility will crash
-    Regressors_df['RollingMidPrice'] = Regressors_df['Midprice'].rolling(window = 50, min_periods = 1).std().fillna(0)
+    micromiddev = Regressors_df['MicroMidDeviation'].values
+    micromiddev_past = Regressors_df['MicroMidDeviation'].shift(config.EVENT_TIME_DELTA).values
+    
+    Regressors_df['EventMicroMidDeviation'] = micromiddev - micromiddev_past
+    Regressors_df['CancelationRatio'] = canceled_vol_day / added_vol_day
+    
+    #this below is a std metric, look into maybe adding more of those
+    Regressors_df['RollingMicroprice'] = Regressors_df['Microprice'].rolling(window = 50, min_periods = 1).std().fillna(0)
+    
+    bidsize = Regressors_df['BidSize'].values #No extra RAM cost
+    bidsize_past = Regressors_df.groupby('ID')['BidSize'].shift(config.EVENT_TIME_DELTA).values #Copy so extra ram cost
+    
+    #Protecting index in regressors df
+    
+    ##Some Universal Featues that look back without requiring ID like further below ###########
+    market_past = Regressors_df[['TOD', 'Midprice', 'BestBid', 'BestAsk', 'BidSize', 'AskSize']].copy()
+    market_past['TOD_+_1000'] = market_past['TOD'] + config.FEATURE_DELTA
+    
+    original_index = Regressors_df.index
     
     
-    #Imbalances
-    Regressors_df["QImbalance"] = ((Regressors_df['BidSize']-Regressors_df['AskSize'])/(Regressors_df['BidSize']+ Regressors_df['AskSize'])).fillna(0)  #fill.na(0) means it will fill imbalcne with 0 if theres a NaN situation
+    Regressors_df = pd.merge_asof(
+        Regressors_df, 
+        market_past.sort_values('TOD_+_1000'),
+        left_on = 'TOD',
+        right_on = 'TOD_+_1000',
+        direction = 'backward',
+        suffixes = ['', '_past'])
+    
+    #Restore index after merge asof
+    
+    Regressors_df.index = original_index
+    
+    mid_arr = Regressors_df['Midprice'].values
+    mid_past = Regressors_df['Midprice'].shift(config.EVENT_TIME_DELTA).values
+    bestbid = Regressors_df['BestBid'].values
+    bestbid_past = Regressors_df['BestBid'].shift(config.EVENT_TIME_DELTA).values
+    
+    bestask = Regressors_df['BestAsk'].values
+    bestask_past = Regressors_df['BestAsk'].shift(config.EVENT_TIME_DELTA).values
+    
+    bidsize = Regressors_df['BidSize'].values
+    bidsize_past = Regressors_df['BidSize'].shift(config.EVENT_TIME_DELTA).values
+    
+    asksize = Regressors_df['AskSize'].values
+    asksize_past = Regressors_df.shift(config.EVENT_TIME_DELTA).values
+    
+    
+   # --- TOP OF SCRIPT (Zone 1: Regressors_df) ---
+
+# Global Market Clock Merge (Notice: NO by='ID')
+market_past = Regressors_df[['TOD', 'Midprice', 'BestBid', 'BestAsk', 'BidSize', 'AskSize', 'Microprice']].copy()
+market_past['TOD_+_1000'] = market_past['TOD'] + config.FEATURE_DELTA
+
+Regressors_df = pd.merge_asof(Regressors_df, market_past.sort_values('TOD_+_1000'), left_on='TOD', right_on='TOD_+_1000', direction='backward', suffixes=['', '_past'])
+
+# Global Clock Price Features
+Regressors_df['ClockDeltaMidprice'] = np.log(Regressors_df['Midprice'] / Regressors_df['Midprice_past']).fillna(0)
+
+# The Math Trick for Distances! (Same as Event Delta, but using Clock past)
+global_clock_micro_delta = Regressors_df['Microprice'] - Regressors_df['Microprice_past']
+Regressors_df['ClockDeltaDistanceToMicroprice'] = np.where(Regressors_df['SideOfBook'] == 1, global_clock_micro_delta, -global_clock_micro_delta)
+
+global_clock_touch_delta = Regressors_df['BestBid'] - Regressors_df['BestBid_past']
+Regressors_df['ClockDeltaDistanceToTouch'] = np.where(Regressors_df['SideOfBook'] == 1, global_clock_touch_delta, -global_clock_touch_delta)
+    
+    #Event
+    Event_delta_midprice = np.log(mid_arr / mid_past).fillna(0)
+    Regressors_df['EventDeltaMidprice'] = np.nan_to_num(Event_delta_midprice, nan=0.0, posinf=0.0, neginf=0.0)
+    
+    #OFI at best bid ask 
+    # (Bid side demand change)
+    db = np.where(bestbid > bestbid_past, bidsize,
+          np.where(bestbid == bestbid_past, bidsize - bidsize_past,
+          - bidsize_past))
+
+    #(Ask side supply change)
+    da = np.where(bestask < bestask_past, asksize,
+          np.where(bestask == bestask_past, asksize - asksize_past,
+          - asksize_past))
+
+    
+    OrderFlowImbalance = db - da
+    Regressors_df['EventOrderFlowImbalance'] = np.nan_to_num(OrderFlowImbalance, nan=0.0, posinf=0.0, neginf=0.0)
+    
+# -------------------------------------------------------------
+# EVENT DELTA: DISTANCE TO MICROPRICE
+# -------------------------------------------------------------
+    
+    # 1. Shift ONLY the universal market metric (Microprice)
+    micro_arr = Regressors_df['Microprice'].values
+    micro_past = Regressors_df['Microprice'].shift(config.EVENT_TIME_DELTA).values
+    
+    # 2. Calculate the raw market movement over the last 50 events
+    global_micro_delta = micro_arr - micro_past
+    
+    # 3. Apply the Symmetry Rule based on the order's SideOfBook
+    # For Buyers (1): If microprice goes up, distance increases (moves away)
+    # For Sellers (0): If microprice goes down, distance increases (moves away)
+    EventDeltaDistMicro = np.where(
+    Regressors_df['SideOfBook'].values == 1,
+    global_micro_delta,
+    -global_micro_delta
+    )
+    
+    # 4. Safely assign to your dataframe, handling the NaNs from the shift
+    Regressors_df['EventDeltaDistanceToMicroprice'] = np.nan_to_num(EventDeltaDistMicro, nan=0.0, posinf=0.0, neginf=0.0)
+    
+    # 5. Immediately clear temporary arrays to save RAM
+    del micro_arr, micro_past, global_micro_delta, EventDeltaDistMicro
+
+    
+    logvolahead = Regressors_df['LogVolAhead'].values
+    logvolahead_past = Regressors_df('ID')['LogVolAhead'].shift(config.EVENT_TIME_DELTA).values
+    
+    #then maybe add pos or neg based on what side we are on, maybe for other featues as well, although maybe they are already that by themselves
+        
+    distancetotouch = Regressors_df['DistanceToTouch'].values
+    distancetotouch_past = Regressors_df.groupby('ID')['DistanceToTouch'].shift(config.EVENT_TIME_DELTA).values
+    
+    
+    EventDeltaDistanceToMicroprice = microdist - microdist_past
+    EventDeltaLogVolAhead = logvolahead - logvolahead_past
+    EventDeltaDistanceToTouch = distancetotouch - distancetotouch_past
+    
+    Regressors_df['EventDeltaDistanceToMicroprice'] = np.nan_to_num(EventDeltaDistanceToMicroprice, nan=0.0, posinf=0.0, neginf=0.0)
+    Regressors_df['EventDeltaLogVolAhead'] = np.nan_to_num(EventDeltaLogVolAhead , nan=0.0, posinf=0.0, neginf=0.0)
+    Regressors_df['EventDeltaDistanceToTouch'] = np.nan_to_num(EventDeltaDistanceToTouch, nan=0.0, posinf=0.0, neginf=0.0)
+    
+    
+    
+    
+    
+    
+    #print(Regressors_df.head())
+    
+    Regressors_df.drop(columns = ['TOD_+_1000', 'TOD_past', 'BestBid_past', 'BestAsk_past', 'BidSize_past', 'AskSize_past', 'Midprice_past',
+                                  'OrderFlowImbalance'], inplace = True)
+    
+    del market_past
+    # IMMEDIATELY NUKE THE TEMPORARY COPIES
+    del mid_past, Event_delta_midprice, OrderFlowImbalance, bestbid_past, bestask_past, bidsize_past, asksize_past
+    gc.collect()    
+    
+    
+   
+    
+   
     Regressors_df["AbsQImbalance"] = Regressors_df["QImbalance"].abs()
     Regressors_df["TotalVolImbalance"] = ((df_BV.sum(axis=1)-df_SV.sum(axis=1))/(df_BV.sum(axis=1)+ df_SV.sum(axis=1))).fillna(0)   #Total Vol imbalance uses sum of the 20 cols provided in the data axis=1 does across cols, axis=0 does across rows
     
@@ -221,8 +367,7 @@ def data_regressors(rawdata, cleandata, clear_RAM = True):
     current_indices = np.arange(1, len(tod_values) + 1)
     Regressors_df["LookBackHiddenVol"] = cum_vol_pad[current_indices] - cum_vol_pad[start_indices]
     
-    #Cancelation Ratio
-    Regressors_df['CancelationRatio'] = canceled_vol_day / added_vol_day
+   
     
     #Building a regime classifier which uses categorical variables to tell in what regime of day we are in
     Regressors_df['Regime'] = np.where(Regressors_df['TOD'] < config.MARKET_OPEN_TIME , 0,    #Pre Market                         
@@ -256,101 +401,14 @@ def data_regressors(rawdata, cleandata, clear_RAM = True):
 
     
     #Amount of orders
-    Regressors_df['MOTrailingOrders'] = trailing_calc(df_E['TOD'].values, df_MO['TOD'].values, df_MO['Vol'].values, config.LOOKBACK_WINDOW)[1]
-    Regressors_df['LOTrailingCountOrdersPlaced'] = trailing_calc(df_E['TOD'].values, df_E.loc[mask_add, 'TOD'].values,  df_E.loc[mask_add, 'Vol'].values, config.LOOKBACK_WINDOW)[1]
-    Regressors_df['LOTrailingCountOrdersCanceled'] = trailing_calc(df_E['TOD'].values, df_E.loc[mask_cancel, 'TOD'].values,  df_E.loc[mask_cancel, 'Vol'].values, config.LOOKBACK_WINDOW)[1]
-    Regressors_df['LOTrailingCountOrdersExecuted'] = trailing_calc(df_E['TOD'].values, df_E.loc[mask_execute, 'TOD'].values,  df_E.loc[mask_execute, 'Vol'].values, config.LOOKBACK_WINDOW)[1]
     
-    ##Some Universal Featues that look back without requiring ID like further below ###########
-    market_past = Regressors_df[['TOD', 'Midprice', 'BestBid', 'BestAsk', 'BidSize', 'AskSize']].copy()
-    market_past['TOD_+_1000'] = market_past['TOD'] + config.FEATURE_DELTA
+    #Maybe acc all of this is better in final_state df cuz that also combines the heartbeat info?
     
-    #Protecting index in regressors df
-    
-    original_index = Regressors_df.index
-    
-    
-    Regressors_df = pd.merge_asof(
-        Regressors_df, 
-        market_past.sort_values('TOD_+_1000'),
-        left_on = 'TOD',
-        right_on = 'TOD_+_1000',
-        direction = 'backward',
-        suffixes = ['', '_past'])
-    
-    #Restore index after merge asof
-    
-    Regressors_df.index = original_index
-    
-    mid_arr = Regressors_df['Midprice'].values
-    mid_past = Regressors_df.groupby('ID')['Midprice'].shift(config.EVENT_TIME_DELTA).values
-    bestbid = Regressors_df['BestBid'].values
-    bestbid_past = Regressors_df.groupby('ID')['BestBid'].shift(config.EVENT_TIME_DELTA).values
-    
-    bestask = Regressors_df['BestAsk'].values
-    bestask_past = Regressors_df.groupby('ID')['BestAsk'].shift(config.EVENT_TIME_DELTA).values
-    
-    bidsize = Regressors_df['BidSize'].values
-    bidsize_past = Regressors_df.groupby('ID')['BidSize'].shift(config.EVENT_TIME_DELTA).values
-    
-    asksize = Regressors_df['AskSize'].values
-    asksize_past = Regressors_df.groupby('ID')['AskSize'].shift(config.EVENT_TIME_DELTA).values
-    
-    
-    #Clock 
-    Regressors_df['ClockDeltaMidprice'] = np.log(Regressors_df['Midprice'] / Regressors_df['Midprice_past']).fillna(0)
-    
-     
-    #OFI at best bid ask 
-    # (Bid side demand change)
-    db = np.where(Regressors_df['BestBid'] > Regressors_df['BestBid_past'], Regressors_df['BidSize'],
-          np.where(Regressors_df['BestBid'] == Regressors_df['BestBid_past'], Regressors_df['BidSize'] - Regressors_df['BidSize_past'],
-          - Regressors_df['BidSize_past']))
-
-    #(Ask side supply change)
-    da = np.where(Regressors_df['BestAsk'] < Regressors_df['BestAsk_past'], Regressors_df['AskSize'],
-          np.where(Regressors_df['BestAsk'] == Regressors_df['BestAsk_past'], Regressors_df['AskSize'] - Regressors_df['AskSize_past'],
-          -Regressors_df['AskSize_past']))
-
-    
-    Regressors_df['OrderFlowImbalance'] = db - da
-    Regressors_df['ClockOrderFlowImbalance'] = Regressors_df['OrderFlowImbalance'].fillna(0)
-    
-    
-    
-    #Event
-    Event_delta_midprice = np.log(mid_arr / mid_past).fillna(0)
-    Regressors_df['EventDeltaMidprice'] = np.nan_to_num(Event_delta_midprice, nan=0.0, posinf=0.0, neginf=0.0)
-    
-    #OFI at best bid ask 
-    # (Bid side demand change)
-    db = np.where(bestbid > bestbid_past, bidsize,
-          np.where(bestbid == bestbid_past, bidsize - bidsize_past,
-          - bidsize_past))
-
-    #(Ask side supply change)
-    da = np.where(bestask < bestask_past, asksize,
-          np.where(bestask == bestask_past, asksize - asksize_past,
-          - asksize_past))
-
-    
-    OrderFlowImbalance = db - da
-    Regressors_df['EventOrderFlowImbalance'] = np.nan_to_num(OrderFlowImbalance, nan=0.0, posinf=0.0, neginf=0.0)
-    
-    #Speed
-    speed_features_to_test = ['DeltaMidprice', 'OrderFlowImbalance' ]
-    
-    speed_featuresdic = speedmetric(Regressors_df, speed_features_to_test)
-    
-    Regressors_df = Regressors_df.assign(**speed_featuresdic)
-    
-    print(Regressors_df.head())
-    
-    Regressors_df.drop(columns = ['TOD_+_1000', 'TOD_past', 'BestBid_past', 'BestAsk_past', 'BidSize_past', 'AskSize_past', 'Midprice_past',
-                                  'OrderFlowImbalance'], inplace = True)
-    
-    del market_past
-    gc.collect()    
+    #Regressors_df['MOTrailingOrders'] = trailing_calc(df_E['TOD'].values, df_MO['TOD'].values, df_MO['Vol'].values, config.LOOKBACK_WINDOW)[1]
+    # Commented these out since for LOs I think amount of orders means nothing compared to the volume metric i already have above
+    # Regressors_df['LOTrailingCountOrdersPlaced'] = trailing_calc(df_E['TOD'].values, df_E.loc[mask_add, 'TOD'].values,  df_E.loc[mask_add, 'Vol'].values, config.LOOKBACK_WINDOW)[1]
+    # Regressors_df['LOTrailingCountOrdersCanceled'] = trailing_calc(df_E['TOD'].values, df_E.loc[mask_cancel, 'TOD'].values,  df_E.loc[mask_cancel, 'Vol'].values, config.LOOKBACK_WINDOW)[1]
+    # Regressors_df['LOTrailingCountOrdersExecuted'] = trailing_calc(df_E['TOD'].values, df_E.loc[mask_execute, 'TOD'].values,  df_E.loc[mask_execute, 'Vol'].values, config.LOOKBACK_WINDOW)[1]
     
   
     ########## Dynamic Features #####################
@@ -643,11 +701,64 @@ def data_regressors(rawdata, cleandata, clear_RAM = True):
         )
     #Some deltas below are ln ratios to take relativeity into account instead of just offering absolute values
     
-    final_state_df['DeltaDistanceToMicroprice'] = (final_state_df['DistanceToMicroprice'] - final_state_df['DistanceToMicroprice_past'])
     
-    final_state_df['DeltaLogVolAhead'] = (final_state_df['LogVolAhead'] - final_state_df['LogVolAhead_past'])
+    ######Features for clock time
     
-    final_state_df['DeltaDistanceToTouch'] = (final_state_df['DistanceToTouch'] - final_state_df['DistanceToTouch_past'])
+    
+    
+    #Only do queue clock time at the bottom the rest at the top
+    
+    #Clock 
+    final_state_df['ClockDeltaMidprice'] = np.log(final_state_df['Midprice'] / final_state_df['Midprice_past']).fillna(0)
+    
+    #Imbalances
+    final_state_df["ClockQImbalance"] = ((final_state_df['BidSize']-final_state_df['AskSize'])/(final_state_df['BidSize']+ final_state_df['AskSize'])).fillna(0)  #fill.na(0) means it will fill imbalcne with 0 if theres a NaN situation
+   
+    
+     
+    #OFI at best bid ask 
+    # (Bid side demand change)
+    db = np.where(final_state_df['BestBid'] > final_state_df['BestBid_past'], final_state_df['BidSize'],
+          np.where(final_state_df['BestBid'] == final_state_df['BestBid_past'], final_state_df['BidSize'] - final_state_df['BidSize_past'],
+          - final_state_df['BidSize_past']))
+
+    #(Ask side supply change)
+    da = np.where(final_state_df['BestAsk'] < final_state_df['BestAsk_past'], final_state_df['AskSize'],
+          np.where(final_state_df['BestAsk'] == final_state_df['BestAsk_past'], final_state_df['AskSize'] - final_state_df['AskSize_past'],
+          -final_state_df['AskSize_past']))
+
+    
+    final_state_df['OrderFlowImbalance'] = db - da
+    final_state_df['ClockOrderFlowImbalance'] = final_state_df['OrderFlowImbalance'].fillna(0)
+    
+  
+    
+    
+    #Speed
+    speed_features_to_test = ['DeltaMidprice', 'OrderFlowImbalance' , 'QImbalance']
+    
+    speed_featuresdic = speedmetric(final_state_df, speed_features_to_test)
+    
+    final_state_df = final_state_df.assign(**speed_featuresdic)
+    
+   
+    
+    
+    #Clock
+    final_state_df['ClockDeltaDistanceToMicroprice'] = (final_state_df['DistanceToMicroprice'] - final_state_df['DistanceToMicroprice_past'])
+    final_state_df['ClockDeltaLogVolAhead'] = (final_state_df['LogVolAhead'] - final_state_df['LogVolAhead_past'])
+    final_state_df['ClockDeltaDistanceToTouch'] = (final_state_df['DistanceToTouch'] - final_state_df['DistanceToTouch_past'])
+    
+    
+     
+    #Speed
+    speed_features_to_test = ['DistanceToTouch', 'LogVolAhead', 'DistanceToMicroprice' ]
+    
+    speed_featuresdic = speedmetric(final_state_df, speed_features_to_test)
+    
+    final_state_df = final_state_df.assign(**speed_featuresdic)
+    
+    final_state_df.drop(columns = ['TOD_+_1000', 'TOD_past', 'LogVolAhead_past', 'DistanceToMicroprice_past', 'DistanceToTouch_past'], inplace = True)
     
    
     ########## Adding two Self Exciting Features utilizint that MOs spike LO activity ##################
@@ -731,7 +842,7 @@ def data_regressors(rawdata, cleandata, clear_RAM = True):
     matrices_to_compress = [Binary_Regression_Matrix, Multi_Class_Regression_Matrix]
     for matrix in matrices_to_compress:
         for col in matrix.columns:
-            col_type = matrix[col].dtype
+            col_type = matrix[col].dtypef
             # Compress 64-bit floats to 32-bit
             if col_type == 'float64':
                 matrix[col] = matrix[col].astype('float32')
