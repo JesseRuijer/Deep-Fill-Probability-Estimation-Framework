@@ -65,3 +65,63 @@ test_dic = {
 # print(df)
 
 pd.concat([df, df2])
+
+
+b = np.array([1,2,3,4,5])
+print(min(b))
+print(np.min(b))
+print(np.minimum(b))
+
+
+
+
+
+
+
+sweep_tods = [1,2,3]
+
+final_tods = [2,3,4]
+
+
+
+
+
+
+
+
+
+# 2. Find the most recent sweep for every single event/heartbeat
+sweep_indices = np.searchsorted(sweep_tods, final_tods, side='right') -1
+print(sweep_indices)
+
+np.se
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+

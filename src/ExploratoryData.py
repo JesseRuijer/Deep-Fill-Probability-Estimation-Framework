@@ -48,7 +48,7 @@ def run_exploratory_analysis(rawdata, cleandata, regressormatrix,feature, target
     
     plt.xlabel("Price")
     plt.ylabel("Vol")
-    plt.title(f"Vol of Best Bid and Best Ask immediately before MO at {time_in_hours(target_time)}")
+    plt.title(f"Vol of Best Bid Vol and Best Ask Vol at {time_in_hours(target_time)}")
     plt.legend()
     plt.show()
     
@@ -125,6 +125,12 @@ def run_exploratory_analysis(rawdata, cleandata, regressormatrix,feature, target
     
     print(f" Percentage of orders that did  walk the book for INTC on April 1 2024 is {(1 -((total_walk.sum())/(len(cleandata['MO'])))) * 100:.2f} % ")
     
+    print('Checking clock time difference across the day for a lookback of 50 events')
+    differences = cleandata['Event']['TOD'].diff(config.EVENT_TIME_DELTA)
+    print(f'The max time between 50 events was {differences.max()}')
+    print(f'The median time between 50 events was {differences.median()}')
+    print(f'The avg time between 50 events was {differences.mean()}')
+    
     
     
 if __name__ == "__main__":  
@@ -143,7 +149,7 @@ if __name__ == "__main__":
     print(f'Starting Exploratory Data Analysis on {os.path.basename(main_path)} and {os.path.basename(mo_path)} \n')
    
 
-    regressormatrix = data_regressors(rawdata, cleandata)['Binary Matrix']
+    regressormatrix = data_regressors(rawdata, cleandata, clear_RAM=False)['Binary Matrix']
     
     run_exploratory_analysis(rawdata, cleandata, regressormatrix, feature = FEATURE_ANALYSE, target_time = TARGET_TIME)
 

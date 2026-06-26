@@ -9,6 +9,7 @@ Created on Mon Jun  1 14:27:25 2026
 #Importing libraries,classes, functions from other scripts
 
 import numpy as np
+import config 
 
 
 def time_in_hours(ms_past_midnight):
@@ -80,7 +81,7 @@ def speedmetric(df, feature_list):
                     out=np.zeros_like(event, dtype = float), 
                     where=(clock != 0)
                 )
-        result[f'Speed{metric}'] = speed_array
+        result[f'Speed_{metric}'] = speed_array
         
     return result
 
@@ -91,4 +92,33 @@ def trailing_calc(tod_targets, tod_source, vol_source, lookback):
     start_indices = np.searchsorted(tod_source, tod_targets - lookback, side = 'left')   #Finds the row indices where the lookback window starts and below where it finishes
     end_indices = np.searchsorted(tod_source, tod_targets , side = 'right') 
     return (cum_vol[end_indices] - cum_vol[start_indices]), (end_indices - start_indices)
+
+
+
+def calculate_rolling_moments(df, feature_list, window=config.EVENT_TIME_DELTA, calc_std=False, calc_skew=False, calc_kurt=False, calc_extremes = False):
+    
+    #Calculates moments for features
+    
+    new_features = {}
+    
+    for feature in feature_list:
+        # Create the rolling window object once per feature for efficiency
+        roll = df[feature].rolling(window=window, min_periods=2)
+        
+        if calc_std:
+            new_features[f'RollingStd_{feature}'] = roll.std().fillna(0).astype('float32')
+            
+        if calc_skew:
+            # Skew requires at least 3 data points to not be NaN
+            new_features[f'RollingSkew_{feature}'] = roll.skew().fillna(0).astype('float32')
+            
+        if calc_kurt:
+            # Kurtosis requires at least 4 data points
+            new_features[f'RollingKurt_{feature}'] = roll.kurt().fillna(0).astype('float32')
+            
+        if calc_extremes:
+            new_features[f'RollingMax_{feature}'] = roll.max().fillna(0).astype('float32')
+            new_features[f'RollingMin_{feature}'] = roll.min().fillna(0).astype('float32')
+
+    return new_features
     
