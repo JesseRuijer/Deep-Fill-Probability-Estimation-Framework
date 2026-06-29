@@ -39,90 +39,90 @@ LOGISTIC_MODEL_FEATURES = [
      
     # 1. Base Market & Order Status
     'Vol',
-    'Regime',
+    #'Regime',
     'TimeTillMarketClose',
-    'IsFinalMinute',
+    #'IsFinalMinute',
     'BidSize',
     'AskSize',
-    'Midprice',
-    'Microprice',
+
 
     # 2. Spreads & Imbalances
     'BASpread',
-    'QImbalance',
+    #'QImbalance',
     'AbsQImbalance',
-    'TotalVolImbalance',
-    'WeightedVolImbalance',
-    'MicroMidDeviation',
-    'CancelationRatio',
+    #'TotalVolImbalance',
+    #'WeightedVolImbalance',
+    #'MicroMidDeviation',
+    #'CancelationRatio',
+    #'OrderFlowImbalance',
 
     # 3. Event-Time Deltas (Tick-by-Tick Changes)
-    'EventDeltaMidprice',
-    'EventMicroMidDeviation',
-    'EventDeltaDistanceToMicroprice',
-    'EventDeltaDistanceToTouch',
-    'EventOrderFlowImbalance',
+    #'EventDeltaMidprice',
+    #'EventMicroMidDeviation',
+    #'EventDeltaMicroprice',
+    #'EventDeltaDistanceToTouch',
+    #'EventOrderFlowImbalance',
 
     # 4. Rolling Moments (Event-Time Volatility & Extremes)
-    'RollingStd_Microprice',
-    'RollingStd_EventOrderFlowImbalance',
-    'RollingStd_BASpread',
+
+    #'RollingStd_OrderFlowImbalance',
+    #'RollingStd_BASpread',
     'RollingStd_QImbalance',
-    'RollingStd_WeightedVolImbalance',
-    'RollingStd_MicroMidDeviation',
-    'RollingSkew_EventOrderFlowImbalance',
-    'RollingMax_EventOrderFlowImbalance',
-    'RollingMin_EventOrderFlowImbalance',
-    'RollingMax_BASpread',
-    'RollingMin_BASpread',
-    'RollingMax_Microprice',
-    'RollingMin_Microprice',
+    #'RollingStd_WeightedVolImbalance',
+    #'RollingStd_MicroMidDeviation',
+    #'RollingSkew_OrderFlowImbalance',
+    #'RollingMax_OrderFlowImbalance',
+    #'RollingMin_OrderFlowImbalance',
+    #'RollingMax_BASpread',
+    #'RollingMin_BASpread',
+
 
     # 5. Trailing Volumes & Lookbacks
-    'LookBackHiddenVol',
-    'MOTrailingVolBuy',
-    'MOTrailingVolSell',
-    'MOTrailingVolRatio',
+    #'LookBackHiddenVol',
+    #'MOTrailingVolBuy',
+    #'MOTrailingVolSell',
+    #'MOTrailingVolRatio',
     'LOTrailingVolPlaced',
-    'LOTrailingVolCanceled',
-    'LOTrailingVolExecuted',
-    'LOTrailingPlaceCancelRatio',
-    'LOTrailingPlaceExecuteRatio',
+    #'LOTrailingVolCanceled',
+    #'LOTrailingVolExecuted',
+    #'LOTrailingPlaceCancelRatio',
+    #'LOTrailingPlaceExecuteRatio',
 
     # 6. Dynamic Order Metrics (Heartbeat Engine)
-    'DistanceToTouch',
+    #'DistanceToTouch',
     'DistanceToMicroprice',
     'LogVolAhead',
-    'QueuePositionRatio',
+    #'QueuePositionRatio',
     'TimeSincePlacement',
 
     # 7. Clock-Time Deltas (The 1-Second Lookbacks)
-    'ClockDeltaMidprice',
-    'ClockMicroMidDeviation',
-    'ClockDeltaDistanceToMicroprice',
-    'ClockDeltaDistanceToTouch',
-    'ClockDeltaLogVolAhead',
-    'ClockQImbalance',
-    'ClockOrderFlowImbalance',
+    #'ClockDeltaMidprice',
+    #'ClockMicroMidDeviation',
+    #'ClockDeltaDistanceToMicroprice',
+    #'ClockDeltaDistanceToTouch',
+    #'ClockDeltaLogVolAhead',
+    #'ClockOrderFlowImbalance',
 
     # 8. Speed Metrics
-    'Speed_DeltaMidprice',
-    'Speed_DeltaDistanceToMicroprice',
-    'Speed_DeltaDistanceToTouch',
-    'Speed_MicroMidDeviation',
-    'Speed_QImbalance',
-    'Speed_OrderFlowImbalance',
-    'Speed_LogVolAhead',
+    #'Speed_DeltaMidprice',
+    #'Speed_DeltaDistanceToMicroprice',
+    #'Speed_DeltaDistanceToTouch',
+    #'Speed_MicroMidDeviation',
+    #'Speed_OrderFlowImbalance',
+
 
     # 9. Market Order (MO) & Sweep Impacts
     'TimeSinceLastMO',
-    'MOCount10ms',
-    'TimeSinceLastSweep',
+    #'MOCount10ms',
+    #'SweepNoSweep',
+    #'SweepInLast_2000ms',
+    #'SweepIntensity_2000ms'
 ]
 
 #Just for using the SHAP function, i fully put all the relevant featues in here
 LGBM_MODEL_FEATURES = [
      
+       
     # 1. Base Market & Order Status
     'Vol',
     'Regime',
@@ -130,8 +130,7 @@ LGBM_MODEL_FEATURES = [
     'IsFinalMinute',
     'BidSize',
     'AskSize',
-    'Midprice',
-    'Microprice',
+
 
     # 2. Spreads & Imbalances
     'BASpread',
@@ -139,33 +138,33 @@ LGBM_MODEL_FEATURES = [
     'AbsQImbalance',
     'TotalVolImbalance',
     'WeightedVolImbalance',
-    'MicroMidDeviation',
+    #'MicroMidDeviation',
     'CancelationRatio',
+    'OrderFlowImbalance',
 
     # 3. Event-Time Deltas (Tick-by-Tick Changes)
     'EventDeltaMidprice',
-    'EventMicroMidDeviation',
-    'EventDeltaDistanceToMicroprice',
-    'EventDeltaDistanceToTouch',
+    #'EventMicroMidDeviation',
+    'EventDeltaMicroprice',
+    #'EventDeltaDistanceToTouch',
     'EventOrderFlowImbalance',
 
     # 4. Rolling Moments (Event-Time Volatility & Extremes)
-    'RollingStd_Microprice',
-    'RollingStd_EventOrderFlowImbalance',
+
+    'RollingStd_OrderFlowImbalance',
     'RollingStd_BASpread',
     'RollingStd_QImbalance',
     'RollingStd_WeightedVolImbalance',
-    'RollingStd_MicroMidDeviation',
-    'RollingSkew_EventOrderFlowImbalance',
-    'RollingMax_EventOrderFlowImbalance',
-    'RollingMin_EventOrderFlowImbalance',
+    #'RollingStd_MicroMidDeviation',
+    'RollingSkew_OrderFlowImbalance',
+    'RollingMax_OrderFlowImbalance',
+    'RollingMin_OrderFlowImbalance',
     'RollingMax_BASpread',
     'RollingMin_BASpread',
-    'RollingMax_Microprice',
-    'RollingMin_Microprice',
+
 
     # 5. Trailing Volumes & Lookbacks
-    'LookBackHiddenVol',
+    #'LookBackHiddenVol',
     'MOTrailingVolBuy',
     'MOTrailingVolSell',
     'MOTrailingVolRatio',
@@ -176,7 +175,7 @@ LGBM_MODEL_FEATURES = [
     'LOTrailingPlaceExecuteRatio',
 
     # 6. Dynamic Order Metrics (Heartbeat Engine)
-    'DistanceToTouch',
+    #'DistanceToTouch',
     'DistanceToMicroprice',
     'LogVolAhead',
     'QueuePositionRatio',
@@ -184,26 +183,26 @@ LGBM_MODEL_FEATURES = [
 
     # 7. Clock-Time Deltas (The 1-Second Lookbacks)
     'ClockDeltaMidprice',
-    'ClockMicroMidDeviation',
+    #'ClockMicroMidDeviation',
     'ClockDeltaDistanceToMicroprice',
-    'ClockDeltaDistanceToTouch',
+    #'ClockDeltaDistanceToTouch',
     'ClockDeltaLogVolAhead',
-    'ClockQImbalance',
     'ClockOrderFlowImbalance',
 
     # 8. Speed Metrics
     'Speed_DeltaMidprice',
     'Speed_DeltaDistanceToMicroprice',
-    'Speed_DeltaDistanceToTouch',
-    'Speed_MicroMidDeviation',
-    'Speed_QImbalance',
+    #'Speed_DeltaDistanceToTouch',
+    #'Speed_MicroMidDeviation',
     'Speed_OrderFlowImbalance',
-    'Speed_LogVolAhead',
+
 
     # 9. Market Order (MO) & Sweep Impacts
     'TimeSinceLastMO',
     'MOCount10ms',
-    'TimeSinceLastSweep',
+    'SweepNoSweep',
+    'SweepInLast_2000ms',
+    'SweepIntensity_2000ms'
 ]
 
 #Note not all feautures here are varaibles in the model but its just useful to have them in a list like this
@@ -227,24 +226,28 @@ UNIVERSAL_FEATURES = [ # Features that apply to any LO, so for ex midprice yes, 
     'AbsQImbalance',
     'TotalVolImbalance',
     'WeightedVolImbalance',
-    'MicroMidDeviation',
+    #'MicroMidDeviation',
     'CancelationRatio',
+    'OrderFlowImbalance',
 
     # Event-Time Deltas (Market-wide)
     'EventDeltaMidprice',
-    'EventMicroMidDeviation',
+    'EventDeltaMicroprice',
+    #'EventMicroMidDeviation',
     'EventOrderFlowImbalance',
+    'EventDeltaBestBid',
+    'EventDeltaBestAsk',
 
     # Rolling Moments
     'RollingStd_Microprice',
-    'RollingStd_EventOrderFlowImbalance',
+    'RollingStd_OrderFlowImbalance',
     'RollingStd_BASpread',
     'RollingStd_QImbalance',
     'RollingStd_WeightedVolImbalance',
-    'RollingStd_MicroMidDeviation',
-    'RollingSkew_EventOrderFlowImbalance',
-    'RollingMax_EventOrderFlowImbalance',
-    'RollingMin_EventOrderFlowImbalance',
+    #'RollingStd_MicroMidDeviation',
+    'RollingSkew_OrderFlowImbalance',
+    'RollingMax_OrderFlowImbalance',
+    'RollingMin_OrderFlowImbalance',
     'RollingMax_BASpread',
     'RollingMin_BASpread',
     'RollingMax_Microprice',
@@ -261,9 +264,6 @@ UNIVERSAL_FEATURES = [ # Features that apply to any LO, so for ex midprice yes, 
     'LOTrailingPlaceCancelRatio',
     'LOTrailingPlaceExecuteRatio',
 
-    # Clock-Time Deltas calculated in Zone 1
-    'ClockDeltaMidprice',
-    'ClockMicroMidDeviation'
 ]
 
 DYNAMIC_FEATURES = [ #Features that change (in general) depending on the LO you look at
@@ -272,7 +272,7 @@ DYNAMIC_FEATURES = [ #Features that change (in general) depending on the LO you 
     
     # Event-Time Deltas (Order-Direction Dependent)
     'EventDeltaDistanceToMicroprice',
-    'EventDeltaDistanceToTouch',
+    #'EventDeltaDistanceToTouch',
 
     # Heartbeat Engine Recalculations
     'DistanceToTouch',
@@ -284,14 +284,12 @@ DYNAMIC_FEATURES = [ #Features that change (in general) depending on the LO you 
 
     # Clock-Time Deltas (Order-Direction/Position Dependent)
     'ClockDeltaDistanceToMicroprice',
-    'ClockDeltaDistanceToTouch',
+    #'ClockDeltaDistanceToTouch',
     'ClockDeltaLogVolAhead',
 
     # Speed Metrics (Order-Direction/Position Dependent)
     'Speed_DeltaDistanceToMicroprice',
-    'Speed_DeltaDistanceToTouch',
-    'Speed_DistanceToTouch',
-    'Speed_LogVolAhead',
+    #'Speed_DeltaDistanceToTouch',
     'Speed_DistanceToMicroprice'
 ]
 
@@ -299,6 +297,7 @@ DYNAMIC_FEATURES = [ #Features that change (in general) depending on the LO you 
 ALL_FEATURES = [
     
     # 1. Base Market & Order Status
+    'TOD',
     'Vol',
     'Regime',
     'TimeTillMarketClose',
@@ -314,26 +313,27 @@ ALL_FEATURES = [
     'AbsQImbalance',
     'TotalVolImbalance',
     'WeightedVolImbalance',
-    'MicroMidDeviation',
+    #'MicroMidDeviation',
     'CancelationRatio',
+    'OrderFlowImbalance',
 
     # 3. Event-Time Deltas (Tick-by-Tick Changes)
     'EventDeltaMidprice',
-    'EventMicroMidDeviation',
-    'EventDeltaDistanceToMicroprice',
+    #'EventMicroMidDeviation',
+    'EventDeltaMicroprice',
     'EventDeltaDistanceToTouch',
     'EventOrderFlowImbalance',
 
     # 4. Rolling Moments (Event-Time Volatility & Extremes)
     'RollingStd_Microprice',
-    'RollingStd_EventOrderFlowImbalance',
+    'RollingStd_OrderFlowImbalance',
     'RollingStd_BASpread',
     'RollingStd_QImbalance',
     'RollingStd_WeightedVolImbalance',
-    'RollingStd_MicroMidDeviation',
-    'RollingSkew_EventOrderFlowImbalance',
-    'RollingMax_EventOrderFlowImbalance',
-    'RollingMin_EventOrderFlowImbalance',
+   # 'RollingStd_MicroMidDeviation',
+    'RollingSkew_OrderFlowImbalance',
+    'RollingMax_OrderFlowImbalance',
+    'RollingMin_OrderFlowImbalance',
     'RollingMax_BASpread',
     'RollingMin_BASpread',
     'RollingMax_Microprice',
@@ -351,7 +351,7 @@ ALL_FEATURES = [
     'LOTrailingPlaceExecuteRatio',
 
     # 6. Dynamic Order Metrics (Heartbeat Engine)
-    'DistanceToTouch',
+    #'DistanceToTouch',
     'DistanceToMicroprice',
     'VolAhead',
     'LogVolAhead',
@@ -360,9 +360,9 @@ ALL_FEATURES = [
 
     # 7. Clock-Time Deltas (The 1-Second Lookbacks)
     'ClockDeltaMidprice',
-    'ClockMicroMidDeviation',
+    #'ClockMicroMidDeviation',
     'ClockDeltaDistanceToMicroprice',
-    'ClockDeltaDistanceToTouch',
+    #'ClockDeltaDistanceToTouch',
     'ClockDeltaLogVolAhead',
     'ClockQImbalance',
     'ClockOrderFlowImbalance',
@@ -370,18 +370,17 @@ ALL_FEATURES = [
     # 8. Speed Metrics
     'Speed_DeltaMidprice',
     'Speed_DeltaDistanceToMicroprice',
-    'Speed_DeltaDistanceToTouch',
-    'Speed_MicroMidDeviation',
-    'Speed_QImbalance',
+    #'Speed_DeltaDistanceToTouch',
+    #'Speed_MicroMidDeviation',
     'Speed_OrderFlowImbalance',
-    'Speed_DistanceToTouch',
-    'Speed_LogVolAhead',
     'Speed_DistanceToMicroprice',
 
     # 9. Market Order (MO) & Sweep Impacts
     'TimeSinceLastMO',
     'MOCount10ms',
-    'TimeSinceLastSweep',
+    'SweepNoSweep',
+    'SweepInLast_2000ms',
+    'SweepIntensity_2000ms'
 ]
 
 

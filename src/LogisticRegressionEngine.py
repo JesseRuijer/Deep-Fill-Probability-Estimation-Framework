@@ -44,7 +44,7 @@ def train_logistic_model(X_train, y_train, weights,params = None, for_tuning = F
     
     
     
-    calibrated_model = CalibratedClassifierCV(estimator=base_logistic_model, method='isotonic', cv=5 ) #Do some research if and why 5 is good value for cross validation in ML, its because that splits into 5 folds of 20% where each time we train on 80 and test on 20 and thats like the industry standard i think
+    calibrated_model = CalibratedClassifierCV(estimator=base_logistic_model, method='isotonic') # Put the cv=5 later again Do some research if and why 5 is good value for cross validation in ML, its because that splits into 5 folds of 20% where each time we train on 80 and test on 20 and thats like the industry standard i think
   
     
     #Look at the required assumptions for logistic regression, i think need iid and for example

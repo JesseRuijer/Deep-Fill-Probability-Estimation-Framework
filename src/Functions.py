@@ -69,15 +69,24 @@ def find_order_pattern(df, start_type, middle_type, middle_count, end_type):
     
 def speedmetric(df, feature_list):
     
+    
+    # Calculates the absolute magnitude of speed (Event Delta / Clock Delta).
+    # Returns strictly positive values. Relies on the raw Event/Clock deltas 
+    # in the main dataframe to provide the directional sign to the models.
+    
+    
     result = {}
     
     for metric in feature_list:
         event = df[f'Event{metric}'].values
         clock = df[f'Clock{metric}'].values
         
+        abs_event = np.abs(event)
+        abs_clock = np.abs(clock)
+        
         speed_array = np.divide(
-                    event, 
-                    clock, 
+                    abs_event, 
+                    abs_clock,  
                     out=np.zeros_like(event, dtype = float), 
                     where=(clock != 0)
                 )

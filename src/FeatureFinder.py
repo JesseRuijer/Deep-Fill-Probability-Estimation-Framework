@@ -54,9 +54,12 @@ def feature_finder(model, model_name, data, features, y_train, weights):
         l1_model = LogisticRegression(
             penalty = 'l1',
             solver = 'liblinear',
-            C = 0.1, #Strictness of allowing features, 1 is not strict, 0.1 is strict
+            n_jobs = -1,
+            C = 0.0001, #Strictness of allowing features, 1 is not strict, 0.1 is strict
             max_iter = 150,
-            random_state = 68
+            random_state = 68,
+            tol = 0.01, #just another tuning parameter i could remove later, but it was nexessary to get l1 to work on the correlated features
+            verbose = 1
             )
     
         l1_model.fit(X_train_scaled, y_train, sample_weight = weights)

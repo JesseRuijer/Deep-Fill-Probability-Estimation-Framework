@@ -20,6 +20,7 @@ import config
 import joblib
 import os
 import gc
+import numpy as np
 
 from DataAndFeatureEngineering import import_data, clean_data, data_regressors
 from LightGBMEngine import train_lgbm_model
@@ -27,6 +28,7 @@ from ModelEvaluation import test_model
 from LogisticRegressionEngine import train_logistic_model
 from FileManager import select_files_via_finder, get_data_paths, generate_dynamic_paths, get_ml_training_paths, get_batch_data_paths
 from FeatureFinder import feature_finder
+from sklearn.preprocessing import StandardScaler
 
 
 #Just a display feature in console so all columns are printed in console
@@ -100,10 +102,58 @@ def run_project():
         
         fill_weights = train_matrix_bin['UnitWeight']
         
+        print('Cleaning infinities') # if some infinities slipped through, kill them so scalar can do its job
+        logistic_regX = logistic_regX.replace([np.inf,-np.inf],0)
+        
+        # # DIAGNOSTIC: Print Highly Correlated Pairs 
+        # scalar = StandardScaler()
+        # logistic_regX_scaled = pd.DataFrame(
+        #     scalar.fit_transform(logistic_regX), 
+        #     columns=logistic_regX.columns
+        # )
+       
+        # print("\nCalculating Correlation Matrix...")
+        # corr_matrix = logistic_regX_scaled.corr().abs()
+        
+        # # Grab the upper triangle to avoid printing duplicates (e.g., A<->B and B<->A)
+        # upper_triangle = corr_matrix.where(np.triu(np.ones(corr_matrix.shape), k=1).astype(bool))
+        
+        # print("\n--- Highly Correlated Feature Pairs (> 0.95) ---")
+        # high_corr_pairs = []
+        
+        # # Hunt down the >0.95 pairs
+        # for col in upper_triangle.columns:
+        #     correlated_rows = upper_triangle[col][upper_triangle[col] > 0.85].index
+        #     for row in correlated_rows:
+        #         high_corr_pairs.append((row, col, upper_triangle.loc[row, col]))
+                
+
+        # high_corr_pairs.sort(key=lambda x: x[2], reverse=True)
+        
+        # if not high_corr_pairs:
+        #     print("No features correlated > 0.85 found!")
+        # else:
+        #     for f1, f2, score in high_corr_pairs:
+        #         print(f"[{score:.4f}] {f1}  <-->  {f2}")
+        # print("------------------------------------------------\n")
+
+
+    
+        # subset = train_matrix_bin[['LOTrailingVolPlaced','LOTrailingVolCanceled']]
+        # print(subset.corr())
+        
+        # # Or visually inspect the relationship
+        # import matplotlib.pyplot as plt
+        # plt.scatter(train_matrix_bin['LOTrailingVolPlaced'], train_matrix_bin['LOTrailingVolCanceled'], alpha=0.1)
+        # plt.show()
+        
+        # print("Stopping script for manual feature review...")
+        # return
+                
         base_lr, calibrated_lr, scalar_lr = train_logistic_model(logistic_regX, logistic_regY, fill_weights)
         
-        #Uncomment this after best features have been found
-        feature_finder(base_lr, 'Logistic Regression', train_matrix_bin , config.ALL_FEATURES, logistic_regY , fill_weights)
+        #comment this after best features have been found
+        feature_finder(base_lr, 'Logistic Regression', train_matrix_bin , config.LOGISTIC_MODEL_FEATURES, logistic_regY , fill_weights)
         
         logistic_test = test_model(
             test_data = test_matrix_bin, 
@@ -122,6 +172,9 @@ def run_project():
     #     lgbm_Y = train_matrix_bin[config.TARGET]
         
     #     fill_weights = train_matrix_bin['UnitWeight']
+    
+    # print('Cleaning infinities') # if some infinities slipped through, kill them so scalar can do its job
+    # logistic_regX = logistic_regX.replace([np.inf,-np.inf],0)
         
     #     base_lgbm, calibrated_lgbm = train_lgbm_model(lgbm_X, lgbm_Y, fill_weights)
     
