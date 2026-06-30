@@ -14,8 +14,12 @@ import tkinter as tk
 from tkinter import filedialog
 import os
 import json
+import sys
+import glob
+from pathlib import Path
 
-CACHE_FILE = ".last_paths.json"
+SCRIPT_DIR = Path(__file__).resolve().parent
+CACHE_FILE = SCRIPT_DIR / ".last_paths.json"
 
 def select_files_via_finder():
     
@@ -40,14 +44,21 @@ def get_data_paths():
     if os.path.exists(CACHE_FILE):
         with open(CACHE_FILE, 'r') as f:
             saved_paths = json.load(f)
-
-        print(f"MAIN: {os.path.basename(saved_paths['main_path'])}")
-        print(f"MO:   {os.path.basename(saved_paths['mo_path'])}")
+            
+        main_exists = Path(saved_paths['main_path']).exists()
+        mo_exists = Path(saved_paths['mo_path']).exists()
         
-        user_choice = input("Press ENTER to use these files, or type 'n' to pick a new one(s): ")
-        
-        if user_choice.strip().lower() != 'n':
-            return saved_paths['main_path'], saved_paths['mo_path']
+        if main_exists and mo_exists:
+            print(f"MAIN: {os.path.basename(saved_paths['main_path'])}")
+            print(f"MO:   {os.path.basename(saved_paths['mo_path'])}")
+            
+            user_choice = input("Press ENTER to use these files, or type 'n' to pick a new one(s): ")
+            
+            if user_choice.strip().lower() != 'n':
+                return saved_paths['main_path'], saved_paths['mo_path']
+            
+        else:
+            print("\n[WARNING] Cached paths do not exist on this machine")
 
     main_path, mo_path = select_files_via_finder()
     
@@ -68,14 +79,27 @@ def generate_dynamic_paths(main_file_path):
     date = parts[1]
     formatted_date = f"{date[:4]}_{date[4:6]}_{date[6:]}"
     
-    binary_out = f"../data/processed/{ticker}_BINARY_{formatted_date}.parquet"
-    multi_out = f"../data/processed/{ticker}_MULTI_{formatted_date}.parquet"
+    #pathlib way
+    #anchor to script
+    script_dir = Path(__file__).resolve().parent
+    
+    #build path, up one level then into data and into procesed
+    processed_dir = script_dir.parent / 'data' / 'processed'
+    
+    #failsafe, create folders if they dont exist
+    processed_dir.mkdir(parents = True, exist_ok = True)
+    
+    
+    binary_out = processed_dir / f"{ticker}_BINARY_{formatted_date}.parquet"
+    multi_out = processed_dir / f"{ticker}_MULTI_{formatted_date}.parquet"
 
     return binary_out, multi_out
 
 def get_ml_training_paths():
     """Opens Finder for Train and Test selection, sorts them, and caches for fast reruns."""
-    ML_CACHE_FILE = ".ml_cache.json"
+    
+    
+    ML_CACHE_FILE = SCRIPT_DIR / ".ml_cache.json"
     
     # =========================================================================
     # 1. CHECK SHORT-TERM MEMORY (CACHE)
@@ -84,30 +108,46 @@ def get_ml_training_paths():
         with open(ML_CACHE_FILE, 'r') as f:
             saved_paths = json.load(f)
             
-        print("\n--- ML DATA CACHE FOUND ---")
-        # .get() prevents errors if a slot is empty
-        if saved_paths.get('train_bin'): print(f"TRAIN (Bin):   {os.path.basename(saved_paths['train_bin'])}")
-        if saved_paths.get('train_multi'): print(f"TRAIN (Multi): {os.path.basename(saved_paths['train_multi'])}")
-        if saved_paths.get('test_bin'): print(f"TEST (Bin):    {os.path.basename(saved_paths['test_bin'])}")
-        if saved_paths.get('test_multi'): print(f"TEST (Multi):  {os.path.basename(saved_paths['test_multi'])}")
-        print("---------------------------")
+        cache_is_valid = True
+        for key, path_string in saved_paths.items():
+            if path_string and not Path(path_string).exists():
+                cache_is_valid = False
+                break
+            
+        if cache_is_valid:
+            print("\n--- ML DATA CACHE FOUND ---")
+            # .get() prevents errors if a slot is empty
+            if saved_paths.get('train_bin'): print(f"TRAIN (Bin):   {os.path.basename(saved_paths['train_bin'])}")
+            if saved_paths.get('train_multi'): print(f"TRAIN (Multi): {os.path.basename(saved_paths['train_multi'])}")
+            if saved_paths.get('test_bin'): print(f"TEST (Bin):    {os.path.basename(saved_paths['test_bin'])}")
+            if saved_paths.get('test_multi'): print(f"TEST (Multi):  {os.path.basename(saved_paths['test_multi'])}")
+            print("---------------------------")
+            
+            user_choice = input("Press [ENTER] to reuse these datasets, or type 'n' to pick new ones: ")
         
-        user_choice = input("Press [ENTER] to reuse these datasets, or type 'n' to pick new ones: ")
-        
-        if user_choice.strip().lower() != 'n':
-            return saved_paths
+            if user_choice.strip().lower() != 'n':
+                return saved_paths
+        else:
+            print("\n[WARNING] Cached paths do not exist on this machine")
 
     # =========================================================================
     # 2. OPEN FINDER IF NO CACHE OR USER TYPED 'n'
     # =========================================================================
     root = tk.Tk()
     root.withdraw()
-    init_dir = os.path.abspath("../data/processed/")
+    
+    script_dir = Path(__file__).resolve().parent
+    init_dir = script_dir.parent / 'data' / 'processed'
+    
+    #Tkinter needs raw strings for directories so convert it quickly
+    
+    init_dir_str = str(init_dir)
+    
     
     print("\n--- SELECT DATA FOR MACHINE LEARNING ---")
     
     print("Highlight the TRAINING file(s) you want to use (Hold Cmd/Shift for multiple).")
-    train_files = filedialog.askopenfilenames(initialdir=init_dir, title="Select TRAIN Data", filetypes=[("All files", "*.*")])
+    train_files = filedialog.askopenfilenames(initialdir=init_dir_str, title="Select TRAIN Data", filetypes=[("All files", "*.*")])
     
     if not train_files:
         return {} # Returns empty if canceled
@@ -144,18 +184,36 @@ def get_ml_training_paths():
 ########Add a funciton to select multiple files for main and mo 
 def get_batch_data_paths():
     """Allows selecting multiple MAIN files and auto-locates their MO files."""
-    root = tk.Tk()
-    root.withdraw() 
     
-    print("\n--- BATCH DATA INGESTION ---")
-    print("Opening Finder... Highlight as many MAIN .mat files as you want.")
+    batch_jobs = []
+    script_dir = Path(__file__).resolve().parent
+    raw_data_dir = script_dir.parent / 'data' / 'raw'
     
-    main_files = filedialog.askopenfilenames(
-        title="Select MAIN .mat files (Hold Cmd/Shift for multiple)", 
-        filetypes=[("MATLAB files", "*.mat")]
-    )
+    #Cluster bypass so if you run main.py it bypasses the GUI (for executing on clusters that do not have GUI)
+    
+    if '--cluster' in sys.argv:
+        print('Running in cluster mode')
+        
+        main_files = glob.glob(str(raw_data_dir / '*_NASDAQ/*.mat'))
+        
+        if not main_files:
+            print('No .mat files found')
+            return []
+    
+    else:  #local GUI mode
+        root = tk.Tk()
+        root.withdraw() 
+        
+        print("\n--- BATCH DATA INGESTION ---")
+        print("Opening Finder... Highlight as many MAIN .mat files as you want.")
+        
+        main_files = filedialog.askopenfilenames(
+            title="Select MAIN .mat files (Hold Cmd/Shift for multiple)", 
+            filetypes=[("MATLAB files", "*.mat")]
+        )
     
     if not main_files: 
+        print('No .mat files found')
         return []
     
     batch_jobs = []
@@ -167,12 +225,13 @@ def get_batch_data_paths():
         ticker = parts[0]
         date = parts[1]
         
-        # Auto-guess the MO path based on the MAIN path
-        mo_path = os.path.abspath(f"../data/raw/{ticker}_NASDAQ/MO/{ticker}_{date}.mat")
+        script_dir = Path(__file__).resolve().parent
         
-        if os.path.exists(mo_path):
-            batch_jobs.append((main_path, mo_path))
+        mo_path = script_dir.parent / 'data' / 'raw' / f'{ticker}_NASDAQ' / 'MO' / f'{ticker}_{date}.mat'  
+
+        if mo_path.exists():
+            batch_jobs.append((main_path, str(mo_path)))
         else:
-            print(f"WARNING: Could not find MO file for {filename}. Skipping this day.")
+            print(f"WARNING: Could not find MO file for {filename}. Skipping this day, was looking here: {mo_path}")
             
     return batch_jobs

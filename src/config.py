@@ -42,8 +42,9 @@ LOGISTIC_MODEL_FEATURES = [
     #'Regime',
     'TimeTillMarketClose',
     #'IsFinalMinute',
-    'BidSize',
-    'AskSize',
+   # 'BidSize',
+    #'AskSize',
+    'TotalQueueSize',
 
 
     # 2. Spreads & Imbalances
@@ -125,53 +126,54 @@ LGBM_MODEL_FEATURES = [
        
     # 1. Base Market & Order Status
     'Vol',
-    'Regime',
+   # 'Regime',
     'TimeTillMarketClose',
-    'IsFinalMinute',
-    'BidSize',
-    'AskSize',
+    #'IsFinalMinute',
+    #'BidSize',
+    #'AskSize',
+    'TotalQueueSize',
 
 
     # 2. Spreads & Imbalances
-    'BASpread',
+    #'BASpread',
     'QImbalance',
-    'AbsQImbalance',
+    #'AbsQImbalance',
     'TotalVolImbalance',
     'WeightedVolImbalance',
     #'MicroMidDeviation',
-    'CancelationRatio',
-    'OrderFlowImbalance',
+    #'CancelationRatio',
+    #'OrderFlowImbalance',
 
     # 3. Event-Time Deltas (Tick-by-Tick Changes)
-    'EventDeltaMidprice',
+    #'EventDeltaMidprice',
     #'EventMicroMidDeviation',
     'EventDeltaMicroprice',
     #'EventDeltaDistanceToTouch',
-    'EventOrderFlowImbalance',
+    #'EventOrderFlowImbalance',
 
     # 4. Rolling Moments (Event-Time Volatility & Extremes)
 
-    'RollingStd_OrderFlowImbalance',
+    #'RollingStd_OrderFlowImbalance',
     'RollingStd_BASpread',
     'RollingStd_QImbalance',
     'RollingStd_WeightedVolImbalance',
     #'RollingStd_MicroMidDeviation',
-    'RollingSkew_OrderFlowImbalance',
+    #'RollingSkew_OrderFlowImbalance',
     'RollingMax_OrderFlowImbalance',
     'RollingMin_OrderFlowImbalance',
-    'RollingMax_BASpread',
-    'RollingMin_BASpread',
+    #'RollingMax_BASpread',
+    #'RollingMin_BASpread',
 
 
     # 5. Trailing Volumes & Lookbacks
     #'LookBackHiddenVol',
-    'MOTrailingVolBuy',
-    'MOTrailingVolSell',
-    'MOTrailingVolRatio',
+    #'MOTrailingVolBuy',
+    #'MOTrailingVolSell',
+    #'MOTrailingVolRatio',
     'LOTrailingVolPlaced',
     'LOTrailingVolCanceled',
-    'LOTrailingVolExecuted',
-    'LOTrailingPlaceCancelRatio',
+    #'LOTrailingVolExecuted',
+    #'LOTrailingPlaceCancelRatio',
     'LOTrailingPlaceExecuteRatio',
 
     # 6. Dynamic Order Metrics (Heartbeat Engine)
@@ -182,27 +184,27 @@ LGBM_MODEL_FEATURES = [
     'TimeSincePlacement',
 
     # 7. Clock-Time Deltas (The 1-Second Lookbacks)
-    'ClockDeltaMidprice',
+    #'ClockDeltaMidprice',
     #'ClockMicroMidDeviation',
-    'ClockDeltaDistanceToMicroprice',
+    #'ClockDeltaDistanceToMicroprice',
     #'ClockDeltaDistanceToTouch',
     'ClockDeltaLogVolAhead',
-    'ClockOrderFlowImbalance',
+    #'ClockOrderFlowImbalance',
 
     # 8. Speed Metrics
-    'Speed_DeltaMidprice',
-    'Speed_DeltaDistanceToMicroprice',
+    #'Speed_DeltaMidprice',
+    #'Speed_DeltaDistanceToMicroprice',
     #'Speed_DeltaDistanceToTouch',
     #'Speed_MicroMidDeviation',
-    'Speed_OrderFlowImbalance',
+    #'Speed_OrderFlowImbalance',
 
 
     # 9. Market Order (MO) & Sweep Impacts
     'TimeSinceLastMO',
-    'MOCount10ms',
-    'SweepNoSweep',
-    'SweepInLast_2000ms',
-    'SweepIntensity_2000ms'
+    #'MOCount10ms',
+    #'SweepNoSweep',
+    #'SweepInLast_2000ms',
+    #'SweepIntensity_2000ms'
 ]
 
 #Note not all feautures here are varaibles in the model but its just useful to have them in a list like this
@@ -219,6 +221,7 @@ UNIVERSAL_FEATURES = [ # Features that apply to any LO, so for ex midprice yes, 
     'BestAsk',
     'Midprice',
     'Microprice',
+    'TotalQueueSize',
 
     # Spreads & Imbalances
     'BASpread',
@@ -306,6 +309,7 @@ ALL_FEATURES = [
     'AskSize',
     'Midprice',
     'Microprice',
+    'TotalQueueSize',
 
     # 2. Spreads & Imbalances
     'BASpread',

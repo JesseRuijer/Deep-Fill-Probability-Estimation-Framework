@@ -230,6 +230,7 @@ def data_regressors(rawdata, cleandata, clear_RAM = True):
     Regressors_df['BestAsk'] = df_SP[0]
     Regressors_df['BidSize'] = df_BV[0]
     Regressors_df['AskSize'] = df_SV[0]
+    Regressors_df['TotalQueueSize'] = Regressors_df['BidSize'] + Regressors_df['AskSize']
     Regressors_df["BASpread"] = Regressors_df['BestAsk'] - Regressors_df['BestBid']
     Regressors_df["Midprice"] = (Regressors_df['BestBid'] + Regressors_df['BestAsk'])/2
     Regressors_df["Microprice"] = ((Regressors_df['BidSize']*Regressors_df['BestAsk'])+(Regressors_df['AskSize']*Regressors_df['BestBid']))/(Regressors_df['BidSize'] + Regressors_df['AskSize'])

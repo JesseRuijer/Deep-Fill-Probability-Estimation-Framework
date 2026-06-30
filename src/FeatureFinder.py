@@ -31,7 +31,7 @@ def feature_finder(model, model_name, data, features, y_train, weights):
         # Generate the standard SHAP summary plot
         shap.summary_plot(shap_values, X_test, feature_names=features)
         
-        #Write a script to obtain the top 10 features
+        #Write a script to obtain the top features
         
         mean_abs_shap = np.abs(shap_values).mean(axis = 0)
         
@@ -39,9 +39,9 @@ def feature_finder(model, model_name, data, features, y_train, weights):
             'Feature': features,
             'Mean Abs Shap': mean_abs_shap}).sort_values(by = 'Mean Abs Shap', ascending = False)
         print(shap_importance)
-        top_10_features = shap_importance.head(10)['Feature'].tolist()
+        top_features = shap_importance.head(15)['Feature'].tolist()
         
-        print(f'Final Top 10 Features for LGBM are: {top_10_features}')
+        print(f'Final features {top_features}')
         
         
     def logistic_best_feature_finder(model, data, features, y_train, weights):
@@ -56,7 +56,7 @@ def feature_finder(model, model_name, data, features, y_train, weights):
             solver = 'liblinear',
             n_jobs = -1,
             C = 0.0001, #Strictness of allowing features, 1 is not strict, 0.1 is strict
-            max_iter = 150,
+            max_iter = 1000,
             random_state = 68,
             tol = 0.01, #just another tuning parameter i could remove later, but it was nexessary to get l1 to work on the correlated features
             verbose = 1

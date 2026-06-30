@@ -126,7 +126,7 @@ def test_model(test_data, base_model, calibrated_model, scalar, model_name, feat
    
     dummy_fill_prob = np.average(y_true, weights = weights)
     dummy_y_pred_prob = np.full(len(y_true), dummy_fill_prob) #just creates an array of length y true with dummy fill probs
-    print(f"Baseline Fill percentage is {(dummy_fill_prob * 100):.4f} \n where the Dummy Fill prob is a measure of the total volume that got placed throughout the day that eventually resulted in a fill, rather than a simple counter of the individual order tickets%")
+    print(f"Baseline Fill percentage is {(dummy_fill_prob * 100):.4f}% \n where the Dummy Fill prob is a measure of the total volume that got placed throughout the day that eventually resulted in a fill, rather than a simple counter of the individual order tickets%")
     
     
     #because were making a probability engine using logistic regression we must look at brier score and log loss to evaulte it
@@ -146,6 +146,8 @@ def test_model(test_data, base_model, calibrated_model, scalar, model_name, feat
     avgprecision_dummy = average_precision_score(y_true, dummy_y_pred_prob, sample_weight = weights)
     print(f'Avg precision score is {avgprecision_dummy:.3f}')
     
+    print(f'{model_name} performed {avgprecision/avgprecision_dummy:.3f} times better than dummy ')
+    
     #Visualisation of performance vs dummy
     fig, axes = plt.subplots(2,2, figsize = (24,14))
     #calibration curve
@@ -155,6 +157,9 @@ def test_model(test_data, base_model, calibrated_model, scalar, model_name, feat
     #manually writing a weighted calibration curve since weights isnt a supported parameter in sklearn calibration_curve
     
     def weighted_calibration_curve(y_true, y_pred, weights, n_bins=10):
+        
+        #So for this curve it groups into 10 bins the predict probability, but thats regardless of whether the option was alive for 1ms or for 10000ms so it doesnt say too much yet
+        
         """
         Manually calculates a volume-weighted calibration curve using quantiles.
         """
@@ -179,26 +184,60 @@ def test_model(test_data, base_model, calibrated_model, scalar, model_name, feat
     axes[0,0].plot([0,1], [0,1], color = 'grey', label = "Perfect Calibration") # axes[0] means we're talking about the left figure then [0,1] , [0,1] are x list and y list and are read vertically so the first point is 0,0 and the second point is 1,1 and a line is drawn between them i.e the perfect prediction line i think but check this
     axes[0,0].plot(engine_prob_pred, engine_true, color = 'b' ,label = f'{model_name}')
     axes[0,0].set_title('Calibration curve')
-    axes[0,0].set_xlim(0, 0.2)
-    axes[0,0].set_ylim(0, 0.2)
+    axes[0,0].set_xlim(0, 0.5)
+    axes[0,0].set_ylim(0, 0.5)
     axes[0,0].set_xlabel('Average Predicted Probability of Fill')
     axes[0,0].set_ylabel('Average Actual Fill Rate')
     axes[0,0].legend()
     
-    #Roc curve
     
-    engine_fpr, engine_tpr, tresholds = roc_curve(y_true, y_pred_prob_vis) #returns false postive rates and true positive rates, treshold which i think is the number or prob above or below it gives a certain classification
-    dummy_fpr, dummy_tpr, tresholds = roc_curve(y_true, dummy_y_pred_prob)
-    axes[0,1].plot(engine_fpr, engine_tpr, color = 'b', label = f'{model_name}')
-    axes[0,1].plot(dummy_fpr, dummy_tpr, color = 'r', label = 'Dummy')
-    axes[0,1].set_title('ROC curve (not useful for this type of data)')
-    axes[0,1].set_xlabel('Cancels or Expirations identified Falsely as Fills / All Actual Cancels') # False Postive rate = 1 - specificity = 1 - 
-    axes[0,1].set_ylabel('Fills correctly identified as Fills / All Actual Fills')  #Recall = TP /(TP + FN) = Sensitivity = True Positive Rate
+    def temporal_prob_curve(y_true, y_pred, weights, n_bins = 10):
+        
+        time_since_placement = test_data['TimeSincePlacement'].values
+        
+        df = pd.DataFrame({
+            'y_true': y_true,
+            'y_pred': y_pred,
+            'weights': weights,
+            'time': time_since_placement})
+        
+        df = df.sort_values('time')
+        
+        df['time_bin'] = pd.qcut(df['time'], q = n_bins, duplicates = 'drop')
+        
+        grouped = df.groupby('time_bin', observed = False) #observed is false means even if there were zero orders in a bin, still use it
+        
+        avg_time = grouped['time'].mean().values
+    
+        weighted_actual = grouped.apply(lambda x: np.average(x['y_true'], weights = x['weights'])).values
+        weighted_pred = grouped.apply(lambda x: np.average(x['y_pred'], weights = x['weights'])).values
+  
+        return avg_time, weighted_actual, weighted_pred  
+  
+    avg_time, temp_acc, temp_pred = temporal_prob_curve(y_true, y_pred_prob_vis, weights)
+    
+    axes[0,1].plot(avg_time, temp_acc, color = 'b', label = 'Actual fill rate')
+    axes[0,1].plot(avg_time, temp_pred, color = 'r', label = f'{model_name} prediction')
+    axes[0,1].set_title('Fill prob during lifetime of order')
+    axes[0,1].set_xlabel('Time since placement') 
+    axes[0,1].set_ylabel('P(fill)')
     axes[0,1].legend()
+  
+    
+    # #Roc curve
+    
+    # engine_fpr, engine_tpr, tresholds = roc_curve(y_true, y_pred_prob_vis) #returns false postive rates and true positive rates, treshold which i think is the number or prob above or below it gives a certain classification
+    # dummy_fpr, dummy_tpr, tresholds = roc_curve(y_true, dummy_y_pred_prob)
+    # axes[0,1].plot(engine_fpr, engine_tpr, color = 'b', label = f'{model_name}')
+    # axes[0,1].plot(dummy_fpr, dummy_tpr, color = 'r', label = 'Dummy')
+    # axes[0,1].set_title('ROC curve (not useful for this type of data)')
+    # axes[0,1].set_xlabel('Cancels or Expirations identified Falsely as Fills / All Actual Cancels') # False Postive rate = 1 - specificity = 1 - 
+    # axes[0,1].set_ylabel('Fills correctly identified as Fills / All Actual Fills')  #Recall = TP /(TP + FN) = Sensitivity = True Positive Rate
+    # axes[0,1].legend()
     
     #Precision recall curve 
     # a point of x = 0.16, y = 0.4 means the following: if we set our treshold to 16% so out of all the true fills
-    # we only capture 16% then out of all the  orders our model flagged as a fill, 40% were actual fills 
+    # we only capture 16% then out of all the  orders our model flagged as a fill, 40% were actual fills , so when we captured only 16 % our treshold for selecting a fill was high, but you cant see that directly from the graph i think, look into a way of doing that 
     
     engine_precision, engine_recall, engine_treshold = precision_recall_curve(y_true, y_pred_prob_vis, sample_weight = weights)
     axes[1,0].plot(engine_recall, engine_precision, color = 'b', label = f'{model_name} PR')

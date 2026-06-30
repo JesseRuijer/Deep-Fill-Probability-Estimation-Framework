@@ -12,11 +12,18 @@ import optuna
 import config
 from LightGBMEngine import train_lgbm_model
 from sklearn.metrics import average_precision_score
+from pathlib import Path
+
 
 #Loading data in 
+script_dir = Path(__file__).resolve().parent
+processed_dir = script_dir.parent / 'data' / 'processed'
+train_file = processed_dir / 'INTC_BINARY_2014_04_01.parquet'
+val_file = processed_dir / 'INTC_BINARY_2014_04_02.parquet'
 
-train_matrix = pd.read_parquet('/Users/jesseruijer/Documents/Summer Research/data/processed/INTC_MULTI_2014_04_01.parquet').sample(frac = 0.15, random_state = 67)
-val_matrix = pd.read_parquet('/Users/jesseruijer/Documents/Summer Research/data/processed/INTC_MULTI_2014_04_02.parquet').sample(frac = 0.15, random_state = 67) #Validation data different from training and testing data ofc
+
+train_matrix = pd.read_parquet(train_file).sample(frac = 0.15, random_state = 67)
+val_matrix = pd.read_parquet(val_file).sample(frac = 0.15, random_state = 67) #Validation data different from training and testing data ofc
 
 X_train = train_matrix[config.LGBM_MODEL_FEATURES]
 y_train = train_matrix[config.TARGET]
@@ -45,7 +52,7 @@ def objective(trial):
     
     'learning_rate' : trial.suggest_float('learning_rate', 0.01, 0.1, log = True), # log is true to spend more time learning slowly which is useful with the amount of noise in lob data i think
     'num_leaves' : trial.suggest_int('num_leaves', 20, 150), #max num of leaves, i.e terminal nodes, allowed in each tree 
-    'min_child_samples': trial.suggest_int('min_child_samples', 100, 2000) #Minimum number of data points required to create a new split in a leaf node
+    'min_child_samples': trial.suggest_int('min_child_samples', 100, 3000) #Minimum number of data points required to create a new split in a leaf node
     
         }
     
@@ -69,12 +76,12 @@ def objective(trial):
 
 
 if __name__ == '__main__':
-    print("Staring Optuna Optimalisation")
+    print("Starting Optuna Optimalisation")
     
     #Running search for optimal params
     
     study = optuna.create_study(direction = 'maximize') # Since our criterion for finetuning is average precision score (AUC of Precision Recall) we aim to maximisze
-    study.optimize(objective, n_trials = 40)
+    study.optimize(objective, n_trials = 60)
     
     print(f' Best average prediction score was {study.best_value:.3f}')
     print('Optimised structural pars')

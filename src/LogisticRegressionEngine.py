@@ -19,13 +19,13 @@ def train_logistic_model(X_train, y_train, weights,params = None, for_tuning = F
     
     if params == None:
         params = {
-            'max_iter' : 200,
+            'max_iter' : 1000,
             'n_jobs' : 1, #Used to be -1 which i believe is multicore, but not sure which one is better atm
             'random_state' : 69,
             
             'penalty' : 'l2', #Used to be l1 from optuna but after introducing heartbeats it was just too slow
             'solver': 'lbfgs', #Used to be saga from optuna but after introducing heartbeats it was just too slow
-            'C': 0.00010257912203796099,
+            'C': 5.53911372074629,
             'verbose' : 2 #Prints progress to console
             }
         
@@ -44,7 +44,7 @@ def train_logistic_model(X_train, y_train, weights,params = None, for_tuning = F
     
     
     
-    calibrated_model = CalibratedClassifierCV(estimator=base_logistic_model, method='isotonic') # Put the cv=5 later again Do some research if and why 5 is good value for cross validation in ML, its because that splits into 5 folds of 20% where each time we train on 80 and test on 20 and thats like the industry standard i think
+    calibrated_model = CalibratedClassifierCV(estimator=base_logistic_model, method='isotonic', cv = 5) # Put the cv=5 later again Do some research if and why 5 is good value for cross validation in ML, its because that splits into 5 folds of 20% where each time we train on 80 and test on 20 and thats like the industry standard i think
   
     
     #Look at the required assumptions for logistic regression, i think need iid and for example

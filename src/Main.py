@@ -22,6 +22,7 @@ import os
 import gc
 import numpy as np
 
+from pathlib import Path
 from DataAndFeatureEngineering import import_data, clean_data, data_regressors
 from LightGBMEngine import train_lgbm_model
 from ModelEvaluation import test_model
@@ -150,10 +151,58 @@ def run_project():
         # print("Stopping script for manual feature review...")
         # return
                 
-        base_lr, calibrated_lr, scalar_lr = train_logistic_model(logistic_regX, logistic_regY, fill_weights)
         
+        
+        #Training model, can be commented when saved model
+       # base_lr, calibrated_lr, scalar_lr = train_logistic_model(logistic_regX, logistic_regY, fill_weights)
+        
+        #Save final model to harddrive, comment after saving 
+        
+        # model_package = {
+            
+        #     'base_model': base_lr,
+        #     'calibrated_model': calibrated_lr,
+        #     'features': ['Vol', 'TimeTillMarketClose','TotalQueueSize','BASpread',   'AbsQImbalance', 'RollingStd_QImbalance', 'LOTrailingVolPlaced',
+        #                   'DistanceToMicroprice','LogVolAhead', 'TimeSincePlacement','TimeSinceLastMO'],
+        #     'scalar' : scalar_lr
+        #     }
+        
+        # #Pathing logic, uses pathlib library so on different devices it still saves correctly, maybe i need to install the os create folder etc stuff for all teh oter things as well
+        # #so that when i run it on an external computer maybe to train for ex, it automatically creates the right folders on that specific computer
+        
+        # script_dir = Path(__file__).resolve().parent # file is built in variable holder, resolve and parent to get a string that just contains the directory that contains the script
+        # models_dir = script_dir.parent / 'models' # /  works as a path joiner
+        # models_dir.mkdir(parents = True, exist_ok = True) #failsafe to create folder if it doesnt exist or does nothing if it already exists
+        # model_filepath = models_dir / 'Logistic_Regression_Models_V1.joblib'
+        
+        # joblib.dump(model_package, model_filepath)
+        
+        # print(f'Succesfully saved logistic regression models to  {model_filepath}')
+        
+        # return 
+        
+    #Extracting the model from hard drive 
+    #Rebuild the absolute path using pathlib
+        script_dir = Path(__file__).resolve().parent 
+        models_dir = script_dir.parent / 'models'
+        model_filepath = models_dir / 'Logistic_Regression_Models_V1.joblib'
+        
+        print(f'Loading Logistic Models from {model_filepath}')
+        
+        #Load the package using the dynamic path
+        loaded_model_package = joblib.load(model_filepath)
+        
+        #Extracting the contents from the dictionary
+        features = loaded_model_package['features']
+        scalar_lr = loaded_model_package['scalar']
+        base_lr = loaded_model_package['base_model']
+        calibrated_lr = loaded_model_package['calibrated_model']
+        
+        
+    
         #comment this after best features have been found
-        feature_finder(base_lr, 'Logistic Regression', train_matrix_bin , config.LOGISTIC_MODEL_FEATURES, logistic_regY , fill_weights)
+        #feature_finder(base_lr, 'Logistic Regression', train_matrix_bin , config.LOGISTIC_MODEL_FEATURES, logistic_regY , fill_weights)
+        # print(f'Features used: {features}')
         
         logistic_test = test_model(
             test_data = test_matrix_bin, 
@@ -161,35 +210,79 @@ def run_project():
             calibrated_model = calibrated_lr,
             scalar = scalar_lr,
             model_name = 'Logistic Regression',
-            features = config.LOGISTIC_MODEL_FEATURES,
+            features = features,
             is_multi = False
         )
         
-    # if paths['train_bin'] and paths['test_bin']:
-    #     print('\n[DETECTED Bin DATA] Executing LightGBM')
+    if paths['train_bin'] and paths['test_bin']:
+        print('\n[DETECTED Bin DATA] Executing LightGBM')
 
-    #     lgbm_X = train_matrix_bin[config.LGBM_MODEL_FEATURES]
-    #     lgbm_Y = train_matrix_bin[config.TARGET]
+        lgbm_X = train_matrix_bin[config.LGBM_MODEL_FEATURES]
+        lgbm_Y = train_matrix_bin[config.TARGET]
         
-    #     fill_weights = train_matrix_bin['UnitWeight']
+        fill_weights = train_matrix_bin['UnitWeight']
     
-    # print('Cleaning infinities') # if some infinities slipped through, kill them so scalar can do its job
-    # logistic_regX = logistic_regX.replace([np.inf,-np.inf],0)
-        
-    #     base_lgbm, calibrated_lgbm = train_lgbm_model(lgbm_X, lgbm_Y, fill_weights)
+    print('Cleaning infinities') # if some infinities slipped through, kill them so scalar can do its job
+    logistic_regX = logistic_regX.replace([np.inf,-np.inf],0)
     
-       # #comment this after best features have been found
-       # feature_finder(base_lgbm,'Light Gradient Boosted Model', test_matrix_bin , config.LGBM_MODEL_FEATURES)
+    # #Training model, can be commented when saved model    
+    # base_lgbm, calibrated_lgbm = train_lgbm_model(lgbm_X, lgbm_Y, fill_weights)
+    
+    #comment this after best features have been found
+    #feature_finder(base_lgbm,'Light Gradient Boosted Model', test_matrix_bin , config.LGBM_MODEL_FEATURES, None, None)
+    #return 
+    #Save final model to harddrive, comment after saving 
+    
+    # model_package = {
         
-    #     lgbm_test = test_model(
-    #         test_data = test_matrix_bin, 
-    #         base_model = base_lgbm,
-    #         calibrated_model = calibrated_lgbm,
-    #         scalar = None,
-    #         model_name = 'Light Gradient Boosted Model',
-    #         features = config.LGBM_MODEL_FEATURES,
-    #         is_multi = False
-    #     )
+    #     'base_model': base_lgbm,
+    #     'calibrated_model': calibrated_lgbm,
+    #     'features': ['Vol',   'TimeTillMarketClose', 'TotalQueueSize','QImbalance','TotalVolImbalance','WeightedVolImbalance','EventDeltaMicroprice',
+    #                 'RollingStd_BASpread','RollingStd_QImbalance', 'RollingStd_WeightedVolImbalance', 'RollingMax_OrderFlowImbalance','RollingMin_OrderFlowImbalance',
+    #                 'LOTrailingVolPlaced','LOTrailingVolCanceled','LOTrailingPlaceExecuteRatio', 'DistanceToMicroprice','LogVolAhead','QueuePositionRatio','TimeSincePlacement',
+    #                 'ClockDeltaLogVolAhead','TimeSinceLastMO']
+    #     }
+    
+    # #Pathing logic, uses pathlib library so on different devices it still saves correctly, maybe i need to install the os create folder etc stuff for all teh oter things as well
+    # #so that when i run it on an external computer maybe to train for ex, it automatically creates the right folders on that specific computer
+    
+    # script_dir = Path(__file__).resolve().parent # file is built in variable holder, resolve and parent to get a string that just contains the directory that contains the script
+    # models_dir = script_dir.parent / 'models' # /  works as a path joiner
+    # models_dir.mkdir(parents = True, exist_ok = True) #failsafe to create folder if it doesnt exist or does nothing if it already exists
+    # model_filepath = models_dir / 'LGBM_Models_V1.joblib'
+    
+    # joblib.dump(model_package, model_filepath)
+    
+    # print(f'Succesfully saved logistic regression models to  {model_filepath}')
+    
+    # Extracting the model from hard drive 
+
+
+    # Rebuild the absolute path using pathlib
+    script_dir = Path(__file__).resolve().parent 
+    models_dir = script_dir.parent / 'models'
+    model_filepath = models_dir / 'LGBM_Models_V1.joblib'
+    
+    print(f'Loading Logistic Models from {model_filepath}')
+    
+    #Load the package using the dynamic path
+    loaded_model_package = joblib.load(model_filepath)
+    
+    #Extracting the contents from the dictionary
+    features = loaded_model_package['features']
+    base_lgbm = loaded_model_package['base_model']
+    calibrated_lgbm = loaded_model_package['calibrated_model']
+    
+    print(f'Features used: {features}')
+    lgbm_test = test_model(
+        test_data = test_matrix_bin, 
+        base_model = base_lgbm,
+        calibrated_model = calibrated_lgbm,
+        scalar = None,
+        model_name = 'Light Gradient Boosted Model',
+        features = features,
+        is_multi = False
+    )
 
 
     

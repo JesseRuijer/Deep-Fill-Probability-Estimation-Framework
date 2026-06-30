@@ -20,11 +20,16 @@ import optuna
 import config
 from LogisticRegressionEngine import train_logistic_model
 from sklearn.metrics import average_precision_score
+from pathlib import Path
 
 #Loading data in 
+script_dir = Path(__file__).resolve().parent
+processed_dir = script_dir.parent / 'data' / 'processed'
+train_file = processed_dir / 'INTC_BINARY_2014_04_01.parquet'
+val_file = processed_dir / 'INTC_BINARY_2014_04_02.parquet'
 
-train_matrix = pd.read_parquet('/Users/jesseruijer/Documents/Summer Research/data/processed/INTC_MULTI_2014_04_01.parquet').sample(frac = 0.15, random_state = 67)
-val_matrix = pd.read_parquet('/Users/jesseruijer/Documents/Summer Research/data/processed/INTC_MULTI_2014_04_02.parquet').sample(frac = 0.15, random_state = 67) #Validation data different from training and testing data ofc
+train_matrix = pd.read_parquet(train_file).sample(frac = 0.15, random_state = 67)
+val_matrix = pd.read_parquet(val_file).sample(frac = 0.15, random_state = 67) #Validation data different from training and testing data ofc
 
 X_train = train_matrix[config.LOGISTIC_MODEL_FEATURES]
 y_train = train_matrix[config.TARGET]
@@ -45,7 +50,7 @@ def objective(trial):
     
     params = {
         #Basic 
-        'max_iter': 150, #Can always set this higher for final rigorous training later  
+        'max_iter': 1000, #Can always set this higher for final rigorous training later  
         'random_state': 69,
         'n_jobs': 1,
         

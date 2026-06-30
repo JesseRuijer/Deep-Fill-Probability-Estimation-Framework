@@ -1,1 +1,1 @@
-{"train_bin": "/Users/jesseruijer/Documents/Summer Research/data/processed/INTC_BINARY_2014_04_01.parquet", "test_bin": "/Users/jesseruijer/Documents/Summer Research/data/processed/INTC_BINARY_2014_04_21.parquet", "train_multi": null, "test_multi": null}
+{"train_bin": "/Users/jesseruijer/Documents/Summer Research/data/processed/INTC_BINARY_2014_04_01.parquet", "test_bin": "/Users/jesseruijer/Documents/Summer Research/data/processed/INTC_BINARY_2014_04_02.parquet", "train_multi": null, "test_multi": null}
