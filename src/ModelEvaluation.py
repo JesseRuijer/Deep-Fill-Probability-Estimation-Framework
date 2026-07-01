@@ -45,7 +45,7 @@ def plot_lgbm_importances(base_model, features):
     plt.figure(figsize=(12, 8))
     sns.barplot(x='Importance (Gain)', y='Feature', data=importance_df, palette='viridis')
     plt.title('LightGBM Feature Importances (Total Information Gain)')
-    plt.xlabel('Total Gain (Reduction in LogLoss) (entropy based)')
+    plt.xlabel('Total Gain (Reduction in LogLoss)')
     plt.tight_layout()
     plt.show()
     
@@ -89,10 +89,17 @@ def test_model(test_data, base_model, calibrated_model, scalar, model_name, feat
         y_true = y_raw
     
     #Evaluate performance metrics 
+    
+    dummy_fill_prob = np.average(y_true, weights = weights)
+    
     print(f"{model_name} Engine metrics")
      
     brierscore = brier_score_loss(y_true, y_pred_prob, sample_weight = weights)
     print(f'Brier score is {brierscore:.3f}')
+    
+    brierskillscore = 1 - ((brierscore)/(dummy_fill_prob*(1-dummy_fill_prob)))
+    print(f'Brier Skill Score is {brierskillscore}')
+    
      
     logloss = log_loss(y_true, y_pred_prob, sample_weight = weights)
     print(f'Logloss score is {logloss:.3f}')
@@ -124,7 +131,7 @@ def test_model(test_data, base_model, calibrated_model, scalar, model_name, feat
     
     #Baseline fill percentage which i defined as the number of ones divided by number of ones and zeros in fill_map, which guarantees uniqueness by the fact i used .last in code before it
    
-    dummy_fill_prob = np.average(y_true, weights = weights)
+    
     dummy_y_pred_prob = np.full(len(y_true), dummy_fill_prob) #just creates an array of length y true with dummy fill probs
     print(f"Baseline Fill percentage is {(dummy_fill_prob * 100):.4f}% \n where the Dummy Fill prob is a measure of the total volume that got placed throughout the day that eventually resulted in a fill, rather than a simple counter of the individual order tickets%")
     
@@ -269,12 +276,131 @@ def test_model(test_data, base_model, calibrated_model, scalar, model_name, feat
     plt.title(f"All Feature Correlation Matrix of {model_name}")
     plt.show()
     
+
+
+
+    def eval_at_heartbeat(test_data, y_true, y_pred_prob, weights, dummy_fill_prob):
+
+        eval_df = pd.DataFrame({
+            'y_true': y_true.values,
+            'y_pred': y_pred_prob,
+            'weight': weights.values,
+            'ID':     test_data['ID'].values,
+            'tsp':    test_data['TimeSincePlacement'].values,
+        })
+    
+        # How many full heartbeat intervals have elapsed since placement
+        eval_df['hb_idx'] = (eval_df['tsp'] // config.HEARTBEAT_INTERVAL).astype(int).clip(lower=0) #clip just sets a level where lower here sets the floor of the numbers at 0
+
+        eval_df['EventualOutcome'] = eval_df['y_true']
+    
+        # Normalize each order's time axis to [0, 1]
+        eval_df['NormTime'] = eval_df.groupby('ID')['tsp'].transform(
+            lambda x: x / x.max() if x.max() > 0 else 0.0
+        )
+        eval_df['TimeBucket'] = pd.cut(eval_df['NormTime'], bins=20, labels = np.linspace(0, 1, 20))
+    
+        # Metric 1: Brier / BSS / LogLoss per heartbeat index
+        naive_bs = dummy_fill_prob * (1 - dummy_fill_prob)
+        results = {}
+        for t, grp in eval_df.groupby('hb_idx'):
+            y, p, w = grp['y_true'], grp['y_pred'], grp['weight']
+            
+            if y.nunique() < 2: #There might be some heartbeats where there are no fills and logloss needs both classes to perform so if thats the case for this specific heartbeat then we skip the logloss calculation
+                continue
+            
+            bs = brier_score_loss(y, p, sample_weight=w)
+            results[t] = {
+                'brier':       bs,
+                'brier_skill': 1 - bs / naive_bs,  
+                'logloss':     log_loss(y, p, sample_weight=w),
+            }
+
+        heartbeat_metrics = pd.DataFrame(results).T
+    
+        # Metric 2: avg predicted prob over lifetime, split by outcome
+        
+        trajectory = (
+            eval_df.groupby(['TimeBucket', 'EventualOutcome']).apply(lambda x: np.average(x['y_pred'], weights = x['weight'])).unstack()    #unstack immediately gives back the outcome column in two seperate columns
+            )
+    
+        # Metric 3: Brier score over normalized lifetime 
+        brier_by_time = eval_df.groupby('TimeBucket').apply(
+            lambda g: brier_score_loss(g['y_true'], g['y_pred'], sample_weight=g['weight'])
+        )
+    
+        # Plots
+    
+        # BSS per heartbeat 
+        plt.figure(figsize = (20,10))
+        plt.plot(heartbeat_metrics.index, heartbeat_metrics['brier_skill'], color='b')
+        plt.axhline(0, color='gray', linestyle='--', linewidth=1,
+                        label='Dummy baseline (BSS = 0)')
+        plt.xlabel('Heartbeat index (intervals since placement)')
+        plt.ylabel('Brier Skill Score')
+        plt.title('Does more LOB info improve accuracy?')
+        plt.legend()
+        plt.show()
+        
+        
+        #For this plot the orders labelled as filled were just any order that has a (partial) fill, there was no distinction between them, but for the 
+        plt.figure(figsize = (20,10))
+        # Trajectory by eventual outcome
+        if 1 in trajectory.columns:
+            plt.plot(trajectory[1], 'o-',  color='g',  label='Eventually filled')
+        if 0 in trajectory.columns:
+            plt.plot(trajectory[0], 'o--', color='r', label='Eventually canceled')
+        plt.xlabel('Normalized order lifetime (0=placement, 1=death)')
+        plt.ylabel('Avg p(fill)')
+        plt.title('Predicted prob over lifetime by eventual outcome')
+        plt.legend()
+    
+        # Brier over normalized lifetime with naive baseline for reference
+        plt.figure(figsize = (20,10))
+        plt.plot(brier_by_time, 'o-', color='#D85A30', label='Model')
+        plt.axhline(naive_bs, color='gray', linestyle='--',
+                        linewidth=1, label=f'Naive BS ({naive_bs:.3f})')
+        plt.xlabel('Normalized order lifetime')
+        plt.ylabel('Brier score')
+        plt.title('Brier score over order lifetime')
+        plt.legend()
+
+        plt.show()
+        
+        #The heartbeat metrics list gives the three metrics for all orders that survived the row number amount of heartbeats
+        #For example the first row is the performance of the model across every single order the moment it was placed
+        #The 10th row is the performance of the model evaluated after 10 heartbeats on the orders that still remain in the LOB after 10 heartbeats 
+    
+        print(heartbeat_metrics.to_string())
+        return heartbeat_metrics
+
+    eval_at_heartbeat(test_data, y_true, y_pred_prob, weights, dummy_fill_prob)
+
+
+
+
+
+
+
+
+
+
+
+
     
     
     
         
     if model_name == "Light Gradient Boosted Model":
         plot_lgbm_importances(base_model, features)
+
+
+
+
+
+
+
+
 
         
 

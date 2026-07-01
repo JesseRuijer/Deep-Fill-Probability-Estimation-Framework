@@ -11,11 +11,12 @@ Created on Thu Jun 11 12:48:23 2026
 
 import matplotlib.pyplot as plt
 import seaborn as sns
-from Functions import time_in_hours
+from Functions import time_in_hours, time_to_hours
 from DataAndFeatureEngineering import import_data, clean_data, data_regressors
 import config
 import os
-        
+import numpy as np        
+
 def run_exploratory_analysis(rawdata, cleandata, regressormatrix,feature, target_time):
         
     #Function that plots Bar chart at target_time of Vol of bids and asks around midpoint
@@ -48,7 +49,7 @@ def run_exploratory_analysis(rawdata, cleandata, regressormatrix,feature, target
     
     plt.xlabel("Price")
     plt.ylabel("Vol")
-    plt.title(f"Vol of Best Bid Vol and Best Ask Vol at {time_in_hours(target_time)}")
+    plt.title(f"Vol of Best Bid Vol and Best Ask Vol at {time_to_hours(TARGET_TIME)}")
     plt.legend()
     plt.show()
     
@@ -131,12 +132,39 @@ def run_exploratory_analysis(rawdata, cleandata, regressormatrix,feature, target
     print(f'The median time between 50 events was {differences.median()}')
     print(f'The avg time between 50 events was {differences.mean()}')
     
+    time_between_two_mos = rawdata['MO']['TOD'].diff(1).mean()
     
+    print(f'The average time between two market orders was {time_between_two_mos}')
+    
+    #Make a plot on x axis TOD and on y axis MO amount placed
+    
+    plt.figure(figsize = (20,10))
+    
+    print(rawdata['MO']['TOD'].describe())
+    print(time_in_hours(30752880))
+    
+    mo_counts = rawdata['MO']['TOD']
+    counts, bin_edges = np.histogram(mo_counts, bins = 65)  # np.hist gives back the counts and the edges i.e begin and end point of each bin
+    
+    middle = (bin_edges[:-1] + bin_edges[1:]) / 2
+    
+    plt.plot(middle, counts, color = 'b', label = 'MO Freq')
+    plt.xlim(config.MARKET_OPEN_TIME, config.MARKET_CLOSE_TIME)
+    current_ticks = plt.xticks()[0]
+    clock_labels = [time_in_hours(int(tick)) for tick in current_ticks]
+    plt.xticks(current_ticks, clock_labels)
+    plt.xlabel('TOD')
+    plt.ylabel('Frequency of MOs')
+    plt.title('Freq of MOs vs TOD')
+    plt.legend()
+    plt.tight_layout()
+
+    plt.show()
     
 if __name__ == "__main__":  
     
-    TARGET_TIME = 36000000
-    FEATURE_ANALYSE = 'QImbalance'
+    TARGET_TIME = time_to_hours(11)
+    FEATURE_ANALYSE = 'DistanceToMicroprice'
       
     from FileManager import get_data_paths
 

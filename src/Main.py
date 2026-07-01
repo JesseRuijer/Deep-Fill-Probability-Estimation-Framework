@@ -154,7 +154,7 @@ def run_project():
         
         
         #Training model, can be commented when saved model
-       # base_lr, calibrated_lr, scalar_lr = train_logistic_model(logistic_regX, logistic_regY, fill_weights)
+        #base_lr, calibrated_lr, scalar_lr = train_logistic_model(logistic_regX, logistic_regY, fill_weights)
         
         #Save final model to harddrive, comment after saving 
         
@@ -162,7 +162,7 @@ def run_project():
             
         #     'base_model': base_lr,
         #     'calibrated_model': calibrated_lr,
-        #     'features': ['Vol', 'TimeTillMarketClose','TotalQueueSize','BASpread',   'AbsQImbalance', 'RollingStd_QImbalance', 'LOTrailingVolPlaced',
+        #     'features': ['TimeTillMarketClose','TotalQueueSize','BASpread',   'AbsQImbalance', 'RollingStd_QImbalance', 'LOTrailingVolPlaced',
         #                   'DistanceToMicroprice','LogVolAhead', 'TimeSincePlacement','TimeSinceLastMO'],
         #     'scalar' : scalar_lr
         #     }
@@ -226,7 +226,7 @@ def run_project():
     logistic_regX = logistic_regX.replace([np.inf,-np.inf],0)
     
     # #Training model, can be commented when saved model    
-    # base_lgbm, calibrated_lgbm = train_lgbm_model(lgbm_X, lgbm_Y, fill_weights)
+    #base_lgbm, calibrated_lgbm = train_lgbm_model(lgbm_X, lgbm_Y, fill_weights)
     
     #comment this after best features have been found
     #feature_finder(base_lgbm,'Light Gradient Boosted Model', test_matrix_bin , config.LGBM_MODEL_FEATURES, None, None)
@@ -237,7 +237,7 @@ def run_project():
         
     #     'base_model': base_lgbm,
     #     'calibrated_model': calibrated_lgbm,
-    #     'features': ['Vol',   'TimeTillMarketClose', 'TotalQueueSize','QImbalance','TotalVolImbalance','WeightedVolImbalance','EventDeltaMicroprice',
+    #     'features': ['TimeTillMarketClose', 'TotalQueueSize','QImbalance','TotalVolImbalance','WeightedVolImbalance','EventDeltaMicroprice',
     #                 'RollingStd_BASpread','RollingStd_QImbalance', 'RollingStd_WeightedVolImbalance', 'RollingMax_OrderFlowImbalance','RollingMin_OrderFlowImbalance',
     #                 'LOTrailingVolPlaced','LOTrailingVolCanceled','LOTrailingPlaceExecuteRatio', 'DistanceToMicroprice','LogVolAhead','QueuePositionRatio','TimeSincePlacement',
     #                 'ClockDeltaLogVolAhead','TimeSinceLastMO']
@@ -253,7 +253,7 @@ def run_project():
     
     # joblib.dump(model_package, model_filepath)
     
-    # print(f'Succesfully saved logistic regression models to  {model_filepath}')
+    # print(f'Succesfully saved LGBM model to  {model_filepath}')
     
     # Extracting the model from hard drive 
 
@@ -263,7 +263,7 @@ def run_project():
     models_dir = script_dir.parent / 'models'
     model_filepath = models_dir / 'LGBM_Models_V1.joblib'
     
-    print(f'Loading Logistic Models from {model_filepath}')
+    print(f'Loading LGBM from {model_filepath}')
     
     #Load the package using the dynamic path
     loaded_model_package = joblib.load(model_filepath)

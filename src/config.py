@@ -38,7 +38,6 @@ EOMARKET_NOISE =  55800000 # 3:30 PM
 LOGISTIC_MODEL_FEATURES = [
      
     # 1. Base Market & Order Status
-    'Vol',
     #'Regime',
     'TimeTillMarketClose',
     #'IsFinalMinute',
@@ -62,7 +61,7 @@ LOGISTIC_MODEL_FEATURES = [
     #'EventMicroMidDeviation',
     #'EventDeltaMicroprice',
     #'EventDeltaDistanceToTouch',
-    #'EventOrderFlowImbalance',
+    #'EventDeltaOrderFlowImbalance',
 
     # 4. Rolling Moments (Event-Time Volatility & Extremes)
 
@@ -102,7 +101,7 @@ LOGISTIC_MODEL_FEATURES = [
     #'ClockDeltaDistanceToMicroprice',
     #'ClockDeltaDistanceToTouch',
     #'ClockDeltaLogVolAhead',
-    #'ClockOrderFlowImbalance',
+    #'ClockDeltaOrderFlowImbalance',
 
     # 8. Speed Metrics
     #'Speed_DeltaMidprice',
@@ -125,7 +124,6 @@ LGBM_MODEL_FEATURES = [
      
        
     # 1. Base Market & Order Status
-    'Vol',
    # 'Regime',
     'TimeTillMarketClose',
     #'IsFinalMinute',
@@ -149,7 +147,7 @@ LGBM_MODEL_FEATURES = [
     #'EventMicroMidDeviation',
     'EventDeltaMicroprice',
     #'EventDeltaDistanceToTouch',
-    #'EventOrderFlowImbalance',
+    #'EventDeltaOrderFlowImbalance',
 
     # 4. Rolling Moments (Event-Time Volatility & Extremes)
 
@@ -189,7 +187,7 @@ LGBM_MODEL_FEATURES = [
     #'ClockDeltaDistanceToMicroprice',
     #'ClockDeltaDistanceToTouch',
     'ClockDeltaLogVolAhead',
-    #'ClockOrderFlowImbalance',
+    #'ClockDeltaOrderFlowImbalance',
 
     # 8. Speed Metrics
     #'Speed_DeltaMidprice',
@@ -237,7 +235,7 @@ UNIVERSAL_FEATURES = [ # Features that apply to any LO, so for ex midprice yes, 
     'EventDeltaMidprice',
     'EventDeltaMicroprice',
     #'EventMicroMidDeviation',
-    'EventOrderFlowImbalance',
+    'EventDeltaOrderFlowImbalance',
     'EventDeltaBestBid',
     'EventDeltaBestAsk',
 
@@ -271,7 +269,7 @@ UNIVERSAL_FEATURES = [ # Features that apply to any LO, so for ex midprice yes, 
 
 DYNAMIC_FEATURES = [ #Features that change (in general) depending on the LO you look at
     # Static Order Attributes
-    'Vol',
+
     
     # Event-Time Deltas (Order-Direction Dependent)
     'EventDeltaDistanceToMicroprice',
@@ -301,7 +299,6 @@ ALL_FEATURES = [
     
     # 1. Base Market & Order Status
     'TOD',
-    'Vol',
     'Regime',
     'TimeTillMarketClose',
     'IsFinalMinute',
@@ -326,7 +323,7 @@ ALL_FEATURES = [
     #'EventMicroMidDeviation',
     'EventDeltaMicroprice',
     'EventDeltaDistanceToTouch',
-    'EventOrderFlowImbalance',
+    'EventDeltaOrderFlowImbalance',
 
     # 4. Rolling Moments (Event-Time Volatility & Extremes)
     'RollingStd_Microprice',
@@ -369,7 +366,7 @@ ALL_FEATURES = [
     #'ClockDeltaDistanceToTouch',
     'ClockDeltaLogVolAhead',
     'ClockQImbalance',
-    'ClockOrderFlowImbalance',
+    'ClockDeltaOrderFlowImbalance',
 
     # 8. Speed Metrics
     'Speed_DeltaMidprice',
