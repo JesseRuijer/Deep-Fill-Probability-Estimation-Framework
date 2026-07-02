@@ -377,5 +377,80 @@ Created on Mon Jun  1 13:48:14 2026
 
 
 
+      
+        train_files = paths['train_bin'] if isinstance(paths['train_bin'],list) else [paths['train_bin']]
+        
+        if len(train_files) > 1:
+            print(f'Training model on {len(train_files) - 1} consecutive days (You should consectuve days, that makes the most sense)')
+            trained_base_models = []
+            master_scalar = None
+            
+            #train on selected days except the last one, that will be used as testing
+            for i, file_path in enumerate(train_files[:-1]):
+                day_matrix = pd.read_parquet(file_path)
+                X = day_matrix[config.LOGISTIC_MODEL_FEATURES]
+                y = day_matrix[config.TARGET]
+                fill_weights = day_matrix['UnitWeight']
+                
+                if i == 0:
+                    master_scalar = 
+                
+        
+        train_matrix_bin = pd.read_parquet(paths['train_bin'])
+        test_matrix_bin = pd.read_parquet(paths['test_bin'])
+        
+        logistic_regX = train_matrix_bin[config.LOGISTIC_MODEL_FEATURES]
+        logistic_regY = train_matrix_bin[config.TARGET]
+        
+        fill_weights = train_matrix_bin['UnitWeight']
+        
+        
+        
+        
+            
+        
+        # # DIAGNOSTIC: Print Highly Correlated Pairs 
+        # scalar = StandardScaler()
+        # logistic_regX_scaled = pd.DataFrame(
+        #     scalar.fit_transform(logistic_regX), 
+        #     columns=logistic_regX.columns
+        # )
+       
+        # print("\nCalculating Correlation Matrix...")
+        # corr_matrix = logistic_regX_scaled.corr().abs()
+        
+        # # Grab the upper triangle to avoid printing duplicates (e.g., A<->B and B<->A)
+        # upper_triangle = corr_matrix.where(np.triu(np.ones(corr_matrix.shape), k=1).astype(bool))
+        
+        # print("\n--- Highly Correlated Feature Pairs (> 0.95) ---")
+        # high_corr_pairs = []
+        
+        # # Hunt down the >0.95 pairs
+        # for col in upper_triangle.columns:
+        #     correlated_rows = upper_triangle[col][upper_triangle[col] > 0.85].index
+        #     for row in correlated_rows:
+        #         high_corr_pairs.append((row, col, upper_triangle.loc[row, col]))
+                
 
+        # high_corr_pairs.sort(key=lambda x: x[2], reverse=True)
+        
+        # if not high_corr_pairs:
+        #     print("No features correlated > 0.85 found!")
+        # else:
+        #     for f1, f2, score in high_corr_pairs:
+        #         print(f"[{score:.4f}] {f1}  <-->  {f2}")
+        # print("------------------------------------------------\n")
+
+
+    
+        # subset = train_matrix_bin[['LOTrailingVolPlaced','LOTrailingVolCanceled']]
+        # print(subset.corr())
+        
+        # # Or visually inspect the relationship
+        # import matplotlib.pyplot as plt
+        # plt.scatter(train_matrix_bin['LOTrailingVolPlaced'], train_matrix_bin['LOTrailingVolCanceled'], alpha=0.1)
+        # plt.show()
+        
+        # print("Stopping script for manual feature review...")
+        # return
 

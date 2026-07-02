@@ -161,6 +161,25 @@ def run_exploratory_analysis(rawdata, cleandata, regressormatrix,feature, target
 
     plt.show()
     
+    mask = rawdata['Event']['Type'].isin([66,83])
+    lim_orders = rawdata[mask]
+    total_lim_orders = len(lim_orders)
+    
+    
+    print(total_lim_orders)
+    
+    mask2 = ((rawdata['Event'][rawdata['Price']] == rawdata['BuyPrice'][0]) | (rawdata['Event'][rawdata['Price']] == rawdata['BuyPrice'][0]))
+    
+    lim_orders_at_best_price = len(lim_orders[mask2])
+    
+    result = lim_orders_at_best_price/ total_lim_orders
+    
+    print(f'The percentage of limit orders placed at best price out of all limit orders placed is {result*100}%')
+    
+    print(f'The percentage of limit orders placed at best price and first level out in the book out of all limit orders placed is {result*100}%')
+    
+    
+    
 if __name__ == "__main__":  
     
     TARGET_TIME = time_to_hours(11)

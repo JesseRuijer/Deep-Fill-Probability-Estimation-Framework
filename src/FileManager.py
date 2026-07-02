@@ -109,18 +109,35 @@ def get_ml_training_paths():
             saved_paths = json.load(f)
             
         cache_is_valid = True
-        for key, path_string in saved_paths.items():
-            if path_string and not Path(path_string).exists():
+        for key, value in saved_paths.items():
+            if not value:
+                continue
+            paths_to_check = value if isinstance(value, list) else [value]
+            if any(not Path(p).exists() for p in paths_to_check):
                 cache_is_valid = False
                 break
             
         if cache_is_valid:
             print("\n--- ML DATA CACHE FOUND ---")
+            
             # .get() prevents errors if a slot is empty
-            if saved_paths.get('train_bin'): print(f"TRAIN (Bin):   {os.path.basename(saved_paths['train_bin'])}")
-            if saved_paths.get('train_multi'): print(f"TRAIN (Multi): {os.path.basename(saved_paths['train_multi'])}")
-            if saved_paths.get('test_bin'): print(f"TEST (Bin):    {os.path.basename(saved_paths['test_bin'])}")
-            if saved_paths.get('test_multi'): print(f"TEST (Multi):  {os.path.basename(saved_paths['test_multi'])}")
+            if saved_paths.get('train_bin'): 
+                files = saved_paths['train_bin']
+                for f in (files if isinstance(files, list) else [files]):
+                    print(f"TRAIN (Bin):   {os.path.basename(f)}")
+            if saved_paths.get('train_multi'): 
+                files = saved_paths['train_multi']
+                for f in (files if isinstance(files, list) else [files]):
+                    print(f"TRAIN (Multi):   {os.path.basename(f)}")
+            if saved_paths.get('test_bin'): 
+                files = saved_paths['test_bin']
+                for f in (files if isinstance(files, list) else [files]):
+                    print(f"TEST (Bin):   {os.path.basename(f)}")
+            if saved_paths.get('test_multi'):
+                files = saved_paths['test_multi']
+                for f in (files if isinstance(files, list) else [files]):
+                    print(f"TEST (Multi):   {os.path.basename(f)}")
+            
             print("---------------------------")
             
             user_choice = input("Press [ENTER] to reuse these datasets, or type 'n' to pick new ones: ")
@@ -160,14 +177,14 @@ def get_ml_training_paths():
 
     # Set up empty slots
     paths = {
-        'train_bin': None, 'test_bin': None, 
-        'train_multi': None, 'test_multi': None
+        'train_bin': [], 'test_bin': None, 
+        'train_multi': [], 'test_multi': None
     }
 
     # Automatically sort the files you highlighted into the right slots
     for f in train_files:
-        if "BINARY" in f.upper(): paths['train_bin'] = f
-        if "MULTI" in f.upper(): paths['train_multi'] = f
+        if "BINARY" in f.upper(): paths['train_bin'].append(f)
+        if "MULTI" in f.upper(): paths['train_multi'].append(f)
 
     for f in test_files:
         if "BINARY" in f.upper(): paths['test_bin'] = f

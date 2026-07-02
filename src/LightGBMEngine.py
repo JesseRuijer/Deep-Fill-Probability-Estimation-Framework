@@ -14,6 +14,9 @@ Created on Thu Jun 11 10:42:59 2026
 
 import lightgbm as lgb 
 from sklearn.calibration import CalibratedClassifierCV
+
+
+
 def train_lgbm_model(X_train, y_train, weights, params = None, for_tuning = False):
 
     # light GBM 
@@ -57,7 +60,7 @@ def train_lgbm_model(X_train, y_train, weights, params = None, for_tuning = Fals
         method = 'isotonic',
         cv = 5
         )
-    
+  
     calibrated_lgbm_model = calibrated_lgbm.fit(X_train, y_train, sample_weight = weights)
     
     return base_lgbm_model, calibrated_lgbm_model

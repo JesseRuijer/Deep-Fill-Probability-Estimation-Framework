@@ -273,7 +273,7 @@ DYNAMIC_FEATURES = [ #Features that change (in general) depending on the LO you 
     
     # Event-Time Deltas (Order-Direction Dependent)
     'EventDeltaDistanceToMicroprice',
-    #'EventDeltaDistanceToTouch',
+    'EventDeltaDistanceToTouch',
 
     # Heartbeat Engine Recalculations
     'DistanceToTouch',
@@ -285,12 +285,12 @@ DYNAMIC_FEATURES = [ #Features that change (in general) depending on the LO you 
 
     # Clock-Time Deltas (Order-Direction/Position Dependent)
     'ClockDeltaDistanceToMicroprice',
-    #'ClockDeltaDistanceToTouch',
+    'ClockDeltaDistanceToTouch',
     'ClockDeltaLogVolAhead',
 
     # Speed Metrics (Order-Direction/Position Dependent)
     'Speed_DeltaDistanceToMicroprice',
-    #'Speed_DeltaDistanceToTouch',
+    'Speed_DeltaDistanceToTouch',
     'Speed_DistanceToMicroprice'
 ]
 
@@ -352,7 +352,7 @@ ALL_FEATURES = [
     'LOTrailingPlaceExecuteRatio',
 
     # 6. Dynamic Order Metrics (Heartbeat Engine)
-    #'DistanceToTouch',
+    'DistanceToTouch',
     'DistanceToMicroprice',
     'VolAhead',
     'LogVolAhead',
@@ -363,7 +363,7 @@ ALL_FEATURES = [
     'ClockDeltaMidprice',
     #'ClockMicroMidDeviation',
     'ClockDeltaDistanceToMicroprice',
-    #'ClockDeltaDistanceToTouch',
+    'ClockDeltaDistanceToTouch',
     'ClockDeltaLogVolAhead',
     'ClockQImbalance',
     'ClockDeltaOrderFlowImbalance',
@@ -371,7 +371,7 @@ ALL_FEATURES = [
     # 8. Speed Metrics
     'Speed_DeltaMidprice',
     'Speed_DeltaDistanceToMicroprice',
-    #'Speed_DeltaDistanceToTouch',
+    'Speed_DeltaDistanceToTouch',
     #'Speed_MicroMidDeviation',
     'Speed_OrderFlowImbalance',
     'Speed_DistanceToMicroprice',

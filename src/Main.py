@@ -92,141 +92,103 @@ def run_project():
         print("Model training aborted. No training files selected.")
         return
     
-    if paths['train_bin'] and paths['test_bin']:
-        print('\n[DETECTED BINARY DATA] Executing Logistic Regression')
-        
-        train_matrix_bin = pd.read_parquet(paths['train_bin'])
-        test_matrix_bin = pd.read_parquet(paths['test_bin'])
-        
-        logistic_regX = train_matrix_bin[config.LOGISTIC_MODEL_FEATURES]
-        logistic_regY = train_matrix_bin[config.TARGET]
-        
-        fill_weights = train_matrix_bin['UnitWeight']
-        
-        print('Cleaning infinities') # if some infinities slipped through, kill them so scalar can do its job
-        logistic_regX = logistic_regX.replace([np.inf,-np.inf],0)
-        
-        # # DIAGNOSTIC: Print Highly Correlated Pairs 
-        # scalar = StandardScaler()
-        # logistic_regX_scaled = pd.DataFrame(
-        #     scalar.fit_transform(logistic_regX), 
-        #     columns=logistic_regX.columns
-        # )
-       
-        # print("\nCalculating Correlation Matrix...")
-        # corr_matrix = logistic_regX_scaled.corr().abs()
-        
-        # # Grab the upper triangle to avoid printing duplicates (e.g., A<->B and B<->A)
-        # upper_triangle = corr_matrix.where(np.triu(np.ones(corr_matrix.shape), k=1).astype(bool))
-        
-        # print("\n--- Highly Correlated Feature Pairs (> 0.95) ---")
-        # high_corr_pairs = []
-        
-        # # Hunt down the >0.95 pairs
-        # for col in upper_triangle.columns:
-        #     correlated_rows = upper_triangle[col][upper_triangle[col] > 0.85].index
-        #     for row in correlated_rows:
-        #         high_corr_pairs.append((row, col, upper_triangle.loc[row, col]))
-                
-
-        # high_corr_pairs.sort(key=lambda x: x[2], reverse=True)
-        
-        # if not high_corr_pairs:
-        #     print("No features correlated > 0.85 found!")
-        # else:
-        #     for f1, f2, score in high_corr_pairs:
-        #         print(f"[{score:.4f}] {f1}  <-->  {f2}")
-        # print("------------------------------------------------\n")
-
-
+    train_files = paths.get('train_bin', [])
+    test_file = paths.get('test_bin')
     
-        # subset = train_matrix_bin[['LOTrailingVolPlaced','LOTrailingVolCanceled']]
-        # print(subset.corr())
+    if not train_files or not test_file:
+        print('Error needs atleast one test and train file')
+        return 
+    
+    print(f'Loading {len(train_files)} training days ')
+    
+    train_frames = []
+    
+    for f in train_files:
+        train_frames.append(pd.read_parquet(f))
         
-        # # Or visually inspect the relationship
-        # import matplotlib.pyplot as plt
-        # plt.scatter(train_matrix_bin['LOTrailingVolPlaced'], train_matrix_bin['LOTrailingVolCanceled'], alpha=0.1)
-        # plt.show()
+    train_matrix = pd.concat(train_frames, ignore_index = True)
+    del train_frames
+    gc.collect()
+    
+    test_matrix = pd.read_parquet(test_file)
+    
+    print("Performing Logistic Regression on Binary Data")
+    
+    
+    lr_X = train_matrix[config.LOGISTIC_MODEL_FEATURES].replace([np.inf, -np.inf], 0)
+    lr_Y = train_matrix[config.TARGET]
+    lr_w = train_matrix['UnitWeight']
+    
+    #Training model, can be commented when saved model
+    #base_lr, calibrated_lr, scalar_lr = train_logistic_model(lr_X, lr_Y, lr_w)
+    
+    
+    #Save final model to harddrive, comment after saving 
+    
+    # model_package = {
         
-        # print("Stopping script for manual feature review...")
-        # return
-                
-        
-        
-        #Training model, can be commented when saved model
-        #base_lr, calibrated_lr, scalar_lr = train_logistic_model(logistic_regX, logistic_regY, fill_weights)
-        
-        #Save final model to harddrive, comment after saving 
-        
-        # model_package = {
-            
-        #     'base_model': base_lr,
-        #     'calibrated_model': calibrated_lr,
-        #     'features': ['TimeTillMarketClose','TotalQueueSize','BASpread',   'AbsQImbalance', 'RollingStd_QImbalance', 'LOTrailingVolPlaced',
-        #                   'DistanceToMicroprice','LogVolAhead', 'TimeSincePlacement','TimeSinceLastMO'],
-        #     'scalar' : scalar_lr
-        #     }
-        
-        # #Pathing logic, uses pathlib library so on different devices it still saves correctly, maybe i need to install the os create folder etc stuff for all teh oter things as well
-        # #so that when i run it on an external computer maybe to train for ex, it automatically creates the right folders on that specific computer
-        
-        # script_dir = Path(__file__).resolve().parent # file is built in variable holder, resolve and parent to get a string that just contains the directory that contains the script
-        # models_dir = script_dir.parent / 'models' # /  works as a path joiner
-        # models_dir.mkdir(parents = True, exist_ok = True) #failsafe to create folder if it doesnt exist or does nothing if it already exists
-        # model_filepath = models_dir / 'Logistic_Regression_Models_V1.joblib'
-        
-        # joblib.dump(model_package, model_filepath)
-        
-        # print(f'Succesfully saved logistic regression models to  {model_filepath}')
-        
-        # return 
-        
+    #     'base_model': base_lr,
+    #     'calibrated_model': calibrated_lr,
+    #     'features': config.LOGISTIC_MODEL_FEATURES,
+    #     'scalar' : scalar_lr
+    #     }
+    
+    # #Pathing logic, uses pathlib library so on different devices it still saves correctly, maybe i need to install the os create folder etc stuff for all teh oter things as well
+    # #so that when iyh run it on an external computer maybe to train for ex, it automatically creates the right folders on that specific computer
+    
+    # script_dir = Path(__file__).resolve().parent # file is built in variable holder, resolve and parent to get a string that just contains the directory that contains the script
+    # models_dir = script_dir.parent / 'models' # /  works as a path joiner
+    # models_dir.mkdir(parents = True, exist_ok = True) #failsafe to create folder if it doesnt exist or does nothing if it already exists
+    # model_filepath = models_dir / 'Logistic_Regression_Models_V1.joblib'
+    
+    # joblib.dump(model_package, model_filepath)
+    
+    # print(f'Succesfully saved logistic regression models to  {model_filepath}')
+ 
     #Extracting the model from hard drive 
     #Rebuild the absolute path using pathlib
-        script_dir = Path(__file__).resolve().parent 
-        models_dir = script_dir.parent / 'models'
-        model_filepath = models_dir / 'Logistic_Regression_Models_V1.joblib'
-        
-        print(f'Loading Logistic Models from {model_filepath}')
-        
-        #Load the package using the dynamic path
-        loaded_model_package = joblib.load(model_filepath)
-        
-        #Extracting the contents from the dictionary
-        features = loaded_model_package['features']
-        scalar_lr = loaded_model_package['scalar']
-        base_lr = loaded_model_package['base_model']
-        calibrated_lr = loaded_model_package['calibrated_model']
-        
-        
+    script_dir = Path(__file__).resolve().parent 
+    models_dir = script_dir.parent / 'models'
+    model_filepath = models_dir / 'Logistic_Regression_Models_V1.joblib'
     
-        #comment this after best features have been found
-        #feature_finder(base_lr, 'Logistic Regression', train_matrix_bin , config.LOGISTIC_MODEL_FEATURES, logistic_regY , fill_weights)
-        # print(f'Features used: {features}')
-        
-        logistic_test = test_model(
-            test_data = test_matrix_bin, 
-            base_model = base_lr,
-            calibrated_model = calibrated_lr,
-            scalar = scalar_lr,
-            model_name = 'Logistic Regression',
-            features = features,
-            is_multi = False
-        )
-        
-    if paths['train_bin'] and paths['test_bin']:
-        print('\n[DETECTED Bin DATA] Executing LightGBM')
+    print(f'Loading Logistic Models from {model_filepath}')
+    
+    #Load the package using the dynamic path
+    loaded_model_package = joblib.load(model_filepath)
+    
+    #Extracting the contents from the dictionary
+    features = loaded_model_package['features']
+    scalar_lr = loaded_model_package['scalar']
+    base_lr = loaded_model_package['base_model']
+    calibrated_lr = loaded_model_package['calibrated_model']
+    
+    
 
-        lgbm_X = train_matrix_bin[config.LGBM_MODEL_FEATURES]
-        lgbm_Y = train_matrix_bin[config.TARGET]
+    #comment this after best features have been found
+    #feature_finder(base_lr, 'Logistic Regression', train_matrix_bin , config.LOGISTIC_MODEL_FEATURES, logistic_regY , fill_weights)
+    # print(f'Features used: {features}')
+    
+    logistic_test = test_model(
+        test_data = test_matrix, 
+        base_model = base_lr,
+        calibrated_model = calibrated_lr,
+        scalar = scalar_lr,
+        model_name = 'Logistic Regression',
+        features = features,
+        is_multi = False
+    )
+    
+    del lr_X, lr_Y, lr_w
+    gc.collect()
         
-        fill_weights = train_matrix_bin['UnitWeight']
+    print("Performing LGBM on binary data")
     
-    print('Cleaning infinities') # if some infinities slipped through, kill them so scalar can do its job
-    logistic_regX = logistic_regX.replace([np.inf,-np.inf],0)
-    
+    lgbm_X = train_matrix[config.LGBM_MODEL_FEATURES].replace([np.inf, -np.inf], 0)
+    lgbm_Y = train_matrix[config.TARGET]
+    lgbm_w = train_matrix['UnitWeight']
+
     # #Training model, can be commented when saved model    
-    #base_lgbm, calibrated_lgbm = train_lgbm_model(lgbm_X, lgbm_Y, fill_weights)
+   # base_lgbm, calibrated_lgbm = train_lgbm_model(lgbm_X, lgbm_Y, lgbm_w)
     
     #comment this after best features have been found
     #feature_finder(base_lgbm,'Light Gradient Boosted Model', test_matrix_bin , config.LGBM_MODEL_FEATURES, None, None)
@@ -237,10 +199,7 @@ def run_project():
         
     #     'base_model': base_lgbm,
     #     'calibrated_model': calibrated_lgbm,
-    #     'features': ['TimeTillMarketClose', 'TotalQueueSize','QImbalance','TotalVolImbalance','WeightedVolImbalance','EventDeltaMicroprice',
-    #                 'RollingStd_BASpread','RollingStd_QImbalance', 'RollingStd_WeightedVolImbalance', 'RollingMax_OrderFlowImbalance','RollingMin_OrderFlowImbalance',
-    #                 'LOTrailingVolPlaced','LOTrailingVolCanceled','LOTrailingPlaceExecuteRatio', 'DistanceToMicroprice','LogVolAhead','QueuePositionRatio','TimeSincePlacement',
-    #                 'ClockDeltaLogVolAhead','TimeSinceLastMO']
+    #     'features': config.LGBM_MODEL_FEATURES
     #     }
     
     # #Pathing logic, uses pathlib library so on different devices it still saves correctly, maybe i need to install the os create folder etc stuff for all teh oter things as well
@@ -275,7 +234,7 @@ def run_project():
     
     print(f'Features used: {features}')
     lgbm_test = test_model(
-        test_data = test_matrix_bin, 
+        test_data = test_matrix, 
         base_model = base_lgbm,
         calibrated_model = calibrated_lgbm,
         scalar = None,
@@ -283,7 +242,9 @@ def run_project():
         features = features,
         is_multi = False
     )
-
+    
+    del lgbm_X, lgbm_Y, lgbm_w
+    gc.collect()
 
     
 if __name__ == "__main__":

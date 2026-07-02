@@ -259,11 +259,20 @@ def test_model(test_data, base_model, calibrated_model, scalar, model_name, feat
     
     #Plot predicted probability distriubiton, use log scale on y axis since many more cancels then fills
     
-    axes[1, 1].hist(y_pred_prob_vis[y_true == 0], bins=50, alpha=0.3, color='red', label='Actual Cancels/Expires (0)', log = True)
-    axes[1, 1].hist(y_pred_prob_vis[y_true == 1], bins=50, alpha=0.3, color='green', label='Actual Fills (1)', log = True)
+    plot_df = pd.DataFrame({
+        'y_true': y_true,
+        'y_pred': y_pred_prob,
+        'weights': weights
+        })
+    
+    cancels_df = plot_df[plot_df['y_true'] == 0]
+    fills_df = plot_df[plot_df['y_true'] == 1]
+    
+    axes[1, 1].hist(cancels_df['y_pred'], bins=50, alpha=0.3, color='red', label='Actual Cancels/Expires (0)', log = True, weights = cancels_df['weights'])
+    axes[1, 1].hist(fills_df['y_pred'], bins=50, alpha=0.3, color='green', label='Actual Fills (1)', log = True, weights = fills_df['weights'])
     axes[1, 1].set_title(f'Distribution of Predicted Probabilities (Log Scale) for {model_name}')
     axes[1, 1].set_xlabel('Predicted Probability of Fill')
-    axes[1, 1].set_ylabel('Number of Orders (Log Scale)')
+    axes[1, 1].set_ylabel('Vol of Orders (Log Scale)')
     axes[1, 1].legend()
     
     plt.show()
@@ -377,16 +386,83 @@ def test_model(test_data, base_model, calibrated_model, scalar, model_name, feat
     eval_at_heartbeat(test_data, y_true, y_pred_prob, weights, dummy_fill_prob)
 
 
+    df = pd.DataFrame({
+        'y_true': y_true,
+        'y_pred': y_pred_prob,
+        'weights': weights,
+        'dummy_pred': dummy_y_pred_prob
+        })
+    df = df.sort_values('y_pred')
+    
+    deltap = 0.01
+    
+    bins_low = np.arange(0,0.401, deltap)
+    bins_high = np.arange(0.43,1, 3*deltap)
+    
+    bins = np.concatenate((bins_low, bins_high))
+    df['bins'] = pd.cut(df['y_pred'], bins = bins)
+    
+    grouped = df.groupby('bins', observed = False)
+    
+    def safe_weigths(x, y):
+        if x['weights'].sum() == 0:
+            return np.nan
+        return np.average(x[y], weights = x['weights'])
+    
+    weighted_actual = grouped.apply(lambda x: safe_weigths(x, 'y_true')).dropna()
+    weighted_pred = grouped.apply(lambda x: safe_weigths(x, 'y_pred')).dropna() 
+    weighted_dummy = grouped.apply(lambda x: safe_weigths(x, 'dummy_pred')).dropna()
+    
+    plt.plot(weighted_pred, weighted_actual, color = 'b', label = 'Model')
+    plt.plot(weighted_dummy, weighted_actual, color = 'yellow', label = 'dummy')
+    plt.plot([0,1], [0,1], color = 'black', label = 'Perfect')
+    plt.xlim(0,1)
+    plt.ylim(0,1)
+    plt.xlabel('Predicted Fill Prob')
+    plt.ylabel('Actual Fill Prob')
+    plt.title('Performance')
+    plt.legend()
+    plt.show()
 
-
-
-
-
-
-
-
-
-
+    #Similar plot to above but now for orders only placed at best bid and best ask
+    
+    mask = test_data['DistanceToTouch'] == 0
+    
+    y_true_filter = y_true[mask]
+    y_pred_prob_filter = y_pred_prob[mask]
+    weights_filter = weights[mask]
+    dummy_y_pred_prob_filter = np.average(y_true_filter, weights = weights_filter)
+    
+    df = pd.DataFrame({
+        'y_true': y_true_filter,
+        'y_pred': y_pred_prob_filter,
+        'weights': weights_filter,
+        'dummy_pred': dummy_y_pred_prob_filter
+        })
+    df = df.sort_values('y_pred')
+    bins_low = np.arange(0,0.401, deltap)
+    bins_high = np.arange(0.43,1, 3*deltap)
+    
+    bins = np.concatenate((bins_low, bins_high))
+    df['bins'] = pd.cut(df['y_pred'], bins = bins)
+    
+    grouped = df.groupby('bins', observed = False)
+    
+    weighted_actual = grouped.apply(lambda x: safe_weigths(x, 'y_true')).dropna()
+    weighted_pred = grouped.apply(lambda x: safe_weigths(x, 'y_pred')).dropna() 
+    weighted_dummy = grouped.apply(lambda x: safe_weigths(x, 'dummy_pred')).dropna()
+    
+    plt.plot(weighted_pred, weighted_actual, color = 'b', label = 'Model')
+    plt.plot(weighted_dummy, weighted_actual, color = 'yellow', label = 'dummy')
+    plt.plot([0,1], [0,1], color = 'black', label = 'Perfect')
+    plt.xlim(0,1)
+    plt.ylim(0,1)
+    plt.xlabel('Predicted Fill Prob')
+    plt.ylabel('Actual Fill Prob')
+    plt.title('Performance On Orders only placed at Best Bid or Best Ask')
+    plt.legend()
+    plt.show()
+    
     
     
     

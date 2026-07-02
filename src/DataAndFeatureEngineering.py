@@ -423,12 +423,12 @@ def data_regressors(rawdata, cleandata, clear_RAM = True):
 
 ########## Dynamic Features #####################
     
-    # #Distance to touch. How far a placed LO is from best bid or best ask    
-    # Regressors_df["DistanceToTouch"] =  np.where(   
-    #     Regressors_df["SideOfBook"].values == 1, # 1 is buy side, 0 is sell side
-    #     Regressors_df['BestBid'].values - Regressors_df['Price'].values,
-    #     Regressors_df['Price'].values - Regressors_df['BestAsk'].values
-    #     ) 
+    #Distance to touch. How far a placed LO is from best bid or best ask    
+    Regressors_df["DistanceToTouch"] =  np.where(   
+        Regressors_df["SideOfBook"].values == 1, # 1 is buy side, 0 is sell side
+        Regressors_df['BestBid'].values - Regressors_df['Price'].values,
+        Regressors_df['Price'].values - Regressors_df['BestAsk'].values
+        ) 
     
     Regressors_df['DistanceToMicroprice'] = np.where(Regressors_df['SideOfBook'] == 1, Regressors_df['Microprice'] - Regressors_df['Price'] , Regressors_df['Price'] - Regressors_df['Microprice'] )
     
@@ -604,13 +604,13 @@ def data_regressors(rawdata, cleandata, clear_RAM = True):
     
     #Now recalculate the dynamic features, i.e features that change per order ID we look at 
     
-    # hb_order_info_with_market_general_features['DistanceToTouch'] = np.where( #np.where works like an if condition, its this, else do this
+    hb_order_info_with_market_general_features['DistanceToTouch'] = np.where( #np.where works like an if condition, its this, else do this
           
-    #       hb_order_info_with_market_general_features['Side'] == 1,
-    #       hb_order_info_with_market_general_features['BestBid'] - hb_order_info_with_market_general_features['Price'],
-    #       hb_order_info_with_market_general_features['Price'] - hb_order_info_with_market_general_features['BestAsk']
+          hb_order_info_with_market_general_features['Side'] == 1,
+          hb_order_info_with_market_general_features['BestBid'] - hb_order_info_with_market_general_features['Price'],
+          hb_order_info_with_market_general_features['Price'] - hb_order_info_with_market_general_features['BestAsk']
           
-    #       )
+          )
     
     hb_order_info_with_market_general_features['DistanceToMicroprice'] = np.where( hb_order_info_with_market_general_features['Side'] == 1, 
                                                                                 hb_order_info_with_market_general_features['Microprice'] -  hb_order_info_with_market_general_features['Price'] ,  
@@ -717,7 +717,7 @@ def data_regressors(rawdata, cleandata, clear_RAM = True):
     #Some derivative related features, looking back in time, doing those here is the perfect place as we now have a chronological timeline of real events and hearbeats so we can easily look back
     
     df_past = final_state_df[['ID', 'TOD', 'LogVolAhead',
-                              #'DistanceToTouch', 
+                              'DistanceToTouch', 
                               'Midprice', 'BestBid','SideOfBook',
                               'BestAsk', 'BidSize', 'AskSize', 'Microprice', 'DistanceToMicroprice', 'OrderFlowImbalance','QImbalance', 
                               #'MicroMidDeviation'
@@ -744,7 +744,7 @@ def data_regressors(rawdata, cleandata, clear_RAM = True):
     #final_state_df['ClockMicroMidDeviation'] = final_state_df['MicroMidDeviation'] - final_state_df['MicroMidDeviation_past']
     distancetobid = final_state_df['BestBid'] - final_state_df['BestBid_past']
     distancetoask = final_state_df['BestAsk'] - final_state_df['BestAsk_past']
-    #final_state_df['ClockDeltaDistanceToTouch'] = np.where(final_state_df['SideOfBook'] == 1, distancetobid, distancetoask)
+    final_state_df['ClockDeltaDistanceToTouch'] = np.where(final_state_df['SideOfBook'] == 1, distancetobid, distancetoask)
     final_state_df["ClockQImbalance"] = (final_state_df['QImbalance'] - final_state_df['QImbalance_past']).fillna(0)
    
     #Some Dynamic events that require dynamic features
@@ -757,12 +757,12 @@ def data_regressors(rawdata, cleandata, clear_RAM = True):
      
     final_state_df['EventDeltaDistanceToMicroprice'] = np.nan_to_num(eventdeltadistancetomicroprice, nan = 0.0, posinf = 0.0, neginf = 0.0)
     
-    # Distance to touch moves with the Bid for Buys, and Ask for Sells
-    # final_state_df['EventDeltaDistanceToTouch'] = np.where(
-    #     final_state_df['Side'] == 1, 
-    #     final_state_df['EventDeltaBestBid'], 
-    #     -final_state_df['EventDeltaBestAsk']
-    # )
+    #Distance to touch moves with the Bid for Buys, and Ask for Sells
+    final_state_df['EventDeltaDistanceToTouch'] = np.where(
+        final_state_df['Side'] == 1, 
+        final_state_df['EventDeltaBestBid'], 
+        -final_state_df['EventDeltaBestAsk']
+    )
      
     #OFI at best bid ask 
     # (Bid side demand change)
@@ -783,18 +783,18 @@ def data_regressors(rawdata, cleandata, clear_RAM = True):
     #Clock
     final_state_df['ClockDeltaDistanceToMicroprice'] = (final_state_df['DistanceToMicroprice'] - final_state_df['DistanceToMicroprice_past'])
     final_state_df['ClockDeltaLogVolAhead'] = (final_state_df['LogVolAhead'] - final_state_df['LogVolAhead_past'])
-   # final_state_df['ClockDeltaDistanceToTouch'] = (final_state_df['DistanceToTouch'] - final_state_df['DistanceToTouch_past'])
+    final_state_df['ClockDeltaDistanceToTouch'] = (final_state_df['DistanceToTouch'] - final_state_df['DistanceToTouch_past'])
     
     
     #Wipe out NaNs before calculating speed ===
     #Kill the NaNs generated by the morning orders lacking a past
     final_state_df.fillna({
         'EventDeltaDistanceToMicroprice': 0 ,
-        #'EventDeltaDistanceToTouch': 0,
+        'EventDeltaDistanceToTouch': 0,
         'DeltaLogVolAhead': 0, 
         'ClockDeltaDistanceToMicroprice': 0,
         'ClockDeltaLogVolAhead': 0, 
-        #'ClockDeltaDistanceToTouch': 0,
+        'ClockDeltaDistanceToTouch': 0,
        # 'ClockMicroMidDeviation' : 0 ,
     }, inplace=True)
     
@@ -804,7 +804,7 @@ def data_regressors(rawdata, cleandata, clear_RAM = True):
         'DeltaOrderFlowImbalance', 
         'DeltaMidprice',
         'DeltaDistanceToMicroprice', 
-        #'DeltaDistanceToTouch',
+        'DeltaDistanceToTouch',
       #  'MicroMidDeviation'
     ]
     
@@ -932,7 +932,8 @@ def data_regressors(rawdata, cleandata, clear_RAM = True):
 
     cols_to_drop = ['ActiveCanceledVol', 'BaseTime', 'ExecutedVol', 'ExpiredVol','InitialPlacementTime', 'Price', 'BestBid', 'BestAsk',
                     'Side', 'SideOfBook', 'SideOfBook_past', 'Step', 'TotalActiveCanceledAfter', 'TotalExecutedAfter', 'TotalExpiredAfter', 'TotalFailureAfter', 'TOD_+_1000', 'TOD_past', 'LogVolAhead_past', 'Vol',
-                    #'DistanceToTouch_past', 'MicroMidDeviation_past' 
+                    'DistanceToTouch_past', 
+                    #'MicroMidDeviation_past' 
                     'RowCount', 'DistanceToMicroprice_past',
                     'VolAhead', 'Midprice_past', 'BestBid_past', 'BestAsk_past', 'BidSize_past', 'AskSize_past', 'Microprice_past', 'OrderFlowImbalance_past', 'QImbalance_past'
                     ]

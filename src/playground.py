@@ -8,6 +8,8 @@ Created on Wed Jun 24 16:50:49 2026
 
 import pandas as pd
 import numpy as np
+import matplotlib.pyplot as plt
+import config
 
 test_df = pd.DataFrame({
     
@@ -94,12 +96,17 @@ final_tods = [2,3,4]
 sweep_indices = np.searchsorted(sweep_tods, final_tods, side='right') -1
 print(sweep_indices)
 
-np.se
+plt.plot([0,1], [1,0])
 
 
+print(config.LGBM_MODEL_FEATURES)
 
+a = np.arange(0,0.401, 0.01)
+b = np.arange(0.43,1, 0.03)
 
-
+print(a)
+print(b)
+print(np.concatenate([a,b]))
 
 
 
