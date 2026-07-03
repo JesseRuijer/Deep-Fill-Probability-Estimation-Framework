@@ -153,7 +153,7 @@ def test_model(test_data, base_model, calibrated_model, scalar, model_name, feat
     avgprecision_dummy = average_precision_score(y_true, dummy_y_pred_prob, sample_weight = weights)
     print(f'Avg precision score is {avgprecision_dummy:.3f}')
     
-    print(f'{model_name} performed {avgprecision/avgprecision_dummy:.3f} times better than dummy ')
+    print(f'{model_name} performed {avgprecision/avgprecision_dummy:.3f} times better on PR AUC than dummy ')
     
     #Visualisation of performance vs dummy
     fig, axes = plt.subplots(2,2, figsize = (24,14))
@@ -347,7 +347,7 @@ def test_model(test_data, base_model, calibrated_model, scalar, model_name, feat
                         label='Dummy baseline (BSS = 0)')
         plt.xlabel('Heartbeat index (intervals since placement)')
         plt.ylabel('Brier Skill Score')
-        plt.title('Does more LOB info improve accuracy?')
+        plt.title(f'Does more LOB info improve accuracy? {model_name}')
         plt.legend()
         plt.show()
         
@@ -361,7 +361,7 @@ def test_model(test_data, base_model, calibrated_model, scalar, model_name, feat
             plt.plot(trajectory[0], 'o--', color='r', label='Eventually canceled')
         plt.xlabel('Normalized order lifetime (0=placement, 1=death)')
         plt.ylabel('Avg p(fill)')
-        plt.title('Predicted prob over lifetime by eventual outcome')
+        plt.title(f'Predicted prob over lifetime by eventual outcome {model_name}')
         plt.legend()
     
         # Brier over normalized lifetime with naive baseline for reference
@@ -371,7 +371,7 @@ def test_model(test_data, base_model, calibrated_model, scalar, model_name, feat
                         linewidth=1, label=f'Naive BS ({naive_bs:.3f})')
         plt.xlabel('Normalized order lifetime')
         plt.ylabel('Brier score')
-        plt.title('Brier score over order lifetime')
+        plt.title(f'Brier score over order lifetime {model_name}')
         plt.legend()
 
         plt.show()
@@ -385,7 +385,9 @@ def test_model(test_data, base_model, calibrated_model, scalar, model_name, feat
 
     eval_at_heartbeat(test_data, y_true, y_pred_prob, weights, dummy_fill_prob)
 
+    
 
+#Making performance plots
     df = pd.DataFrame({
         'y_true': y_true,
         'y_pred': y_pred_prob,
@@ -399,8 +401,8 @@ def test_model(test_data, base_model, calibrated_model, scalar, model_name, feat
     bins_low = np.arange(0,0.401, deltap)
     bins_high = np.arange(0.43,1, 3*deltap)
     
-    bins = np.concatenate((bins_low, bins_high))
-    df['bins'] = pd.cut(df['y_pred'], bins = bins)
+    bins_custom = np.concatenate((bins_low, bins_high))
+    df['bins'] = pd.cut(df['y_pred'], bins = bins_custom)
     
     grouped = df.groupby('bins', observed = False)
     
@@ -411,16 +413,18 @@ def test_model(test_data, base_model, calibrated_model, scalar, model_name, feat
     
     weighted_actual = grouped.apply(lambda x: safe_weigths(x, 'y_true')).dropna()
     weighted_pred = grouped.apply(lambda x: safe_weigths(x, 'y_pred')).dropna() 
-    weighted_dummy = grouped.apply(lambda x: safe_weigths(x, 'dummy_pred')).dropna()
+    weighted_dummy = np.average(y_true, weights = weights)
+
+    print(f'weighetd dummy {weighted_dummy}')
     
     plt.plot(weighted_pred, weighted_actual, color = 'b', label = 'Model')
-    plt.plot(weighted_dummy, weighted_actual, color = 'yellow', label = 'dummy')
+    plt.plot(weighted_dummy,weighted_dummy, marker = 'o', markersize = 10, markeredgecolor = 'black', color = 'yellow', label = f'dummy {weighted_dummy:.2f}%')
     plt.plot([0,1], [0,1], color = 'black', label = 'Perfect')
     plt.xlim(0,1)
     plt.ylim(0,1)
     plt.xlabel('Predicted Fill Prob')
     plt.ylabel('Actual Fill Prob')
-    plt.title('Performance')
+    plt.title(f'Performance of {model_name}')
     plt.legend()
     plt.show()
 
@@ -433,36 +437,49 @@ def test_model(test_data, base_model, calibrated_model, scalar, model_name, feat
     weights_filter = weights[mask]
     dummy_y_pred_prob_filter = np.average(y_true_filter, weights = weights_filter)
     
-    df = pd.DataFrame({
-        'y_true': y_true_filter,
+    df_filter = pd.DataFrame({
+        'y_true':  y_true_filter,
         'y_pred': y_pred_prob_filter,
-        'weights': weights_filter,
-        'dummy_pred': dummy_y_pred_prob_filter
+        'weights':  weights_filter,
+        'dummy_pred': dummy_y_pred_prob_filter 
         })
-    df = df.sort_values('y_pred')
-    bins_low = np.arange(0,0.401, deltap)
-    bins_high = np.arange(0.43,1, 3*deltap)
     
-    bins = np.concatenate((bins_low, bins_high))
-    df['bins'] = pd.cut(df['y_pred'], bins = bins)
+    df_filter['bins'] = pd.cut(df_filter['y_pred'], bins = bins_custom)
     
-    grouped = df.groupby('bins', observed = False)
+    grouped = df_filter.groupby('bins', observed = False)
     
     weighted_actual = grouped.apply(lambda x: safe_weigths(x, 'y_true')).dropna()
     weighted_pred = grouped.apply(lambda x: safe_weigths(x, 'y_pred')).dropna() 
-    weighted_dummy = grouped.apply(lambda x: safe_weigths(x, 'dummy_pred')).dropna()
+    weighted_dummy = np.average(y_true_filter, weights = weights_filter)
+    
+    print(f'weighetd dummy mask {weighted_dummy}')
     
     plt.plot(weighted_pred, weighted_actual, color = 'b', label = 'Model')
-    plt.plot(weighted_dummy, weighted_actual, color = 'yellow', label = 'dummy')
+    plt.plot(weighted_dummy, weighted_dummy, marker = 'o', markersize = 10, markeredgecolor = 'black', color = 'yellow', label = f'dummy {weighted_dummy:.2f}%')
     plt.plot([0,1], [0,1], color = 'black', label = 'Perfect')
     plt.xlim(0,1)
     plt.ylim(0,1)
     plt.xlabel('Predicted Fill Prob')
     plt.ylabel('Actual Fill Prob')
-    plt.title('Performance On Orders only placed at Best Bid or Best Ask')
+    plt.title(f'Performance of {model_name} On Orders only placed at Best Bid or Best Ask')
     plt.legend()
     plt.show()
     
+        
+    #Make a linegraph with on x axis the bins and on y axis the vol of orders landed in that bin 
+    
+    plt.figure(figsize = (20,10))
+    vol_per_bin = df.groupby('bins', observed = False)['weights'].sum()
+    
+    middle = [b.mid for b in vol_per_bin.index]
+    
+    plt.plot(middle, vol_per_bin, color = 'b', label = 'LO Vol')
+    plt.xlabel('Probability Bins')
+    plt.xlim(0, 1)
+    plt.ylabel('Vol of LOs')
+    plt.title(f'Amount Of LO Vol appearing in each predictive probability bin {model_name}')
+    plt.legend()
+    plt.show()
     
     
     

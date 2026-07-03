@@ -13,17 +13,34 @@ import config
 from LightGBMEngine import train_lgbm_model
 from sklearn.metrics import average_precision_score
 from pathlib import Path
+from FileManager import get_ml_training_paths
+import gc
 
 
 #Loading data in 
-script_dir = Path(__file__).resolve().parent
-processed_dir = script_dir.parent / 'data' / 'processed'
-train_file = processed_dir / 'INTC_BINARY_2014_04_01.parquet'
-val_file = processed_dir / 'INTC_BINARY_2014_04_02.parquet'
 
+paths = get_ml_training_paths()
 
-train_matrix = pd.read_parquet(train_file).sample(frac = 0.15, random_state = 67)
-val_matrix = pd.read_parquet(val_file).sample(frac = 0.15, random_state = 67) #Validation data different from training and testing data ofc
+if not paths:
+    print("Model training aborted. No training files selected.")
+    exit()
+
+all_files = paths.get('train_bin', [])
+train_files = all_files
+val_file = paths.get('test_bin', []) #This is just for selecting the val file, once done with optuna, can chagne the test file back to another day in main 
+
+train_frames = []
+
+for f in train_files:
+    train_frames.append(pd.read_parquet(f))
+    
+train_matrix = pd.concat(train_frames, ignore_index = True)
+del train_frames
+gc.collect()
+
+train_matrix = train_matrix.sample(frac = 0.15, random_state = 67)
+val_matrix = pd.read_parquet(val_file) #Validation data different from training and testing data ofc
+
 
 X_train = train_matrix[config.LGBM_MODEL_FEATURES]
 y_train = train_matrix[config.TARGET]

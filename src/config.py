@@ -228,7 +228,7 @@ UNIVERSAL_FEATURES = [ # Features that apply to any LO, so for ex midprice yes, 
     'TotalVolImbalance',
     'WeightedVolImbalance',
     #'MicroMidDeviation',
-    'CancelationRatio',
+    'CancelationRatio', #cant use this in a model since it gives lookaheadbias
     'OrderFlowImbalance',
 
     # Event-Time Deltas (Market-wide)
@@ -315,7 +315,7 @@ ALL_FEATURES = [
     'TotalVolImbalance',
     'WeightedVolImbalance',
     #'MicroMidDeviation',
-    'CancelationRatio',
+    'CancelationRatio',#cant use this in a model since it gives lookaheadbias
     'OrderFlowImbalance',
 
     # 3. Event-Time Deltas (Tick-by-Tick Changes)

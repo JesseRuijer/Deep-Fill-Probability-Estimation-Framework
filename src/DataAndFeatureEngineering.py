@@ -538,7 +538,7 @@ def data_regressors(rawdata, cleandata, clear_RAM = True):
     
     heartbeat_interval = config.HEARTBEAT_INTERVAL
     
-    hb_order_info['Duration'] = hb_order_info['DeathTime'] - hb_order_info['InitialPlacementTime']
+    hb_order_info['Duration'] = (hb_order_info['DeathTime'] - hb_order_info['InitialPlacementTime']) - 1
     hb_order_info['NumberOfHeartBeats'] = np.minimum(((hb_order_info['Duration'] // heartbeat_interval).astype(int)), (config.MAX_HEARTBEATS))
     
     valid_orders = hb_order_info[hb_order_info['NumberOfHeartBeats'] > 0]
@@ -554,7 +554,11 @@ def data_regressors(rawdata, cleandata, clear_RAM = True):
     heartbeats_df = pd.DataFrame({'ID' : ids_repeated, 'BaseTime' : starts_repeated})
     heartbeat_counts = valid_orders['NumberOfHeartBeats'].values
     
-    heartbeats_df['Step'] = np.concatenate([np.arange(1, c + 1) for c in heartbeat_counts]) * config.HEARTBEAT_INTERVAL   # creates col with 1 * 10000 as first entry, 2*10000 as second entry etc
+    #Doesnt print a heartbeat for initial placement and death time since thats already eincluded in event
+    #So for example an order placed at t=0, death at t = 3 has snapshots at 1,2 note c+1 works, since above i subtracted 1 ms from the duration
+    
+    
+    heartbeats_df['Step'] = np.concatenate([np.arange(1, c+1) for c in heartbeat_counts]) * config.HEARTBEAT_INTERVAL   # creates col with 1 * 10000 as first entry, 2*10000 as second entry etc
     heartbeats_df['TOD'] = heartbeats_df['BaseTime'] + heartbeats_df['Step']
     
     heartbeats_df = heartbeats_df.merge(hb_order_info[['ID' , 'Price', 'Side', 'InitialPlacementTime', 'Vol']], on='ID')
@@ -875,42 +879,52 @@ def data_regressors(rawdata, cleandata, clear_RAM = True):
     # Generate the Success Rows
     fills_bin_df = final_state_df[final_state_df['TotalExecutedAfter'] > 0].copy()
     fills_bin_df[config.TARGET] = 1
-    fills_bin_df['UnitWeight'] = fills_bin_df['TotalExecutedAfter']
+    
+    #Full logic of the weighting explained in notebook
+    
+    fills_bin_df['MaxVol'] = fills_bin_df.groupby('ID')['TotalExecutedAfter'].transform('max') #Max here just means since each entry is like at a new snapshot, the max is just teh first entry, i.e the total amount that got filled etc. and .transfrom just gives back a new row with the general max in each entry
+    fills_bin_df['SumVol'] = fills_bin_df.groupby('ID')['TotalExecutedAfter'].transform('sum')
+    fills_bin_df['UnitWeight'] = (fills_bin_df['TotalExecutedAfter'] / fills_bin_df['SumVol']) * fills_bin_df['MaxVol']
 
     # Generate the Failure Rows
-    fail_bin_df = final_state_df[final_state_df['TotalFailureAfter'] > 0].copy()
-    fail_bin_df[config.TARGET] = 0
-    fail_bin_df['UnitWeight'] = fail_bin_df['TotalFailureAfter']
+    fails_bin_df = final_state_df[final_state_df['TotalFailureAfter'] > 0].copy()
+    fails_bin_df[config.TARGET] = 0
+    fails_bin_df['MaxVol'] = fails_bin_df.groupby('ID')['TotalFailureAfter'].transform('max') #Max here just means since each entry is like at a new snapshot, the max is just teh first entry, i.e the total amount that got filled etc. and .transfrom just gives back a new row with the general max in each entry
+    fails_bin_df['SumVol'] = fails_bin_df.groupby('ID')['TotalFailureAfter'].transform('sum')
+    fails_bin_df['UnitWeight'] = (fails_bin_df['TotalFailureAfter'] / fails_bin_df['SumVol']) * fails_bin_df['MaxVol']
+
+
 
     # Combine into final training array
-    Binary_Regression_Matrix = pd.concat([fills_bin_df, fail_bin_df], ignore_index=True)
+    Binary_Regression_Matrix = pd.concat([fills_bin_df, fails_bin_df], ignore_index=True)
     Binary_Regression_Matrix = Binary_Regression_Matrix.sort_values(by = 'TOD')
     
     #Multiclass for other engines
     
     fills_multi_df = final_state_df[final_state_df['TotalExecutedAfter'] > 0].copy()
     fills_multi_df[config.TARGET] = 1
-    fills_multi_df['UnitWeight'] = fills_multi_df['TotalExecutedAfter']
+    fills_multi_df['MaxVol'] = fills_multi_df.groupby('ID')['TotalExecutedAfter'].transform('max') #Max here just means since each entry is like at a new snapshot, the max is just teh first entry, i.e the total amount that got filled etc. and .transfrom just gives back a new row with the general max in each entry
+    fills_multi_df['SumVol'] = fills_multi_df.groupby('ID')['TotalExecutedAfter'].transform('sum')
+    fills_multi_df['UnitWeight'] = (fills_multi_df['TotalExecutedAfter'] / fills_multi_df['SumVol']) * fills_multi_df['MaxVol']
+
     
     active_cancels_multi_df = final_state_df[final_state_df['TotalActiveCanceledAfter'] > 0].copy()
     active_cancels_multi_df[config.TARGET] = 0
-    active_cancels_multi_df['UnitWeight'] = active_cancels_multi_df['TotalActiveCanceledAfter']
+    active_cancels_multi_df['MaxVol'] = active_cancels_multi_df.groupby('ID')['TotalActiveCanceledAfter'].transform('max') #Max here just means since each entry is like at a new snapshot, the max is just teh first entry, i.e the total amount that got filled etc. and .transfrom just gives back a new row with the general max in each entry
+    active_cancels_multi_df['SumVol'] = active_cancels_multi_df.groupby('ID')['TotalActiveCanceledAfter'].transform('sum')
+    active_cancels_multi_df['UnitWeight'] = (active_cancels_multi_df['TotalActiveCanceledAfter'] / active_cancels_multi_df['SumVol']) * active_cancels_multi_df['MaxVol']
+
     
     expired_multi_df = final_state_df[final_state_df['TotalExpiredAfter'] > 0].copy()
     expired_multi_df[config.TARGET] = 2
-    expired_multi_df['UnitWeight'] = expired_multi_df['TotalExpiredAfter']
+    expired_multi_df['MaxVol'] =  expired_multi_df.groupby('ID')['TotalExpiredAfter'].transform('max') #Max here just means since each entry is like at a new snapshot, the max is just teh first entry, i.e the total amount that got filled etc. and .transfrom just gives back a new row with the general max in each entry
+    expired_multi_df['SumVol'] =  expired_multi_df.groupby('ID')['TotalExpiredAfter'].transform('sum')
+    expired_multi_df['UnitWeight'] = ( expired_multi_df['TotalExpiredAfter'] /  expired_multi_df['SumVol']) *  expired_multi_df['MaxVol']
+
     
     Multi_Class_Regression_Matrix = pd.concat([fills_multi_df, active_cancels_multi_df, expired_multi_df], ignore_index=True)
     Multi_Class_Regression_Matrix = Multi_Class_Regression_Matrix.sort_values(by = 'TOD')
 
-    
-    #Now count how many heartbeats including events there were, and divide the weights by that so all in all the total weight is what it should be
-    
-    Binary_Regression_Matrix['RowCount'] = Binary_Regression_Matrix.groupby('ID')['ID'].transform('count')
-    Multi_Class_Regression_Matrix['RowCount'] = Multi_Class_Regression_Matrix.groupby('ID')['ID'].transform('count')
-    
-    Binary_Regression_Matrix['UnitWeight'] = Binary_Regression_Matrix['UnitWeight'] / Binary_Regression_Matrix['RowCount']
-    Multi_Class_Regression_Matrix['UnitWeight'] = Multi_Class_Regression_Matrix['UnitWeight'] / Multi_Class_Regression_Matrix['RowCount']
    
     #Compressing matrices to save RAM
     matrices_to_compress = [Binary_Regression_Matrix, Multi_Class_Regression_Matrix]
@@ -924,8 +938,7 @@ def data_regressors(rawdata, cleandata, clear_RAM = True):
             # Compress 64-bit integers to 32-bit
             elif col_type == 'int64':
                 matrix[col] = matrix[col].astype('int32') 
-   
-    assert Binary_Regression_Matrix['TOD'].is_monotonic_increasing
+
    
     
     #Cols that either dont have necessary info or to prevent data leaking i.e we cant train on totalexecuted after since that happnes in the future
@@ -934,7 +947,7 @@ def data_regressors(rawdata, cleandata, clear_RAM = True):
                     'Side', 'SideOfBook', 'SideOfBook_past', 'Step', 'TotalActiveCanceledAfter', 'TotalExecutedAfter', 'TotalExpiredAfter', 'TotalFailureAfter', 'TOD_+_1000', 'TOD_past', 'LogVolAhead_past', 'Vol',
                     'DistanceToTouch_past', 
                     #'MicroMidDeviation_past' 
-                    'RowCount', 'DistanceToMicroprice_past',
+                    'MaxVol', 'SumVol' ,'DistanceToMicroprice_past',
                     'VolAhead', 'Midprice_past', 'BestBid_past', 'BestAsk_past', 'BidSize_past', 'AskSize_past', 'Microprice_past', 'OrderFlowImbalance_past', 'QImbalance_past'
                     ]
     

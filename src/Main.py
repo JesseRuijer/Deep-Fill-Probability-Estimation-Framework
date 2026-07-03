@@ -188,7 +188,7 @@ def run_project():
     lgbm_w = train_matrix['UnitWeight']
 
     # #Training model, can be commented when saved model    
-   # base_lgbm, calibrated_lgbm = train_lgbm_model(lgbm_X, lgbm_Y, lgbm_w)
+    #base_lgbm, calibrated_lgbm = train_lgbm_model(lgbm_X, lgbm_Y, lgbm_w)
     
     #comment this after best features have been found
     #feature_finder(base_lgbm,'Light Gradient Boosted Model', test_matrix_bin , config.LGBM_MODEL_FEATURES, None, None)

@@ -111,10 +111,11 @@ print(np.concatenate([a,b]))
 
 
 
+print(np.arange(1,3,1 ))
 
-
-
-
+lst = [1,2,3,4]
+print(lst[:-1])
+print(lst[-1])
 
 
 

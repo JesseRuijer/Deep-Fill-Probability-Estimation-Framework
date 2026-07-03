@@ -102,6 +102,13 @@ def run_exploratory_analysis(rawdata, cleandata, regressormatrix,feature, target
     sell_no_walk = (cleandata['MO']['APPS'] == cleandata['MO']['BBP'] ) & (cleandata['MO']['BorS'] == 1)
     total_walk = buy_no_walk | sell_no_walk # | is OR operator
     
+    print('Checking clock time difference across the day for a lookback of 50 events')
+    differences = cleandata['Event']['TOD'].diff(config.EVENT_TIME_DELTA)
+    print(f'The max time between 50 events was {differences.max():.2f} ms')
+    print(f'The median time between 50 events was {differences.median():.2f} ms')
+    print(f'The avg time between 50 events was {differences.mean():.2f} ms')
+    
+    
     print('################VOLUME METRICS############## \n')
     print(f'Added Vol in a day (i.e sum during entire day of 66 and 83 vol) is {added_vol_day}')
     print(f'Canceled Vol in a day (i.e sum during entire day of 67 and 68 vol) is {canceled_vol_day}')
@@ -126,25 +133,37 @@ def run_exploratory_analysis(rawdata, cleandata, regressormatrix,feature, target
     
     print(f" Percentage of orders that did  walk the book for INTC on April 1 2024 is {(1 -((total_walk.sum())/(len(cleandata['MO'])))) * 100:.2f} % ")
     
-    print('Checking clock time difference across the day for a lookback of 50 events')
-    differences = cleandata['Event']['TOD'].diff(config.EVENT_TIME_DELTA)
-    print(f'The max time between 50 events was {differences.max()}')
-    print(f'The median time between 50 events was {differences.median()}')
-    print(f'The avg time between 50 events was {differences.mean()}')
+    time_between_two_mos = rawdata['MO']['TOD'].diff(1)
+    print(f'The max time between two market orders was {time_between_two_mos.max():.2f} ms')
+    print(f'The median time between two market orders was {time_between_two_mos.median():.2f} ms')
+    print(f'The average time between two market orders was {time_between_two_mos.mean():.2f} ms')
     
-    time_between_two_mos = rawdata['MO']['TOD'].diff(1).mean()
-    
-    print(f'The average time between two market orders was {time_between_two_mos}')
-    
-    #Make a plot on x axis TOD and on y axis MO amount placed
+    #Make a plot on x axis TOD and on y axis MO amount vol placed
     
     plt.figure(figsize = (20,10))
+    mo_tods = rawdata['MO']['TOD']
+    mo_vols = rawdata['MO']['Vol']
+    counts, bin_edges = np.histogram(mo_tods, bins = 200, weights = mo_vols)  # np.hist gives back the counts and the edges i.e begin and end point of each bin
     
-    print(rawdata['MO']['TOD'].describe())
-    print(time_in_hours(30752880))
+    middle = (bin_edges[:-1] + bin_edges[1:]) / 2
     
-    mo_counts = rawdata['MO']['TOD']
-    counts, bin_edges = np.histogram(mo_counts, bins = 65)  # np.hist gives back the counts and the edges i.e begin and end point of each bin
+    plt.plot(middle, counts, color = 'b', label = 'MO Vol')
+    plt.xlim(config.MARKET_OPEN_TIME, config.MARKET_CLOSE_TIME)
+    current_ticks = plt.xticks()[0]
+    clock_labels = [time_in_hours(int(tick)) for tick in current_ticks]
+    plt.xticks(current_ticks, clock_labels)
+    plt.xlabel('TOD')
+    plt.ylabel('Vol of MOs')
+    plt.title('Vol of MOs vs TOD')
+    plt.legend()
+
+    plt.show()
+
+
+    
+        
+    plt.figure(figsize = (20,10))
+    counts, bin_edges = np.histogram(mo_tods, bins = 200)  # np.hist gives back the counts and the edges i.e begin and end point of each bin
     
     middle = (bin_edges[:-1] + bin_edges[1:]) / 2
     
@@ -154,29 +173,111 @@ def run_exploratory_analysis(rawdata, cleandata, regressormatrix,feature, target
     clock_labels = [time_in_hours(int(tick)) for tick in current_ticks]
     plt.xticks(current_ticks, clock_labels)
     plt.xlabel('TOD')
-    plt.ylabel('Frequency of MOs')
+    plt.ylabel('Freq of MOs')
     plt.title('Freq of MOs vs TOD')
     plt.legend()
     plt.tight_layout()
 
     plt.show()
     
-    mask = rawdata['Event']['Type'].isin([66,83])
-    lim_orders = rawdata[mask]
+    #Same two plots as above but now for LOs with three sperate lines, one for placings, one for fills, one for cancels 
+    
+    plt.figure(figsize = (20,10))
+    lo_tods = rawdata['Event']['TOD']
+    lo_vols = rawdata['Event']['Vol']
+    counts, bin_edges = np.histogram(lo_tods, bins = 200, weights = lo_vols)  # np.hist gives back the counts and the edges i.e begin and end point of each bin
+    
+    middle = (bin_edges[:-1] + bin_edges[1:]) / 2
+    
+    plt.plot(middle, counts, color = 'b', label = 'MO Vol')
+    plt.xlim(config.MARKET_OPEN_TIME, config.MARKET_CLOSE_TIME)
+    current_ticks = plt.xticks()[0]
+    clock_labels = [time_in_hours(int(tick)) for tick in current_ticks]
+    plt.xticks(current_ticks, clock_labels)
+    plt.xlabel('TOD')
+    plt.ylabel('Vol of LOs')
+    plt.title('Vol of LOs vs TOD')
+    plt.legend()
+
+    plt.show()
+
+
+    
+        
+    plt.figure(figsize = (20,10))
+    counts, bin_edges = np.histogram(mo_tods, bins = 200)  # np.hist gives back the counts and the edges i.e begin and end point of each bin
+    
+    middle = (bin_edges[:-1] + bin_edges[1:]) / 2
+    
+    plt.plot(middle, counts, color = 'b', label = 'MO Freq')
+    plt.xlim(config.MARKET_OPEN_TIME, config.MARKET_CLOSE_TIME)
+    current_ticks = plt.xticks()[0]
+    clock_labels = [time_in_hours(int(tick)) for tick in current_ticks]
+    plt.xticks(current_ticks, clock_labels)
+    plt.xlabel('TOD')
+    plt.ylabel('Freq of MOs')
+    plt.title('Freq of MOs vs TOD')
+    plt.legend()
+    plt.tight_layout()
+
+    plt.show()
+    
+    df_E = rawdata['Event']
+    df_BP = rawdata['BuyPrice']
+    df_SP = rawdata['SellPrice']
+    
+    maskadd = df_E['Type'].isin([66,83])
+    lim_orders = df_E[maskadd]
+    bps = df_BP[maskadd]
+    sps = df_SP[maskadd]
     total_lim_orders = len(lim_orders)
+
     
+    maskadd2 = ((lim_orders['Price'] == bps[0]) | (lim_orders['Price'] == sps[0]))
     
-    print(total_lim_orders)
-    
-    mask2 = ((rawdata['Event'][rawdata['Price']] == rawdata['BuyPrice'][0]) | (rawdata['Event'][rawdata['Price']] == rawdata['BuyPrice'][0]))
-    
-    lim_orders_at_best_price = len(lim_orders[mask2])
+    lim_orders_at_best_price = len(lim_orders[maskadd2])
     
     result = lim_orders_at_best_price/ total_lim_orders
     
-    print(f'The percentage of limit orders placed at best price out of all limit orders placed is {result*100}%')
     
-    print(f'The percentage of limit orders placed at best price and first level out in the book out of all limit orders placed is {result*100}%')
+    maskadd3 = ((lim_orders['Price'] == bps[0]) | 
+            (lim_orders['Price'] == sps[0]) |
+            (lim_orders['Price'] == bps[1]) | 
+            (lim_orders['Price'] == sps[1]))
+    lim_orders_at_best_price2 = len(lim_orders[maskadd3])
+    result2 = lim_orders_at_best_price2 / total_lim_orders
+    
+    print(f'The percentage of limit orders placed at best price out of all limit orders placed is {result*100:.2f}%')
+    
+    print(f'The percentage of limit orders placed at best price and first level out in the book out of all limit orders placed is {result2*100:.2f}%')
+    
+    
+    
+    maskcancel = df_E['Type'].isin([67,68])
+    lim_orders = df_E[maskcancel]
+    bps = df_BP[maskcancel]
+    sps = df_SP[maskcancel]
+    total_lim_orders = len(lim_orders)
+
+    
+    maskcancel2 = ((lim_orders['Price'] == bps[0]) | (lim_orders['Price'] == sps[0]))
+    
+    lim_orders_at_best_price = len(lim_orders[maskcancel2])
+    
+    result = lim_orders_at_best_price/ total_lim_orders
+    
+    
+    maskcancel3 = ((lim_orders['Price'] == bps[0]) | 
+            (lim_orders['Price'] == sps[0]) |
+            (lim_orders['Price'] == bps[1]) | 
+            (lim_orders['Price'] == sps[1]))
+    lim_orders_at_best_price2 = len(lim_orders[maskcancel3])
+    result2 = lim_orders_at_best_price2 / total_lim_orders
+    
+    print(f'The percentage of limit orders canceled/deleted at best price out of all limit orders placed is {result*100:.2f}%')
+    
+    print(f'The percentage of limit orders canceled/deleted at best price and first level out in the book out of all limit orders placed is {result2*100:.2f}%')
+    
     
     
     
