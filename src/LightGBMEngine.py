@@ -17,8 +17,7 @@ from lightgbm import early_stopping
 from sklearn.calibration import CalibratedClassifierCV
 
 
-
-def train_lgbm_model(X_train, y_train, weights, X_val = None, y_val = None, val_weights = None,  params = None, for_tuning = False):
+def train_lgbm_model(X_train, y_train, weights, X_calib, y_calib, weights_calib , X_val = None, y_val = None, val_weights = None,  params = None, for_tuning = False):
 
     # light GBM 
     
@@ -48,29 +47,33 @@ def train_lgbm_model(X_train, y_train, weights, X_val = None, y_val = None, val_
     
     #kwargs is just a name for keyword arguments which is somthing like sample_weight = weight inside the parameters of a function
     
-    fit_kwargs = {'sample_weight': weights}
+    # fit_kwargs = {'sample_weight': weights}
     
-    if X_val is not None and y_val is not None:
-        fit_kwargs['eval_set'] = [(X_val, y_val)]
-        fit_kwargs['callbacks'] = [early_stopping(stopping_rounds = 50)]
-        if val_weights is not None:
-            fit_kwargs['eval_sample_weight'] = [val_weights]
-    base_lgbm_model = base_lgbm.fit(X_train, y_train, **fit_kwargs)
+    # #Only need the below when running optuna 
     
-    if for_tuning: #This is just for speed optimsation for using Optuna as for that you just need the base model so dont want to waste time calibrating
-        return base_lgbm_model
+    # if X_val is not None and y_val is not None:
+    #     fit_kwargs['eval_set'] = [(X_val, y_val)]
+    #     fit_kwargs['callbacks'] = [early_stopping(stopping_rounds = 50)]
+    #     if val_weights is not None:
+    #         fit_kwargs['eval_sample_weight'] = [val_weights]
+    # base_lgbm_model = base_lgbm.fit(X_train, y_train, **fit_kwargs)
     
+    # if for_tuning: #This is just for speed optimsation for using Optuna as for that you just need the base model so dont want to waste time calibrating
+    #     return base_lgbm_model
+    
+    base_lgbm_model = base_lgbm.fit(X_train, y_train, sample_weight = weights)
     
     #calibrating the model, trees use stepfunctions, so use isotonic to match that or smooth it out??, do more research on this
     # im pretty sure trees dont require scalar and only care about relative ordering 
-
+    
+    
     calibrated_lgbm = CalibratedClassifierCV(
-        estimator = base_lgbm,
+        estimator = base_lgbm_model,
         method = 'isotonic',
-        cv = 5
+        cv = 'prefit' # fit calibrator only on reserved data for calibration, since model has already been trained before this overrides cross validation and prevents us from training on past data since our data is in chronological order
         )
   
-    calibrated_lgbm_model = calibrated_lgbm.fit(X_train, y_train, sample_weight = weights)
+    calibrated_lgbm_model = calibrated_lgbm.fit(X_calib, y_calib, sample_weight = weights_calib)
     
     return base_lgbm_model, calibrated_lgbm_model
 

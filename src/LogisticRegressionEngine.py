@@ -15,7 +15,7 @@ from sklearn.preprocessing import StandardScaler
 ###################Starting logistic regression###########################
 
 
-def train_logistic_model(X_train, y_train, weights,params = None, for_tuning = False):
+def train_logistic_model(X_train, y_train, weights, X_calib, y_calib, weights_calib, params = None, for_tuning = False):
     
     if params == None:
         params = {
@@ -34,6 +34,9 @@ def train_logistic_model(X_train, y_train, weights,params = None, for_tuning = F
         
     scalar = StandardScaler()
     X_train_standardised = scalar.fit_transform(X_train) #Here we fit and transform
+    
+    X_calib_scaled = scalar.transform(X_calib) #Here we only transform and not fit. its cuz transform just applies the ruler and fit actually calculates it and we only want to calculate on the training data and not on the testing data
+    
    #Logistic regression 
    #Might use somethiing of platt scaling to wrap the log res model as log res doesnt work very well with data where the output is very skewed, i.e here we have much more cancels then fills
     base_logistic_model = LogisticRegression(**params) # max iter higher then the standard 100 to take into account the noisy data we have
@@ -43,11 +46,10 @@ def train_logistic_model(X_train, y_train, weights,params = None, for_tuning = F
         
     if for_tuning: #This is just for speed optimsation for using Optuna as for that you just need the base model so dont want to waste time calibrating
         return base_logistic_model, None, scalar
+
     
-    
-    
-    
-    calibrated_model = CalibratedClassifierCV(estimator=base_logistic_model, method='isotonic', cv = 5) # Put the cv=5 later again Do some research if and why 5 is good value for cross validation in ML, its because that splits into 5 folds of 20% where each time we train on 80 and test on 20 and thats like the industry standard i think
+    calibrated_model = CalibratedClassifierCV(estimator=base_logistic_model, method='isotonic', 
+                                              cv = 'prefit') # fit calibrator only on reserved data for calibration, since model has already been trained before this overrides cross validation and prevents us from training on past data since our data is in chronological order
   
     
     #Look at the required assumptions for logistic regression, i think need iid and for example
@@ -56,12 +58,12 @@ def train_logistic_model(X_train, y_train, weights,params = None, for_tuning = F
     #and position dynamics
 
     
-
+    
     
    
     #Fit Scikit logistic regrssion
     
-    calibrated_logistic_model = calibrated_model.fit(X_train_standardised, y_train, sample_weight = weights)
+    calibrated_logistic_model = calibrated_model.fit(X_calib_scaled, y_calib, sample_weight = weights_calib)
     
     return base_logistic_model, calibrated_logistic_model, scalar
     

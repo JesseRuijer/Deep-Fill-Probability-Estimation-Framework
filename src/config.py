@@ -14,8 +14,11 @@ Created on Thu Jun 11 10:04:48 2026
 
 
 CURRENT_LR_MODEL = 'Logistic_Regression_Models_V1.joblib'
-CURRENT_LGBM_MODEL = 'LGBM_Models_V1.joblib'
+CURRENT_LGBM_MODEL = 'LGBM_Models__V1.joblib'
 
+#put this on true when not including full training day
+#also when changing this you have to delete and resave in main 
+DONT_INCLUDE_FULL_TRAINING_DAY = True
 
 #just has some project wide constans 
 

@@ -34,7 +34,7 @@ def prep_data_daily(file_path, file_path_mo):
     print(f'Runs full pipeline for {os.path.basename(file_path)}')
     rawdata = import_data(file_path, file_path_mo)
     cleandata = clean_data(rawdata)
-    matrices = data_regressors(rawdata, cleandata, dont_include_full_trading_day = True)
+    matrices = data_regressors(rawdata, cleandata, config.DONT_INCLUDE_FULL_TRAINING_DAY)
     
     del rawdata
     del cleandata
@@ -107,19 +107,30 @@ def run_project():
     
     test_matrix = pd.read_parquet(test_file)
     
-    print("Performing Logistic Regression on Binary Data")
+    # print("Performing Logistic Regression on Binary Data")
     
-    #Copy Required for final safety check below
-    lr_X = train_matrix[config.LOGISTIC_MODEL_FEATURES].copy()
-    lr_Y = train_matrix[config.TARGET].copy()
-    lr_w = train_matrix['UnitWeight'].copy()
+    # #Copy Required for final safety check below
+    # lr_X = train_matrix[config.LOGISTIC_MODEL_FEATURES].copy()
+    # lr_Y = train_matrix[config.TARGET].copy()
+    # lr_w = train_matrix['UnitWeight'].copy()
     
-    # Final safety rest
-    lr_X.replace([np.inf, -np.inf], 0, inplace=True)
+    # # Final safety rest
+    # lr_X.replace([np.inf, -np.inf], 0, inplace=True)
+    
+    # #use 80% for training and 20% to calibrate on, in chronological order since we have timeseries data 
+    # split_idx = int(len(lr_X) * .8)
+
+    # train_X = lr_X.iloc[:split_idx]
+    # train_Y = lr_Y[:split_idx]
+    # train_w = lr_w.iloc[:split_idx]
+    
+    # calib_X = lr_X.iloc[split_idx:]
+    # calib_y = lr_Y.iloc[split_idx:]
+    # calib_weights = lr_w.iloc[split_idx:]
 
     
-    #Training model, can be commented when saved model
-    #base_lr, calibrated_lr, scalar_lr = train_logistic_model(lr_X, lr_Y, lr_w)
+    # #Training model, can be commented when saved model
+    # base_lr, calibrated_lr, scalar_lr = train_logistic_model(train_X, train_Y, train_w, calib_X, calib_y, calib_weights)
     
     
     #Save final model to harddrive, comment after saving 
@@ -146,20 +157,20 @@ def run_project():
  
     #Extracting the model from hard drive 
     #Rebuild the absolute path using pathlib
-    script_dir = Path(__file__).resolve().parent 
-    models_dir = script_dir.parent / 'models'
-    model_filepath = models_dir / config.CURRENT_LR_MODEL
+    # script_dir = Path(__file__).resolve().parent 
+    # models_dir = script_dir.parent / 'models'
+    # model_filepath = models_dir / config.CURRENT_LR_MODEL
     
-    print(f'Loading Logistic Models from {model_filepath}')
+    # print(f'Loading Logistic Models from {model_filepath}')
     
-    #Load the package using the dynamic path
-    loaded_model_package = joblib.load(model_filepath)
+    # #Load the package using the dynamic path
+    # loaded_model_package = joblib.load(model_filepath)
     
-    #Extracting the contents from the dictionary
-    features = loaded_model_package['features']
-    scalar_lr = loaded_model_package['scalar']
-    base_lr = loaded_model_package['base_model']
-    calibrated_lr = loaded_model_package['calibrated_model']
+    # #Extracting the contents from the dictionary
+    # features = loaded_model_package['features']
+    # scalar_lr = loaded_model_package['scalar']
+    # base_lr = loaded_model_package['base_model']
+    # calibrated_lr = loaded_model_package['calibrated_model']
     
     
 
@@ -177,10 +188,12 @@ def run_project():
     #     is_multi = False
     # )
     
-    del lr_X, lr_Y, lr_w
-    gc.collect()
+    # del train_X, train_Y, train_w, calib_X, calib_y, calib_weights
+    # gc.collect()
         
     print("Performing LGBM on binary data")
+    
+
     
     #Copy Required for final safety check below
     lgbm_X = train_matrix[config.LGBM_MODEL_FEATURES].copy()
@@ -191,11 +204,23 @@ def run_project():
     del train_matrix
     gc.collect()
     
-    # Final safety rest
+  
+    # Final safety check
     lgbm_X.replace([np.inf, -np.inf], 0, inplace=True)
+    
+    #use 80% for training and 20% to calibrate on, in chronological order since we have timeseries data 
+    split_idx = int(len(lgbm_X) * .8)
+
+    train_X = lgbm_X.iloc[:split_idx]
+    train_Y = lgbm_Y[:split_idx]
+    train_w = lgbm_w.iloc[:split_idx]
+    
+    calib_X = lgbm_X.iloc[split_idx:]
+    calib_y = lgbm_Y.iloc[split_idx:]
+    calib_weights = lgbm_w.iloc[split_idx:]
 
     # #Training model, can be commented when saved model    
-    base_lgbm, calibrated_lgbm = train_lgbm_model(lgbm_X, lgbm_Y, lgbm_w)
+    base_lgbm, calibrated_lgbm = train_lgbm_model(train_X, train_Y, train_w, calib_X, calib_y, calib_weights)
     
    
     #Save final model to harddrive, comment after saving 
@@ -285,7 +310,7 @@ def run_project():
         is_multi = False
     )
     
-    del lgbm_X, lgbm_Y, lgbm_w
+    del train_X, train_Y, train_w, calib_X, calib_y, calib_weights
     gc.collect()
 
     
@@ -302,10 +327,10 @@ if __name__ == "__main__":
     
     #When theres new data uncomment this below and run once to store the data, if running same data leave this commented
     
-    #save_data()
+    save_data()
     
     #Only run the whole project if explicitly call main.py
-    run_project()
+    #run_project()
 
 
 
