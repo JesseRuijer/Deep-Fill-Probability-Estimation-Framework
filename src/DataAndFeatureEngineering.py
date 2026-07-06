@@ -171,7 +171,7 @@ def clean_data(raw_data):
 
     
     
-def data_regressors(rawdata, cleandata, clear_RAM = True):
+def data_regressors(rawdata, cleandata, clear_RAM = True, dont_include_full_trading_day = True):
     
     #Importing Dataframes
     df_E = cleandata["Event"]
@@ -870,8 +870,8 @@ def data_regressors(rawdata, cleandata, clear_RAM = True):
    
     
     #Remove the cols from regression matrix of the noisy first and last 30 min of trading, but this can be undone later if want to train the model on the whole of cleandata
-    
-    final_state_df = final_state_df[(final_state_df['TOD'] >= config.SOMARKET_NOISE ) & (final_state_df['TOD'] <= config.EOMARKET_NOISE)]
+    if dont_include_full_trading_day is True:
+        final_state_df = final_state_df[(final_state_df['TOD'] >= config.SOMARKET_NOISE ) & (final_state_df['TOD'] <= config.EOMARKET_NOISE)]
 
 
     #Binary for logistic
@@ -995,7 +995,7 @@ if __name__ == "__main__":
             
         rawdata = import_data(main_path, mo_path)
         cleandata = clean_data(rawdata)
-        X = data_regressors(rawdata, cleandata, clear_RAM = False)['Binary Matrix']
+        X = data_regressors(rawdata, cleandata, clear_RAM = False, dont_include_full_trading_day = True)['Binary Matrix']
         
         print(X['type'] == 26)
         

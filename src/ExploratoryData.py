@@ -297,7 +297,7 @@ if __name__ == "__main__":
     print(f'Starting Exploratory Data Analysis on {os.path.basename(main_path)} and {os.path.basename(mo_path)} \n')
    
 
-    regressormatrix = data_regressors(rawdata, cleandata, clear_RAM=False)['Binary Matrix']
+    regressormatrix = data_regressors(rawdata, cleandata, clear_RAM=False, dont_include_full_trading_day = True)['Binary Matrix']
     
     run_exploratory_analysis(rawdata, cleandata, regressormatrix, feature = FEATURE_ANALYSE, target_time = TARGET_TIME)
 

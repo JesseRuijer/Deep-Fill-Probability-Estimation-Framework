@@ -11,7 +11,7 @@ import numpy as np
 import optuna 
 import config
 from LightGBMEngine import train_lgbm_model
-from sklearn.metrics import average_precision_score
+from sklearn.metrics import log_loss
 from pathlib import Path
 from FileManager import get_ml_training_paths
 import gc
@@ -63,7 +63,7 @@ def objective(trial):
     'metric' : 'binary_logloss', #Metric to measure perforance
     'n_jobs' : -1, #Using all available threads in cpu 
     'random_state' : 69 , #just set random seed for reproducability
-    'n_estimators' : 100, # number of sequential trees, i.e number of boosting rounds 
+    'n_estimators' : 5000, # number of sequential trees, i.e number of boosting rounds 
     
     #Fine tune these below, note that for example learning rate and n_estimators both influence number of sequential trees, so thats why im changingin only one at a time
     
@@ -75,7 +75,11 @@ def objective(trial):
     
     #Train
     
-    model = train_lgbm_model(X_train, y_train, weights_train, params = params, for_tuning = True)
+    model = train_lgbm_model(
+        X_train, y_train, weights_train, 
+        X_val = X_val, y_val = y_val, val_weights = val_weights,
+        params = params, for_tuning = True
+        )
     
     #Predict on validation data
     
@@ -86,7 +90,7 @@ def objective(trial):
     
     y_val_bin = np.where(y_val == 1, 1, 0)
     
-    score = average_precision_score(y_val_bin, preds, sample_weight = val_weights)
+    score = log_loss(y_val_bin, preds, sample_weight = val_weights)
     
     return score
 
@@ -97,7 +101,7 @@ if __name__ == '__main__':
     
     #Running search for optimal params
     
-    study = optuna.create_study(direction = 'maximize') # Since our criterion for finetuning is average precision score (AUC of Precision Recall) we aim to maximisze
+    study = optuna.create_study(direction = 'minimize') # Since our criterion for finetuning is average log loss we aim to minimize
     study.optimize(objective, n_trials = 60)
     
     print(f' Best average prediction score was {study.best_value:.3f}')

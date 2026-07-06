@@ -19,13 +19,16 @@ def train_logistic_model(X_train, y_train, weights,params = None, for_tuning = F
     
     if params == None:
         params = {
-            'max_iter' : 1000,
+            
+            #By default logistic regressions performance metric is log loss, and it doesnt do anything else so thats why there's no performance metric specified since it uses logloss by default  
+            
+            'max_iter' : 172,
             'n_jobs' : 1, #Used to be -1 which i believe is multicore, but not sure which one is better atm
             'random_state' : 69,
             
             'penalty' : 'l2', #Used to be l1 from optuna but after introducing heartbeats it was just too slow
             'solver': 'lbfgs', #Used to be saga from optuna but after introducing heartbeats it was just too slow
-            'C': 5.53911372074629,
+            'C': 9.130504371266555,
             'verbose' : 2 #Prints progress to console
             }
         

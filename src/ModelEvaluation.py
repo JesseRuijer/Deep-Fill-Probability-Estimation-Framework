@@ -103,6 +103,15 @@ def test_model(test_data, base_model, calibrated_model, scalar, model_name, feat
      
     logloss = log_loss(y_true, y_pred_prob, sample_weight = weights)
     print(f'Logloss score is {logloss:.3f}')
+    
+    dummy_y_pred_prob = np.full(len(y_true), dummy_fill_prob) #just creates an array of length y true with dummy fill probs
+    print(f"Baseline Fill percentage is {(dummy_fill_prob * 100):.4f}% \n where the Dummy Fill prob is a measure of the total volume that got placed throughout the day that eventually resulted in a fill, rather than a simple counter of the individual order tickets%")
+    
+    dummy_logloss = log_loss(y_true, dummy_y_pred_prob, sample_weight = weights)
+    
+    
+    loglosskillscore = 1 - ((logloss)/(dummy_logloss))
+    print(f'Logloss Skill Score is {loglosskillscore}')
      
     #However i think AUC is only reliable on balanced data which this totally isnt, so the AUC is artificially inflated, why because we rarely ever have a fill and AUC is area under ROC, ROC formula is 
      
@@ -132,10 +141,7 @@ def test_model(test_data, base_model, calibrated_model, scalar, model_name, feat
     #Baseline fill percentage which i defined as the number of ones divided by number of ones and zeros in fill_map, which guarantees uniqueness by the fact i used .last in code before it
    
     
-    dummy_y_pred_prob = np.full(len(y_true), dummy_fill_prob) #just creates an array of length y true with dummy fill probs
-    print(f"Baseline Fill percentage is {(dummy_fill_prob * 100):.4f}% \n where the Dummy Fill prob is a measure of the total volume that got placed throughout the day that eventually resulted in a fill, rather than a simple counter of the individual order tickets%")
-    
-    
+   
     #because were making a probability engine using logistic regression we must look at brier score and log loss to evaulte it
     #Confusion matrices and precisions for ex dont make too much sense here since then you need to define a treshold for when a probability gets put in the category
     #0 or 1 where for us that doesnt matter we're just interested in the pure probability of an order beig filled
@@ -146,7 +152,6 @@ def test_model(test_data, base_model, calibrated_model, scalar, model_name, feat
     dummy_brierscore = brier_score_loss(y_true, dummy_y_pred_prob, sample_weight = weights)
     print(f'Dummy Brier score is {dummy_brierscore:.3f}')
     
-    dummy_logloss = log_loss(y_true, dummy_y_pred_prob, sample_weight = weights)
     
     print(f' Dummy Logloss score is {dummy_logloss:.3f}')
     
@@ -418,7 +423,7 @@ def test_model(test_data, base_model, calibrated_model, scalar, model_name, feat
     print(f'weighetd dummy {weighted_dummy}')
     
     plt.plot(weighted_pred, weighted_actual, color = 'b', label = 'Model')
-    plt.plot(weighted_dummy,weighted_dummy, marker = 'o', markersize = 10, markeredgecolor = 'black', color = 'yellow', label = f'dummy {weighted_dummy:.2f}%')
+    plt.plot(weighted_dummy,weighted_dummy, marker = 'o', markersize = 10, markeredgecolor = 'black', color = 'yellow', label = f'dummy {(weighted_dummy)*100:.2f}%')
     plt.plot([0,1], [0,1], color = 'black', label = 'Perfect')
     plt.xlim(0,1)
     plt.ylim(0,1)
@@ -455,7 +460,7 @@ def test_model(test_data, base_model, calibrated_model, scalar, model_name, feat
     print(f'weighetd dummy mask {weighted_dummy}')
     
     plt.plot(weighted_pred, weighted_actual, color = 'b', label = 'Model')
-    plt.plot(weighted_dummy, weighted_dummy, marker = 'o', markersize = 10, markeredgecolor = 'black', color = 'yellow', label = f'dummy {weighted_dummy:.2f}%')
+    plt.plot(weighted_dummy, weighted_dummy, marker = 'o', markersize = 10, markeredgecolor = 'black', color = 'yellow', label = f'dummy {(weighted_dummy)*100:.2f}%')
     plt.plot([0,1], [0,1], color = 'black', label = 'Perfect')
     plt.xlim(0,1)
     plt.ylim(0,1)

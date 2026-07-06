@@ -6,6 +6,17 @@ Created on Thu Jun 11 10:04:48 2026
 @author: jesseruijer
 """
 
+
+
+
+
+
+
+
+CURRENT_LR_MODEL = 'Logistic_Regression_Models_V1.joblib'
+CURRENT_LGBM_MODEL = 'LGBM_Models_V1.joblib'
+
+
 #just has some project wide constans 
 
 TARGET = 'FillNoFill'
@@ -123,86 +134,86 @@ LOGISTIC_MODEL_FEATURES = [
 LGBM_MODEL_FEATURES = [
      
        
-    # 1. Base Market & Order Status
-   # 'Regime',
-    'TimeTillMarketClose',
-    #'IsFinalMinute',
-    #'BidSize',
-    #'AskSize',
-    'TotalQueueSize',
+     # 1. Base Market & Order Status
+     #'Regime',
+     'TimeTillMarketClose',
+     #'IsFinalMinute',
+     #'BidSize',
+     #'AskSize',
+     'TotalQueueSize',
 
 
-    # 2. Spreads & Imbalances
-    #'BASpread',
-    'QImbalance',
-    #'AbsQImbalance',
-    'TotalVolImbalance',
-    'WeightedVolImbalance',
-    #'MicroMidDeviation',
-    #'CancelationRatio',
-    #'OrderFlowImbalance',
+     # 2. Spreads & Imbalances
+     #'BASpread',
+     #'QImbalance',
+     'AbsQImbalance',
+     'TotalVolImbalance',
+     'WeightedVolImbalance',
+     #'MicroMidDeviation',
+     #'CancelationRatio',
+     #'OrderFlowImbalance',
 
-    # 3. Event-Time Deltas (Tick-by-Tick Changes)
-    #'EventDeltaMidprice',
-    #'EventMicroMidDeviation',
-    'EventDeltaMicroprice',
-    #'EventDeltaDistanceToTouch',
-    #'EventDeltaOrderFlowImbalance',
+     # 3. Event-Time Deltas (Tick-by-Tick Changes)
+     #'EventDeltaMidprice',
+     #'EventMicroMidDeviation',
+     'EventDeltaMicroprice',
+     #'EventDeltaDistanceToTouch',
+     'EventDeltaOrderFlowImbalance',
 
-    # 4. Rolling Moments (Event-Time Volatility & Extremes)
+     # 4. Rolling Moments (Event-Time Volatility & Extremes)
 
-    #'RollingStd_OrderFlowImbalance',
-    'RollingStd_BASpread',
-    'RollingStd_QImbalance',
-    'RollingStd_WeightedVolImbalance',
-    #'RollingStd_MicroMidDeviation',
-    #'RollingSkew_OrderFlowImbalance',
-    'RollingMax_OrderFlowImbalance',
-    'RollingMin_OrderFlowImbalance',
-    #'RollingMax_BASpread',
-    #'RollingMin_BASpread',
-
-
-    # 5. Trailing Volumes & Lookbacks
-    #'LookBackHiddenVol',
-    #'MOTrailingVolBuy',
-    #'MOTrailingVolSell',
-    #'MOTrailingVolRatio',
-    'LOTrailingVolPlaced',
-    'LOTrailingVolCanceled',
-    #'LOTrailingVolExecuted',
-    #'LOTrailingPlaceCancelRatio',
-    'LOTrailingPlaceExecuteRatio',
-
-    # 6. Dynamic Order Metrics (Heartbeat Engine)
-    #'DistanceToTouch',
-    'DistanceToMicroprice',
-    'LogVolAhead',
-    'QueuePositionRatio',
-    'TimeSincePlacement',
-
-    # 7. Clock-Time Deltas (The 1-Second Lookbacks)
-    #'ClockDeltaMidprice',
-    #'ClockMicroMidDeviation',
-    #'ClockDeltaDistanceToMicroprice',
-    #'ClockDeltaDistanceToTouch',
-    'ClockDeltaLogVolAhead',
-    #'ClockDeltaOrderFlowImbalance',
-
-    # 8. Speed Metrics
-    #'Speed_DeltaMidprice',
-    #'Speed_DeltaDistanceToMicroprice',
-    #'Speed_DeltaDistanceToTouch',
-    #'Speed_MicroMidDeviation',
-    #'Speed_OrderFlowImbalance',
+     'RollingStd_OrderFlowImbalance',
+     #'RollingStd_BASpread',
+     #'RollingStd_QImbalance',
+     #'RollingStd_WeightedVolImbalance',
+     #'RollingStd_MicroMidDeviation',
+     #'RollingSkew_OrderFlowImbalance',
+     'RollingMax_OrderFlowImbalance',
+     #'RollingMin_OrderFlowImbalance',
+     #'RollingMax_BASpread',
+     #'RollingMin_BASpread',
 
 
-    # 9. Market Order (MO) & Sweep Impacts
-    'TimeSinceLastMO',
-    #'MOCount10ms',
-    #'SweepNoSweep',
-    #'SweepInLast_2000ms',
-    #'SweepIntensity_2000ms'
+     # 5. Trailing Volumes & Lookbacks
+     #'LookBackHiddenVol',
+     #'MOTrailingVolBuy',
+     'MOTrailingVolSell',
+     'MOTrailingVolRatio',
+     'LOTrailingVolPlaced',
+     'LOTrailingVolCanceled',
+     #'LOTrailingVolExecuted',
+     'LOTrailingPlaceCancelRatio',
+     #'LOTrailingPlaceExecuteRatio',
+
+     # 6. Dynamic Order Metrics (Heartbeat Engine)
+     'DistanceToTouch',
+     'DistanceToMicroprice',
+     'LogVolAhead',
+     'QueuePositionRatio',
+     'TimeSincePlacement',
+
+     # 7. Clock-Time Deltas (The 1-Second Lookbacks)
+     #'ClockDeltaMidprice',
+     #'ClockMicroMidDeviation',
+     #'ClockDeltaDistanceToMicroprice',
+     #'ClockDeltaDistanceToTouch',
+     'ClockDeltaLogVolAhead',
+     #'ClockDeltaOrderFlowImbalance',
+
+     # 8. Speed Metrics
+     #'Speed_DeltaMidprice',
+     'Speed_DeltaDistanceToMicroprice',
+     #'Speed_DeltaDistanceToTouch',
+     #'Speed_MicroMidDeviation',
+     #'Speed_OrderFlowImbalance',
+
+
+     # 9. Market Order (MO) & Sweep Impacts
+     'TimeSinceLastMO',
+     #'MOCount10ms',
+     #'SweepNoSweep',
+     #'SweepInLast_2000ms',
+     #'SweepIntensity_2000ms'
 ]
 
 #Note not all feautures here are varaibles in the model but its just useful to have them in a list like this

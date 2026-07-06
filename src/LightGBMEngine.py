@@ -13,11 +13,12 @@ Created on Thu Jun 11 10:42:59 2026
 #But it probs uses that automatically (thats true it automatically uses softmax when you give it three distinct output vars), but still ahve to then change my output variable y to like have it seperate for logistic and with three levels for lightgbm and neural net
 
 import lightgbm as lgb 
+from lightgbm import early_stopping
 from sklearn.calibration import CalibratedClassifierCV
 
 
 
-def train_lgbm_model(X_train, y_train, weights, params = None, for_tuning = False):
+def train_lgbm_model(X_train, y_train, weights, X_val = None, y_val = None, val_weights = None,  params = None, for_tuning = False):
 
     # light GBM 
     
@@ -28,16 +29,16 @@ def train_lgbm_model(X_train, y_train, weights, params = None, for_tuning = Fals
         'objective' : 'binary', # Our Output var is multiclass for lgbm
         #'num_class' : 3, # How many diff classes (0,1,2 are the classes in our case)
         'boosting_type' : 'gbdt', #The default gradient boosting 
-        'metric' : 'binary_logloss', #Metric to measure perforance
+        'metric' : 'binary_logloss', #Metric to ensure lgbm knows its goal is binary classification, and then the binary logloss is just for it to measrue performance
         'n_jobs' : -1, #Using all available threads in cpu 
         'random_state' : 69 , #just set random seed for reproducability
         
         #Overall Tuning
-        'n_estimators' : 150, # number of sequential trees, i.e number of boosting rounds 
-        'learning_rate' :  0.07083659968808052, # scales contribution of each individual tree
-        'num_leaves' : 136, #max num of leaves, i.e terminal nodes, allowed in each tree 
-        'min_child_samples': 1601 #Minimum number of data points required to create a new split in a leaf node
-        
+        'n_estimators' : 885, # number of sequential trees, i.e number of boosting rounds, set very high on purpose since early stopping below will catch it. as each step you test on the validation set its not allowed to train on and then if the model hasnt improved for 50 rounds then stop 
+        'learning_rate' :  0.011286873546151143, # scales contribution of each individual tree
+        'num_leaves' : 147, #max num of leaves, i.e terminal nodes, allowed in each tree 
+        'min_child_samples': 2912, #Minimum number of data points required to create a new split in a leaf node
+        'verbose': 1
         #Fine Tuning only use this after completion of tuning above and maybe not even at all, look at https://www.geeksforgeeks.org/machine-learning/lightgbm-regularization-parameters/
         
             }
@@ -45,8 +46,16 @@ def train_lgbm_model(X_train, y_train, weights, params = None, for_tuning = Fals
     
     base_lgbm = lgb.LGBMClassifier(**params) #** is for unpacking the library from above  
     
-    base_lgbm_model = base_lgbm.fit(X_train, y_train, sample_weight = weights)
+    #kwargs is just a name for keyword arguments which is somthing like sample_weight = weight inside the parameters of a function
     
+    fit_kwargs = {'sample_weight': weights}
+    
+    if X_val is not None and y_val is not None:
+        fit_kwargs['eval_set'] = [(X_val, y_val)]
+        fit_kwargs['callbacks'] = [early_stopping(stopping_rounds = 50)]
+        if val_weights is not None:
+            fit_kwargs['eval_sample_weight'] = [val_weights]
+    base_lgbm_model = base_lgbm.fit(X_train, y_train, **fit_kwargs)
     
     if for_tuning: #This is just for speed optimsation for using Optuna as for that you just need the base model so dont want to waste time calibrating
         return base_lgbm_model
