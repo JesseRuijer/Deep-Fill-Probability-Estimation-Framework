@@ -947,7 +947,7 @@ def data_regressors(rawdata, cleandata, clear_RAM = True, dont_include_full_trad
                     'Side', 'SideOfBook', 'SideOfBook_past', 'Step', 'TotalActiveCanceledAfter', 'TotalExecutedAfter', 'TotalExpiredAfter', 'TotalFailureAfter', 'TOD_+_1000', 'TOD_past', 'LogVolAhead_past', 'Vol',
                     'DistanceToTouch_past', 
                     #'MicroMidDeviation_past' 
-                    'MaxVol', 'SumVol' ,'DistanceToMicroprice_past',
+                    'MaxVol', 'SumVol' ,'DistanceToMicroprice_past', 'Is_Partial_Fill', 'Is_Partial_Cancel',
                     'VolAhead', 'Midprice_past', 'BestBid_past', 'BestAsk_past', 'BidSize_past', 'AskSize_past', 'Microprice_past', 'OrderFlowImbalance_past', 'QImbalance_past'
                     ]
     
@@ -997,7 +997,7 @@ if __name__ == "__main__":
         cleandata = clean_data(rawdata)
         X = data_regressors(rawdata, cleandata, clear_RAM = False, dont_include_full_trading_day = True)['Binary Matrix']
         
-        print(X['type'] == 26)
+        print(X.head())
         
         # print(X[X['MOCount10ms'] !=0 ])
         

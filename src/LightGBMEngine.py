@@ -69,7 +69,7 @@ def train_lgbm_model(X_train, y_train, weights, X_calib, y_calib, weights_calib 
     
     calibrated_lgbm = CalibratedClassifierCV(
         estimator = base_lgbm_model,
-        method = 'isotonic',
+        method = 'isotonic',        #To calibrate raw lgbm output to LOB 
         cv = 'prefit' # fit calibrator only on reserved data for calibration, since model has already been trained before this overrides cross validation and prevents us from training on past data since our data is in chronological order
         )
   

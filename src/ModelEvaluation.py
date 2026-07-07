@@ -64,28 +64,24 @@ def test_model(test_data, base_model, calibrated_model, scalar, model_name, feat
     
     #Check if the model needs scaling
     if scalar is not None:
-        X_test_final = scalar.transform(X_test) #Here we transform and not fit anymore i.e we use same scale as above so comparisons are valid
+        X_test_final = scalar.transform(X_test.values) #Here we transform and not fit anymore i.e we use same scale as above so comparisons are valid
     else:
-        X_test_final = X_test
+        X_test_final = X_test.values
         
         
-    if model_name == 'Logistic Regression':
-        active_model = calibrated_model
-        y_pred_prob_vis = calibrated_model.predict_proba(X_test_final)[:, 1]
-                                
-    elif model_name == 'Light Gradient Boosted Model':
-        active_model = calibrated_model
-        y_pred_prob_vis = calibrated_model.predict_proba(X_test_final)[:, 1]
+    active_model = calibrated_model if calibrated_model is not None else base_model
+    y_pred_prob_vis = active_model.predict_proba(X_test_final)[:,1]
+    
     
     #Predict Probabilities
     
     if is_multi:
         #Since primary objective is Fill it squashes the expired and canceled down both being 0 and fill being 1
-        y_pred_prob = active_model.predict_proba(X_test_final)[:, 1]
+        y_pred_prob = y_pred_prob_vis
         y_true = np.where(y_raw == 1, 1, 0)
     
     else:
-        y_pred_prob = active_model.predict_proba(X_test_final)[:, 1]
+        y_pred_prob = y_pred_prob_vis
         y_true = y_raw
     
     #Evaluate performance metrics 
@@ -357,13 +353,13 @@ def test_model(test_data, base_model, calibrated_model, scalar, model_name, feat
         plt.show()
         
         
-        #For this plot the orders labelled as filled were just any order that has a (partial) fill, there was no distinction between them, but for the 
+        #For this plot the orders labelled as filled were just any order that has a (partial) fill, there was no distinction between them, but they were correctly weighted 
         plt.figure(figsize = (20,10))
         # Trajectory by eventual outcome
         if 1 in trajectory.columns:
             plt.plot(trajectory[1], 'o-',  color='g',  label='Eventually filled')
         if 0 in trajectory.columns:
-            plt.plot(trajectory[0], 'o--', color='r', label='Eventually canceled')
+            plt.plot(trajectory[0], 'o-', color='r', label='Eventually canceled')
         plt.xlabel('Normalized order lifetime (0=placement, 1=death)')
         plt.ylabel('Avg p(fill)')
         plt.title(f'Predicted prob over lifetime by eventual outcome {model_name}')

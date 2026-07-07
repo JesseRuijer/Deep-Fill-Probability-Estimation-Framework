@@ -14,11 +14,13 @@ Created on Thu Jun 11 10:04:48 2026
 
 
 CURRENT_LR_MODEL = 'Logistic_Regression_Models_V1.joblib'
-CURRENT_LGBM_MODEL = 'LGBM_Models__V1.joblib'
+CURRENT_LGBM_MODEL = 'LGBM_Models_V1.joblib'
+CURRENT_FNN_MODEL_WEIGHTS = 'FFN_Models_V1_Weights.pth'
+CURRENT_FNN_MODEL_METADATA = 'FFN_Models_V1_Metadata.joblib' #Metadata is just a cool name for data about data hihi
 
 #put this on true when not including full training day
 #also when changing this you have to delete and resave in main 
-DONT_INCLUDE_FULL_TRAINING_DAY = True
+DONT_INCLUDE_FULL_TRAINING_DAY = True 
 
 #just has some project wide constans 
 
@@ -132,6 +134,85 @@ LOGISTIC_MODEL_FEATURES = [
     #'SweepInLast_2000ms',
     #'SweepIntensity_2000ms'
 ]
+
+FNN_MODEL_FEATURES = [
+     
+    # 1. Base Market & Order Status
+    'Regime',
+    'TimeTillMarketClose',
+    'IsFinalMinute',
+    'BidSize',
+    'AskSize',
+    'TotalQueueSize',
+
+    # 2. Spreads & Imbalances
+    'BASpread',
+    'QImbalance',
+    'AbsQImbalance',
+    'TotalVolImbalance',
+    'WeightedVolImbalance',
+    'OrderFlowImbalance',
+
+    # 3. Event-Time Deltas (Tick-by-Tick Changes)
+    'EventDeltaMidprice',
+    'EventDeltaMicroprice',
+    'EventDeltaDistanceToTouch',
+    'EventDeltaOrderFlowImbalance',
+
+    # 4. Rolling Moments (Event-Time Volatility & Extremes)
+    'RollingStd_Microprice',
+    'RollingStd_OrderFlowImbalance',
+    'RollingStd_BASpread',
+    'RollingStd_QImbalance',
+    'RollingStd_WeightedVolImbalance',
+    'RollingSkew_OrderFlowImbalance',
+    'RollingMax_OrderFlowImbalance',
+    'RollingMin_OrderFlowImbalance',
+    'RollingMax_BASpread',
+    'RollingMin_BASpread',
+    'RollingMax_Microprice',
+    'RollingMin_Microprice',
+
+    # 5. Trailing Volumes & Lookbacks
+    'MOTrailingVolBuy',
+    'MOTrailingVolSell',
+    'MOTrailingVolRatio',
+    'LOTrailingVolPlaced',
+    'LOTrailingVolCanceled',
+    'LOTrailingVolExecuted',
+    'LOTrailingPlaceCancelRatio',
+    'LOTrailingPlaceExecuteRatio',
+
+    # 6. Dynamic Order Metrics (Heartbeat Engine)
+    'DistanceToTouch',
+    'DistanceToMicroprice',
+    'LogVolAhead',
+    'QueuePositionRatio',
+    'TimeSincePlacement',
+    'Is_Initial_Placement',
+
+    # 7. Clock-Time Deltas (The 1-Second Lookbacks)
+    'ClockDeltaMidprice',
+    'ClockDeltaDistanceToMicroprice',
+    'ClockDeltaDistanceToTouch',
+    'ClockDeltaLogVolAhead',
+    'ClockQImbalance',
+    'ClockDeltaOrderFlowImbalance',
+
+    # 8. Speed Metrics
+    'Speed_DeltaMidprice',
+    'Speed_DeltaDistanceToMicroprice',
+    'Speed_DeltaDistanceToTouch',
+    'Speed_DeltaOrderFlowImbalance',
+
+    # 9. Market Order (MO) & Sweep Impacts
+    'TimeSinceLastMO',
+    'MOCount10ms',
+    'SweepNoSweep',
+    'SweepInLast_2000ms',
+    'SweepIntensity_2000ms'
+    
+    ]
 
 #Just for using the SHAP function, i fully put all the relevant featues in here
 LGBM_MODEL_FEATURES = [
