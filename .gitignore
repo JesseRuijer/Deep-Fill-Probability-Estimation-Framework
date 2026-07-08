@@ -9,3 +9,4 @@ models/
 .spyproject/
 playground/
 src/mnistdata/
+*.db

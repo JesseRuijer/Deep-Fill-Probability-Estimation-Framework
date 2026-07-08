@@ -14,6 +14,7 @@ import numpy as np
 from sklearn.preprocessing import StandardScaler
 import config
 from torch.utils.data import DataLoader, Dataset
+import random
 
 import gc
 
@@ -101,11 +102,11 @@ def prepdata_and_train(train_files):
     #Split train and test data in 4:1 ratio in chronological order of the files for training and test data    
     idx = int(len(train_files) * .8)
             
-    active_train_files  = train_files.iloc[: idx]
-    active_val_files_df = train_files.iloc[idx:]
+    active_train_files  = train_files[: idx]
+    active_val_files_df = train_files[idx:]
         
     
-    
+    print('Fitting Scalar incrementally across days using Scalar.partial fit')
     scalar = StandardScaler()
     for f in active_train_files:
         df = pd.read_parquet(f)
@@ -124,6 +125,7 @@ def prepdata_and_train(train_files):
     WEIGHT_DECAY = 0.0001 #L2 regularization to prevent overfitting
     EPOCHS = 7
     BATCH_SIZE = 16384 #power of two so easy to progress and batch size can be large since the tabular data is not super information dense (like a 4K image for example)
+    
     model = NN(input_size = input_size).to(device)
     
     criterion = nn.BCEWithLogitsLoss(reduction = 'none')    # BCE = Binary Cross Entropy = Logloss, this is just the scoring metric and saying reducion is none, it doesnt do any weighting by iteself it just spits out all the raw values and then with my manual weights i can do the weighint later
@@ -136,72 +138,86 @@ def prepdata_and_train(train_files):
         train_loss = 0.0
         total_train_weight = 0.0
         
-        for features, labels, batch_weights in train_loader:
-            features, labels, batch_weights = features.to(device), labels.to(device), batch_weights.to(device)
+        #Shuffle day order every epoch
+        
+        random.shuffle(active_train_files)
+        
+        for f in active_train_files:
             
+            df = pd.read_parquet(f)
+            df.replace([np.inf, -np.inf], 0, inplace = True)
             
+            X_train_scaled = scalar.transform(df[config.FNN_MODEL_FEATURES].values)
             y_train = df[config.TARGET].values
             w_train = df['UnitWeight'].values
             
-            X_test_raw = test_df[config.FNN_MODEL_FEATURES].values
-            y_test = test_df[config.TARGET].values
-            w_test = test_df['UnitWeight'].values
-
-           
-            X_train_scaled = scalar.fit_transform(X_train_raw)
-            X_test_scaled = scalar.transform(X_test_raw)
-            
-           
             train_dataset = DataSet(X_train_scaled, y_train, w_train)
             train_loader = DataLoader(dataset = train_dataset, batch_size = BATCH_SIZE, shuffle = True)  #NOTE: for a FNN you must shuffle data, which works because at every stage the network has no memory of what happened before it, it does not introduce lookahead bias and helps the model converge faster
             
-            test_dataset = DataSet(X_test_scaled, y_test, w_test)
-            test_loader = DataLoader(dataset = test_dataset, batch_size = BATCH_SIZE, shuffle = False)
+            
+            for features, labels, batch_weights in train_loader:
+                features, labels, batch_weights = features.to(device), labels.to(device), batch_weights.to(device)
+            
+                outputs = model(features)
 
-
+                #Custom weight loss
+                
+                raw_loss = criterion(outputs, labels)
+                weighted_batch_loss = (raw_loss * batch_weights).sum()
+                
+                loss = weighted_batch_loss / batch_weights.sum()
+                
+                optimizer.zero_grad()   #By default gradients accumulate in pytorch so zero them out here
+                loss.backward()
+                optimizer.step()
+                
+                train_loss += weighted_batch_loss.item()
+                total_train_weight += batch_weights.sum().item()
             
-            
-
-            outputs = model(features)
-
-            #Custom weight loss
-            
-            raw_loss = criterion(outputs, labels)
-            weighted_batch_loss = (raw_loss * batch_weights).sum()
-            
-            loss = weighted_batch_loss / batch_weights.sum()
-            
-            optimizer.zero_grad()   #By default gradients accumulate in pytorch so zero them out here
-            loss.backward()
-            optimizer.step()
-            
-            train_loss += weighted_batch_loss.item()
-            total_train_weight += batch_weights.sum().item()
-            
+            del df, X_train_scaled, y_train, w_train, train_dataset, train_loader
+            gc.collect()
+          
         avg_train_loss = train_loss / total_train_weight
         
         #Evaluation Loop
         
         model.eval() # set model to evaluation mode
-        test_loss = 0.0
-        total_test_weight = 0.0
+        val_loss = 0.0
+        total_val_weight = 0.0
         
         with torch.no_grad():
-            for features, labels, batch_weights in test_loader:
-                features, labels, batch_weights = features.to(device), labels.to(device), batch_weights.to(device)
-        
-                outputs = model(features)
-                raw_loss = criterion(outputs, labels)
+            
+            for f in active_val_files_df:   #Unlike above, no shuffling in validation files
+                df = pd.read_parquet(f)
+                df.replace([np.inf, -np.inf], 0, inplace = True)
                 
-                test_loss += (raw_loss * batch_weights).sum().item()
+                X_val_scaled = scalar.transform(df[config.FNN_MODEL_FEATURES].values)
+                y_val = df[config.TARGET].values
+                w_val = df['UnitWeight'].values
                 
-                total_test_weight += batch_weights.sum().item()
+                val_dataset = DataSet(X_val_scaled, y_val, w_val)
+                val_loader = DataLoader(dataset = val_dataset, batch_size = BATCH_SIZE, shuffle = False)  
+                
+                
+            
+                for features, labels, batch_weights in val_loader:
+                    features, labels, batch_weights = features.to(device), labels.to(device), batch_weights.to(device)
+       
+                    outputs = model(features)
+                    raw_loss = criterion(outputs, labels)
+                    
+                    val_loss += (raw_loss * batch_weights).sum().item()
+                    
+                    total_val_weight += batch_weights.sum().item()
+                
+                del df, X_val_scaled, y_val, w_val, val_dataset, val_loader
+                gc.collect()
 
-            avg_out_of_sample_logloss = test_loss / total_test_weight
+            avg_val_logloss = val_loss / total_val_weight
             
         print(f' Epoch {epoch + 1} / {EPOCHS} \n')
         print(f'Weighted Train Logloss: {avg_train_loss:.3f} \n')
-        print(f'Weighted Test Logloss: {avg_out_of_sample_logloss:.3f}')
+        print(f'Weighted Test Logloss: {avg_val_logloss:.3f}')
 
 
     

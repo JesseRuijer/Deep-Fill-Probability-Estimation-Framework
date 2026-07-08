@@ -9,7 +9,8 @@ Created on Thu Jun 11 11:17:44 2026
 import pandas as pd
 import numpy as np
 import seaborn as sns
-
+import shap
+import torch 
 import matplotlib.pyplot as plt
 
 from sklearn.metrics import (
@@ -481,13 +482,31 @@ def test_model(test_data, base_model, calibrated_model, scalar, model_name, feat
     plt.title(f'Amount Of LO Vol appearing in each predictive probability bin {model_name}')
     plt.legend()
     plt.show()
-    
-    
-    
+ 
+    def plot_fnn_importances(model, features, test_data, scalar):
+        
+        if torch.backends.mps.is_available():
+            device = torch.device('mps')
+        elif torch.cuda.is_available():
+            device = torch.device('cuda')
+        else:
+            device = torch.device('cpu')
+            
+        raw_features = test_data[features].values
+        scaled_features = scalar.transform(raw_features)
+        
+        X_sample = torch.tensor(scaled_features[:1000], dtype = torch.float32).to(device)
+        explainer = shap.DeepExplainer(model.model, X_sample)       #.model is just to extract the raw model for the SHap again as the input is the wrapped model from main 
+        
+        shap_values = explainer.shap_values(X_sample)
+        shap.summary_plot(shap_values, scaled_features[:1000], feature_names  = features)        
+        
         
     if model_name == "Light Gradient Boosted Model":
         plot_lgbm_importances(base_model, features)
 
+    if model_name == 'FNN':
+        plot_fnn_importances(calibrated_model, features, test_data, scalar)
 
 
 

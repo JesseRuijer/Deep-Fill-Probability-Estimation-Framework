@@ -358,7 +358,7 @@ def run_project():
     fnn_wrapped = PyTorchSklearnWrapper(loaded_model, device)
           
     print(f'Features used: {features}')
-    lgbm_test = test_model(
+    fnn_test = test_model(
         test_data = test_matrix, 
         base_model = fnn_wrapped,
         calibrated_model = fnn_wrapped,
