@@ -59,26 +59,31 @@ class DataSet(Dataset):     #in a class what you pass in () is not a par like wi
 
 class NN(nn.Module):  #you need a class because classes function as blueprints that keep track of its internal state which is necessary bcecause it needs to remeber what it did before everytime you pass a new batch into it, then pass nn>module giving it all the pytorch capabilities
     #Neural net architecture
-    def __init__(self, input_size, dropout_rate = 0.2): #Dropout rate ensures during every single training step 20% of neurons get turned off to prevent overfitting, can be increased later
+    def __init__(self, input_size, dropout_rate = 0.16669353086758615): #Dropout rate ensures during every single training step 20% of neurons get turned off to prevent overfitting, can be increased later
         super(NN, self).__init__() #to unlock the power of nn.Module
         
         self.network = nn.Sequential(       #Sequential does all the chaining together i manually did in playground
-            nn.Linear(input_size, 128),     #First layer amount of neurons 
-            nn.BatchNorm1d(128),    #Normalize the data in batch after each layer (to prevent gradient destabilisation during loss calcuation in backward prop i think)
+            nn.Linear(input_size, 70),     #First layer amount of neurons 
+            nn.BatchNorm1d(70),    #Normalize the data in batch after each layer (to prevent gradient destabilisation during loss calcuation in backward prop i think)
             nn.ReLU(),  #apply nonlinearity
             nn.Dropout(dropout_rate),   #dropout, NOTE: pytorch automatically turns dropout off during testing so all neurons remain active when making real predictions, so dont have to manually turn dropout off later
             
-            nn.Linear(128, 64), #I believe a funnel shape in terms of hiddenlayer dimensions is usually the best approach, but can look over this more later
-            nn.BatchNorm1d(64),
+            nn.Linear(70, 105), #I believe a funnel shape in terms of hiddenlayer dimensions is usually the best approach, but can look over this more later
+            nn.BatchNorm1d(105),
             nn.ReLU(),
             nn.Dropout(dropout_rate),
             
-            nn.Linear(64, 32),
-            nn.BatchNorm1d(32),
+            nn.Linear(105, 108),
+            nn.BatchNorm1d(108),
             nn.ReLU(),
             nn.Dropout(dropout_rate),
             
-            nn.Linear(32, 1)        #Final output is just 1 neuron ofc, NOTE: no sigmoid activation here, since thats already done by ptyorch inside the loss function later, so the outputs here are just raw logits
+            nn.Linear(108, 53),
+            nn.BatchNorm1d(53),
+            nn.ReLU(),
+            nn.Dropout(dropout_rate),
+            
+            nn.Linear(53, 1)        #Final output is just 1 neuron ofc, NOTE: no sigmoid activation here, since thats already done by ptyorch inside the loss function later, so the outputs here are just raw logits
             )
     def forward(self, x):       #because we used the sequential above, the forward 
         return self.network(x)
@@ -121,8 +126,8 @@ def prepdata_and_train(train_files):
     
     #Initialize model 
     input_size = len(config.FNN_MODEL_FEATURES)
-    LEARNING_RATE = 0.001
-    WEIGHT_DECAY = 0.0001 #L2 regularization to prevent overfitting
+    LEARNING_RATE = 0.003143153725649377
+    WEIGHT_DECAY = 2.5475947521348294e-06 #L2 regularization to prevent overfitting
     EPOCHS = 7
     BATCH_SIZE = 16384 #power of two so easy to progress and batch size can be large since the tabular data is not super information dense (like a 4K image for example)
     
@@ -227,6 +232,38 @@ def prepdata_and_train(train_files):
     return wrapped_fnn, scalar
 
 
+class UserFNN(nn.Module):
+    def __init__(self, input_size):
+        super(UserFNN, self).__init__()
+        
+        dropout_rate = 0.16669353086758615
+        
+        self.network = nn.Sequential(
+            
+            nn.Linear(input_size, 70),     
+            nn.BatchNorm1d(70),    
+            nn.ReLU(),  
+            nn.Dropout(dropout_rate),   
+            
+            nn.Linear(70, 105), 
+            nn.BatchNorm1d(105),
+            nn.ReLU(),
+            nn.Dropout(dropout_rate),
+            
+            nn.Linear(105, 108),
+            nn.BatchNorm1d(108),
+            nn.ReLU(),
+            nn.Dropout(dropout_rate),
+            
+            nn.Linear(108, 53),
+            nn.BatchNorm1d(53),
+            nn.ReLU(),
+            nn.Dropout(dropout_rate),
+            
+            nn.Linear(53, 1)  
+            )
+    def forward(self, x):
+        return self.network(x)
 
 
 

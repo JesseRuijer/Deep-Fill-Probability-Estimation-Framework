@@ -7,6 +7,7 @@ Created on Thu Jun 11 11:17:44 2026
 """
 
 import pandas as pd
+import torch.nn as nn
 import numpy as np
 import seaborn as sns
 import shap
@@ -429,6 +430,17 @@ def test_model(test_data, base_model, calibrated_model, scalar, model_name, feat
     plt.title(f'Performance of {model_name}')
     plt.legend()
     plt.show()
+    
+    plt.plot(weighted_pred, weighted_actual, color = 'b', label = 'Model')
+    plt.plot(weighted_dummy,weighted_dummy, marker = 'o', markersize = 10, markeredgecolor = 'black', color = 'yellow', label = f'dummy {(weighted_dummy)*100:.2f}%')
+    plt.plot([0,1], [0,1], color = 'black', label = 'Perfect')
+    plt.xlim(0,.4)
+    plt.ylim(0,.4)
+    plt.xlabel('Predicted Fill Prob')
+    plt.ylabel('Actual Fill Prob')
+    plt.title(f'Performance of {model_name}')
+    plt.legend()
+    plt.show()
 
     #Similar plot to above but now for orders only placed at best bid and best ask
     
@@ -492,14 +504,58 @@ def test_model(test_data, base_model, calibrated_model, scalar, model_name, feat
         else:
             device = torch.device('cpu')
             
-        raw_features = test_data[features].values
-        scaled_features = scalar.transform(raw_features)
+        raw_data = test_data[features].values
+        scaled_data = scalar.transform(raw_data)
         
-        X_sample = torch.tensor(scaled_features[:1000], dtype = torch.float32).to(device)
-        explainer = shap.DeepExplainer(model.model, X_sample)       #.model is just to extract the raw model for the SHap again as the input is the wrapped model from main 
+        # 1. Take a small, random sample for the background distribution
+        # SHAP needs this to understand what "average" looks like
+        background_idx = np.random.choice(len(scaled_data), 500, replace=False)
+        X_background = torch.tensor(scaled_data[background_idx], dtype=torch.float32).to(device)
         
+        # 2. Take a small, random sample of the data we actually want to explain
+        test_idx = np.random.choice(len(scaled_data), 1000, replace=False)
+        X_sample = torch.tensor(scaled_data[test_idx], dtype=torch.float32).to(device)
+        
+        # 3. Create a Custom Wrapper just for SHAP
+        class PropWrapper(nn.Module):
+            def __init__(self, base_model):
+                super(PropWrapper, self).__init__()
+                self.base_model = base_model
+                
+            def forward(self, x):
+                
+                logits = self.base_model(x)
+               
+                probs = torch.sigmoid(logits)
+                return probs
+                
+        # Wrap the base PyTorch model
+        raw_model = model.model.to(device)
+        raw_model.eval()
+        
+        # 4. Initialize Explainer with the background dataset
+        explainer = shap.GradientExplainer(raw_model, X_background) 
+        
+        print("Calculating SHAP values (this may take a minute)...")
+        # 5. Calculate SHAP values for the test sample
         shap_values = explainer.shap_values(X_sample)
-        shap.summary_plot(shap_values, scaled_features[:1000], feature_names  = features)        
+        
+        # DeepExplainer sometimes returns a list of arrays (one for each class). 
+        # If it's a list, we grab the array for class 1 (Fills)
+        if isinstance(shap_values, list):
+            shap_values = shap_values[0]
+        shap_values = np.asarray(shap_values)
+        if shap_values.ndim == 3:
+            shap_values = shap_values[..., 0] 
+        # Also ensure our sample data is back on the CPU as a numpy array for the plot
+        X_sample_np = X_sample.cpu().numpy()
+        
+        # 6. Plot the results!
+        plt.figure(figsize=(14, 10))
+        shap.summary_plot(shap_values, X_sample_np, feature_names=features, show=False)
+        plt.title('FNN SHAP Feature Importances (Limit Order Fill Probability)')
+        plt.tight_layout()
+        plt.show() 
         
         
     if model_name == "Light Gradient Boosted Model":

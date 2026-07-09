@@ -49,7 +49,7 @@ def run_exploratory_analysis(rawdata, cleandata, regressormatrix,feature, target
     
     plt.xlabel("Price")
     plt.ylabel("Vol")
-    plt.title(f"Vol of Best Bid Vol and Best Ask Vol at {time_to_hours(TARGET_TIME)}")
+    plt.title(f"Vol of Best Bid Vol and Best Ask Vol at {time_in_hours(TARGET_TIME)}")
     plt.legend()
     plt.show()
     
@@ -57,7 +57,7 @@ def run_exploratory_analysis(rawdata, cleandata, regressormatrix,feature, target
     sns.histplot(x = cleandata["MO"]["BAV"], color = 'red', label = "Best Ask Vol", kde=True, bins = 50, alpha = 0.5)
     plt.xlabel("Vol")
     plt.ylabel("Freq")
-    plt.title("Freq vs Vol of Best Bid and Best Ask immediately before MO")
+    plt.title("Freq vs Vol of Best Bid and Best Ask")
     plt.legend()
     plt.show()
     
@@ -94,6 +94,16 @@ def run_exploratory_analysis(rawdata, cleandata, regressormatrix,feature, target
     bulk_cross_vol_day = rawdata['Event'][rawdata['Event']['Type'].isin([88])]['Vol'].sum()
     absolute_event_vol_day = rawdata['Event']['Vol'].sum()
     
+    vol66 = rawdata['Event'][rawdata['Event']['Type'] == 66]['Vol'].sum()
+    vol67 = rawdata['Event'][rawdata['Event']['Type'] == 67]['Vol'].sum()
+    vol68 = rawdata['Event'][rawdata['Event']['Type'] == 68]['Vol'].sum()
+    vol69 = rawdata['Event'][rawdata['Event']['Type'] == 69]['Vol'].sum()
+    vol70 = rawdata['Event'][rawdata['Event']['Type'] == 70]['Vol'].sum()
+    vol83 = rawdata['Event'][rawdata['Event']['Type'] == 83]['Vol'].sum()
+    vol84 = rawdata['Event'][rawdata['Event']['Type'] == 84]['Vol'].sum()
+    vol88 = rawdata['Event'][rawdata['Event']['Type'] == 88]['Vol'].sum()
+
+        
     #Some other basic metrics
     freq_of_events = rawdata["Event"]["Type"].value_counts()
     cancelation_ratio = canceled_vol_day / added_vol_day
@@ -116,6 +126,17 @@ def run_exploratory_analysis(rawdata, cleandata, regressormatrix,feature, target
     print(f'Hidden trades executed Vol in a day (i.e sum during entire day of 84 vol) is {hidden_executed_vol_day}')
     print(f'Bulk Cross Vol in a day (i.e sum during entire day of 88 vol) is {bulk_cross_vol_day}')
     print(f'Absolute Event Vol in a day (i.e sum during entire day of all events, measure of activity, note this double counts vol for adding and canceling orders ) is {absolute_event_vol_day}')
+    
+    print(f'66 Vol {vol66}')
+    print(f'67 Vol {vol67}')
+    print(f'68 Vol {vol68}')
+    print(f'69 Vol {vol69}')
+    print(f'70 Vol {vol70}')
+    print(f'83 Vol {vol83}')
+    print(f'84 Vol {vol84}')
+    print(f'88 Vol {vol88}')
+
+    
     
     print('\n #########Some other metrics#############\n')
     print(f" Total number of events on 1 April 2014 of INTC is {len(rawdata['Event'])}")
@@ -284,7 +305,7 @@ def run_exploratory_analysis(rawdata, cleandata, regressormatrix,feature, target
 if __name__ == "__main__":  
     
     TARGET_TIME = time_to_hours(11)
-    FEATURE_ANALYSE = 'DistanceToMicroprice'
+    FEATURE_ANALYSE = 'LogVolAhead'
       
     from FileManager import get_data_paths
 

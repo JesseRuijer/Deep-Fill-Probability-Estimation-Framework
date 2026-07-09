@@ -11,12 +11,19 @@ Created on Thu Jun 11 10:04:48 2026
 
 
 
-
+#This below is for use in Main
 
 CURRENT_LR_MODEL = 'Logistic_Regression_Models_V1.joblib'
 CURRENT_LGBM_MODEL = 'LGBM_Models_V1.joblib'
 CURRENT_FNN_MODEL_WEIGHTS = 'FFN_Models_V1_Weights.pth'
 CURRENT_FNN_MODEL_METADATA = 'FFN_Models_V1_Metadata.joblib' #Metadata is just a cool name for data about data hihi
+
+#This below is for use in userscript
+
+USER_LR_MODEL = 'Logistic_Regression_Models_user.joblib'
+USER_LGBM_MODEL = 'LGBM_Models_user.joblib'
+USER_FNN_MODEL_WEIGHTS = 'FFN_Models_user_Weights.pth'
+USER_FNN_MODEL_METADATA = 'FFN_Models_user_Metadata.joblib' #Metadata is just a cool name for data about data hihi
 
 #put this on true when not including full training day
 #also when changing this you have to delete and resave in main 
@@ -110,6 +117,10 @@ LOGISTIC_MODEL_FEATURES = [
     'LogVolAhead',
     #'QueuePositionRatio',
     'TimeSincePlacement',
+         
+     #Before final submission train one more time also including this below:
+     #'Is_Initial_Placement',
+
 
     # 7. Clock-Time Deltas (The 1-Second Lookbacks)
     #'ClockDeltaMidprice',
@@ -275,6 +286,9 @@ LGBM_MODEL_FEATURES = [
      'LogVolAhead',
      'QueuePositionRatio',
      'TimeSincePlacement',
+     
+     #Before final submission train one more time also including this below:
+     #'Is_Initial_Placement',
 
      # 7. Clock-Time Deltas (The 1-Second Lookbacks)
      #'ClockDeltaMidprice',
@@ -377,6 +391,11 @@ DYNAMIC_FEATURES = [ #Features that change (in general) depending on the LO you 
     'LogVolAhead',
     'QueuePositionRatio',
     'TimeSincePlacement',
+    
+         
+     #Before final submission train one more time also including this below:
+     #'Is_Initial_Placement',
+
 
     # Clock-Time Deltas (Order-Direction/Position Dependent)
     'ClockDeltaDistanceToMicroprice',
@@ -453,6 +472,11 @@ ALL_FEATURES = [
     'LogVolAhead',
     'QueuePositionRatio',
     'TimeSincePlacement',
+    
+         
+     #Before final submission train one more time also including this below:
+     #'Is_Initial_Placement',
+
 
     # 7. Clock-Time Deltas (The 1-Second Lookbacks)
     'ClockDeltaMidprice',
