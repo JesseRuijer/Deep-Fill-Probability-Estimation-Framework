@@ -901,33 +901,33 @@ def data_regressors(rawdata, cleandata, clear_RAM = True, dont_include_full_trad
     
     #Multiclass for other engines
     
-    fills_multi_df = final_state_df[final_state_df['TotalExecutedAfter'] > 0].copy()
-    fills_multi_df[config.TARGET] = 1
-    fills_multi_df['MaxVol'] = fills_multi_df.groupby('ID')['TotalExecutedAfter'].transform('max') #Max here just means since each entry is like at a new snapshot, the max is just teh first entry, i.e the total amount that got filled etc. and .transfrom just gives back a new row with the general max in each entry
-    fills_multi_df['SumVol'] = fills_multi_df.groupby('ID')['TotalExecutedAfter'].transform('sum')
-    fills_multi_df['UnitWeight'] = (fills_multi_df['TotalExecutedAfter'] / fills_multi_df['SumVol']) * fills_multi_df['MaxVol']
+    # fills_multi_df = final_state_df[final_state_df['TotalExecutedAfter'] > 0].copy()
+    # fills_multi_df[config.TARGET] = 1
+    # fills_multi_df['MaxVol'] = fills_multi_df.groupby('ID')['TotalExecutedAfter'].transform('max') #Max here just means since each entry is like at a new snapshot, the max is just teh first entry, i.e the total amount that got filled etc. and .transfrom just gives back a new row with the general max in each entry
+    # fills_multi_df['SumVol'] = fills_multi_df.groupby('ID')['TotalExecutedAfter'].transform('sum')
+    # fills_multi_df['UnitWeight'] = (fills_multi_df['TotalExecutedAfter'] / fills_multi_df['SumVol']) * fills_multi_df['MaxVol']
 
     
-    active_cancels_multi_df = final_state_df[final_state_df['TotalActiveCanceledAfter'] > 0].copy()
-    active_cancels_multi_df[config.TARGET] = 0
-    active_cancels_multi_df['MaxVol'] = active_cancels_multi_df.groupby('ID')['TotalActiveCanceledAfter'].transform('max') #Max here just means since each entry is like at a new snapshot, the max is just teh first entry, i.e the total amount that got filled etc. and .transfrom just gives back a new row with the general max in each entry
-    active_cancels_multi_df['SumVol'] = active_cancels_multi_df.groupby('ID')['TotalActiveCanceledAfter'].transform('sum')
-    active_cancels_multi_df['UnitWeight'] = (active_cancels_multi_df['TotalActiveCanceledAfter'] / active_cancels_multi_df['SumVol']) * active_cancels_multi_df['MaxVol']
+    # active_cancels_multi_df = final_state_df[final_state_df['TotalActiveCanceledAfter'] > 0].copy()
+    # active_cancels_multi_df[config.TARGET] = 0
+    # active_cancels_multi_df['MaxVol'] = active_cancels_multi_df.groupby('ID')['TotalActiveCanceledAfter'].transform('max') #Max here just means since each entry is like at a new snapshot, the max is just teh first entry, i.e the total amount that got filled etc. and .transfrom just gives back a new row with the general max in each entry
+    # active_cancels_multi_df['SumVol'] = active_cancels_multi_df.groupby('ID')['TotalActiveCanceledAfter'].transform('sum')
+    # active_cancels_multi_df['UnitWeight'] = (active_cancels_multi_df['TotalActiveCanceledAfter'] / active_cancels_multi_df['SumVol']) * active_cancels_multi_df['MaxVol']
 
     
-    expired_multi_df = final_state_df[final_state_df['TotalExpiredAfter'] > 0].copy()
-    expired_multi_df[config.TARGET] = 2
-    expired_multi_df['MaxVol'] =  expired_multi_df.groupby('ID')['TotalExpiredAfter'].transform('max') #Max here just means since each entry is like at a new snapshot, the max is just teh first entry, i.e the total amount that got filled etc. and .transfrom just gives back a new row with the general max in each entry
-    expired_multi_df['SumVol'] =  expired_multi_df.groupby('ID')['TotalExpiredAfter'].transform('sum')
-    expired_multi_df['UnitWeight'] = ( expired_multi_df['TotalExpiredAfter'] /  expired_multi_df['SumVol']) *  expired_multi_df['MaxVol']
+    # expired_multi_df = final_state_df[final_state_df['TotalExpiredAfter'] > 0].copy()
+    # expired_multi_df[config.TARGET] = 2
+    # expired_multi_df['MaxVol'] =  expired_multi_df.groupby('ID')['TotalExpiredAfter'].transform('max') #Max here just means since each entry is like at a new snapshot, the max is just teh first entry, i.e the total amount that got filled etc. and .transfrom just gives back a new row with the general max in each entry
+    # expired_multi_df['SumVol'] =  expired_multi_df.groupby('ID')['TotalExpiredAfter'].transform('sum')
+    # expired_multi_df['UnitWeight'] = ( expired_multi_df['TotalExpiredAfter'] /  expired_multi_df['SumVol']) *  expired_multi_df['MaxVol']
 
     
-    Multi_Class_Regression_Matrix = pd.concat([fills_multi_df, active_cancels_multi_df, expired_multi_df], ignore_index=True)
-    Multi_Class_Regression_Matrix = Multi_Class_Regression_Matrix.sort_values(by = 'TOD')
+    # Multi_Class_Regression_Matrix = pd.concat([fills_multi_df, active_cancels_multi_df, expired_multi_df], ignore_index=True)
+    # Multi_Class_Regression_Matrix = Multi_Class_Regression_Matrix.sort_values(by = 'TOD')
 
    
     #Compressing matrices to save RAM
-    matrices_to_compress = [Binary_Regression_Matrix, Multi_Class_Regression_Matrix]
+    matrices_to_compress = [Binary_Regression_Matrix]
     for matrix in matrices_to_compress:
         for col in matrix.columns:
             col_type = matrix[col].dtype
@@ -955,7 +955,7 @@ def data_regressors(rawdata, cleandata, clear_RAM = True, dont_include_full_trad
         
    
     Binary_Regression_Matrix = Binary_Regression_Matrix.drop(columns=cols_to_drop)
-    Multi_Class_Regression_Matrix = Multi_Class_Regression_Matrix.drop(columns=cols_to_drop)
+    #Multi_Class_Regression_Matrix = Multi_Class_Regression_Matrix.drop(columns=cols_to_drop)
     
     #print(Binary_Regression_Matrix.head())
     #print(Multi_Class_Regression_Matrix.head())
@@ -974,7 +974,7 @@ def data_regressors(rawdata, cleandata, clear_RAM = True, dont_include_full_trad
     return {
         
         'Binary Matrix': Binary_Regression_Matrix,
-        'Multi Matrix': Multi_Class_Regression_Matrix
+        #'Multi Matrix': Multi_Class_Regression_Matrix
         
         }
 

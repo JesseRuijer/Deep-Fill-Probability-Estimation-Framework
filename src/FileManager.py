@@ -93,7 +93,7 @@ def generate_dynamic_paths(main_file_path):
     binary_out = processed_dir / f"{ticker}_BINARY_{formatted_date}.parquet"
     multi_out = processed_dir / f"{ticker}_MULTI_{formatted_date}.parquet"
 
-    return binary_out, multi_out
+    return binary_out
 
 def get_ml_training_paths():
     """Opens Finder for Train and Test selection, sorts them, and caches for fast reruns."""

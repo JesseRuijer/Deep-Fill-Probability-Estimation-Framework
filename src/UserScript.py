@@ -40,8 +40,7 @@ def prep_data_daily(file_path, file_path_mo):
     gc.collect()
     
     return {
-        'Binary Matrix': matrices['Binary Matrix'], 
-        'Multi Matrix': matrices['Multi Matrix']
+        'Binary Matrix': matrices['Binary Matrix']
         }
 
 def save_data():
@@ -57,17 +56,17 @@ def save_data():
     
     #Loop through the list of files you selected
     for main_path, mo_path in batches_to_save:
-        binary_file_dest, multi_file_dest = generate_dynamic_paths(main_path)
+        binary_file_dest = generate_dynamic_paths(main_path)
         
         print(f'\n--- Processing: {os.path.basename(main_path)} ---')
         
         matrices = prep_data_daily(main_path, mo_path)
 
         matrices['Binary Matrix'].to_parquet(binary_file_dest)
-        matrices['Multi Matrix'].to_parquet(multi_file_dest)
+        #matrices['Multi Matrix'].to_parquet(multi_file_dest)
         
         print(f'Saved -> {os.path.basename(binary_file_dest)}')
-        print(f'Saved -> {os.path.basename(multi_file_dest)}')
+        #print(f'Saved -> {os.path.basename(multi_file_dest)}')
         
         #Once processed delete the giant matrices like cleandata etc from RAM and flush the memory 
         del matrices
@@ -282,7 +281,8 @@ def train(train_files, train_matrix, model):
      
         print(f'Succesfully saved LR model to  {model_filepath}')
  
-    
+def improve_qimbal(data, model):
+    return None
 
 def test_model_wrap(test_matrix, model):
     
@@ -414,9 +414,9 @@ def single_order_eval(ID, TSP, test_data, selected_model, features, scalar):
         print('Order Does is dead already at this time')
         return
     else:
-        state_at_tsp = order_data[order_data['TimeSincePlacement'] == TSP].iloc[-1:]
+        state_at_tsp = order_data[order_data['TimeSincePlacement'] <= TSP].iloc[-1:]    #Get the closest entry now or in the past to the requested TSP
         
-    X_raw = state_at_tsp[features].values
+    X_raw = state_at_tsp[features]
     
     if scalar is not None:
         X = scalar.transform(X_raw)
@@ -468,7 +468,7 @@ if __name__ == "__main__":
         selected_model = 'FNN'
 
     print(f"\n[System] You selected: {selected_model}")
-    action_choice = input("Do you want to 'train' or 'test' or 'use' this model? ").strip().lower()
+    action_choice = input("Do you want to 'train' or 'test' or 'qimbal' or 'use' this model? ").strip().lower()
 
     if action_choice == 'train':
         
@@ -485,6 +485,8 @@ if __name__ == "__main__":
         
         test_model_wrap(test_matrix, selected_model)
         
+    elif action_choice == 'qimbal':
+        improve_qimbal(test_matrix, selected_model)
         
     elif action_choice == 'use':
         print(f'Use the {selected_model} to experiment on orders, type "exit" if you want to stop')
@@ -523,6 +525,8 @@ if __name__ == "__main__":
             
             #fill the empty model with my loaded weights from training before
             loaded_model.load_state_dict(torch.load(model_filepath, map_location = device))
+            loaded_model.eval()
+            use_model = PyTorchSklearnWrapper(loaded_model, device)
         
         elif selected_model == 'LR':
             model_filepath = models_dir / config.USER_LR_MODEL
@@ -536,7 +540,7 @@ if __name__ == "__main__":
             features = loaded_model_package['features']
             scalar = loaded_model_package['scalar']
             base_lr = loaded_model_package['base_model']
-            calibrated_lr = loaded_model_package['calibrated_model']
+            use_model = loaded_model_package['calibrated_model']
             
         elif selected_model == 'LGBM':
             model_filepath = models_dir / config.USER_LGBM_MODEL
@@ -548,21 +552,22 @@ if __name__ == "__main__":
             #Extracting the contents from the dictionary
             features = loaded_model_package['features']
             base_lgbm = loaded_model_package['base_model']
-            calibrated_lgbm = loaded_model_package['calibrated_model']
+            use_model = loaded_model_package['calibrated_model']
+            scalar = None
         
         
         while True:
             print('Give Order ID from testdata you want to experiment on')
             print(f'Some Example IDs are {test_matrix["ID"].drop_duplicates().sample(5).values}')
-            ID = input('Enter the ID here').strip()
+            ID = input('Enter the ID here ').strip()
             if ID.lower() == 'exit':
                 break
-            print('Enter time since placement you wish to evaluate the order at; t = 0 is placement')
-            TSP = input('Enter time since placement here').strip()
+            print('Enter time since placement you wish to evaluate the order at; t = 0 is placement ')
+            TSP = input('Enter time since placement here ').strip()
             if TSP.lower() == 'exit':
                 break
             try:
-                single_order_eval(int(ID), int(TSP), test_matrix, selected_model, features, scalar)
+                single_order_eval(int(ID), int(TSP), test_matrix, use_model, features, scalar)
                 
             except ValueError:
                 print('Enter a valid ID or TOD (Integer Form)')
