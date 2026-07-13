@@ -35,7 +35,13 @@ def prep_data_daily(file_path, file_path_mo):
     print(f'Runs full pipeline for {os.path.basename(file_path)}')
     rawdata = import_data(file_path, file_path_mo)
     cleandata = clean_data(rawdata)
-    matrices = data_regressors(rawdata, cleandata, config.DONT_INCLUDE_FULL_TRAINING_DAY)
+    
+    matrices = data_regressors(
+        rawdata, 
+        cleandata, 
+        clear_RAM=True, 
+        dont_include_full_trading_day=config.DONT_INCLUDE_FULL_TRAINING_DAY
+    )
     
     del rawdata
     del cleandata
@@ -424,7 +430,7 @@ if __name__ == "__main__":
     
     #When theres new data uncomment this below and run once to store the data, if running same data leave this commented
     
-    #save_data()
+    save_data()
     
    
     print('What model to use')
@@ -432,7 +438,7 @@ if __name__ == "__main__":
     print('Do you want to train or test model')
     job = input('"train", "test"')
     #Only run the whole project if explicitly call main.py
-    run_project(model_choice, job)
+    #run_project(model_choice, job)
     
 
 

@@ -299,12 +299,160 @@ def run_exploratory_analysis(rawdata, cleandata, regressormatrix,feature, target
     
     print(f'The percentage of limit orders canceled/deleted at best price and first level out in the book out of all limit orders placed is {result2*100:.2f}%')
     
+def plot_order_queue_position(ID, cleandata, TSP):
     
+    #This function reads from cleandata hence its still unshifted
+    #i.e read order book before order was placed is -1 and immediately after placement = just regular idx 
+    
+    #plots a similar histogram to as above, but includes the specific order as a slice in its bin
+    
+    #Isolate the target order
+    order_events = cleandata['Event'][cleandata['Event']['ID'] == ID]
+    if len(order_events) == 0:
+        print(f"Order ID {ID} not found in cleandata.")
+        return
+
+    # Grab the initial placement row
+    placement = order_events.iloc[0]
+    idx = placement.name     #.name gives back the index of the placement row, cant directly use index since above we converted it to a 1d pandas series, some stupid pandas quirk ig
+
+    price = placement['Price'] / 10000
+    order_vol = placement['Vol']
+    side = placement['SideOfBook'] 
+    target_tod = int(placement['TOD'] + TSP)
+    placement_time = int(placement['TOD'])
+
+    
+    prev_idx = idx - 1
+    prev_prices = (cleandata['BuyPrice'].loc[prev_idx] if side == 1 else cleandata['SellPrice'].loc[prev_idx]) / 10000
+    prev_vols = (cleandata['BuyVol'].loc[prev_idx] if side == 1 else cleandata['SellVol'].loc[prev_idx])
+    
+    current_vol_ahead = prev_vols[prev_prices == price].sum()
+    
+    # #track what happens to order
+    # my_events = order_events[order_events['TOD'] <= target_tod]
+    # current_my_vol = order_vol - my_events[my_events['Type'].isin([67,68,69,70])]['Vol'].sum()
+    
+    # #between initial placement and target time how did vol change
+    price_events = cleandata['Event'][
+        
+    (cleandata['Event']['TOD'] > placement['TOD']) & 
+    (cleandata['Event']['TOD'] <= target_tod) &
+    (cleandata['Event']['Price'] == placement['Price'])
+    ]
+        
+    valid_events = cleandata['Event'][cleandata['Event']['TOD'] <= target_tod]
+    if len(valid_events) == 0:
+        print('len of valid events was zero')
+        return
+    
+    current_idx = valid_events.index[-1]
+    
+    # #update volahead and my vol
+    # # Get the Order Book exactly at the state AFTER placement
+    buy_prices = cleandata["BuyPrice"].loc[current_idx] / 10000
+    buy_vols = cleandata["BuyVol"].loc[current_idx]
+    sell_prices = cleandata["SellPrice"].loc[current_idx] / 10000
+    sell_vols = cleandata["SellVol"].loc[current_idx]
+    
+    #the logic here is still not right  maybe
+    #if there was a removal for an order but taht order was placed at a later time then the order of interest (but orders can also be placed at same time but since data is chronological its enough to just sort by earliest index), then that cancellation or fill must have happened behind the order of interest in that bin, unless it was a modification of an order that was placed in front of us so that order was originally placed before our order 
+    total_vol_at_price = (buy_vols[buy_prices == price].sum() if side == 1 else sell_vols[sell_prices == price].sum())
+    current_vol_behind = max(0, total_vol_at_price - current_vol_ahead - order_vol)
+    
+    arrival_times = cleandata['Event'].groupby('ID')['TOD'].first()
+    my_arrival = arrival_times[ID]
+   
+    for _, event in price_events.iterrows():    #iterrows loops through rows and returns tuple [index, data]
+       vol = event['Vol']
+       eid = event['ID']
+       etype = event['Type']
+       
+       event_arrival = arrival_times.get(eid, placement_time)
+       
+       if etype in [66,83]:
+           
+           if event_arrival < my_arrival:
+               current_vol_ahead += vol
+           else:
+               current_vol_behind += vol
+          
+          #This still doesnt account for partial fill/cancels that happen at TOD after our order was placed but on orders that were placed before our order     
+          
+       if etype in [67,68,69,70]:
+           if eid == ID:
+               order_vol = max(0, order_vol - vol)
+           elif event_arrival < my_arrival:
+               current_vol_ahead = max(0, current_vol_ahead - vol)
+           else:
+               current_vol_behind = max(0, current_vol_behind - vol)
+    
+    
+    
+    
+    # if event['Type'] in ([67,68,69,70]):
+        #     vol_to_remove = event['Vol']
+        #     if (event['TOD'].index() > placement_time):
+               
+                
+        #         removed_from_behind = vol_to_remove
+        #         current_vol_behind = vol_behind - removed_from_behind
+                
+        #         if event['ID'] == ID:
+        #             current_my_vol = max(0, current_my_vol - vol_to_remove)
+                
+        #     else:
+        #         removed_from_ahead = min(current_vol_ahead, vol_to_remove)
+        #         current_vol_ahead -= removed_from_ahead
+        #         vol_to_remove -= removed_from_ahead
+                
+        #         if event['ID'] == ID:
+        #             current_my_vol = max(0, current_my_vol - vol_to_remove)
+                    
+   
+    #Plot the Baseline Book
+    plt.figure(figsize=(9, 6))
+    
+    valid_bids = (buy_prices > 0) & (buy_vols > 0)
+    valid_asks = (sell_prices > 0) & (sell_vols > 0)
+    
+    # Plot all normal bids and asks EXCEPT the specific bin our order is in
+    normal_bids_mask = valid_bids & (buy_prices != price)
+    normal_asks_mask = valid_asks & (sell_prices != price)
+    
+    plt.bar(buy_prices[normal_bids_mask], buy_vols[normal_bids_mask], width=0.007, color="red", alpha=0.5, edgecolor='black', label='Bids')
+    plt.bar(sell_prices[normal_asks_mask], sell_vols[normal_asks_mask], width=0.007, color="blue", alpha=0.5, edgecolor='black', label='Asks')
+    
+    #Plot the Stacked Bar at the Order's Price
+    if side == 1:
+        base_color = "red"
+        side_str = "Bid"
+    else:
+        base_color = "blue"
+        side_str = "Ask"
+        
+    # Layer 1: Vol Ahead (Bottom)
+    if current_vol_ahead > 0:
+        plt.bar(price, current_vol_ahead, width=0.007, color=base_color, alpha=0.5, edgecolor='black')
+    
+    # Layer 2: Our Order (Middle, Highlighted)
+    if order_vol > 0:
+        plt.bar(price, order_vol, bottom= current_vol_ahead, width=0.007, color='yellow', edgecolor='black', label=f'Order {ID} ({side_str})\nQueue Pos: {current_vol_ahead}')
+    
+    # Layer 3: Vol Behind (Top)
+    if current_vol_behind > 0:
+        plt.bar(price, current_vol_behind, bottom=(current_vol_ahead + order_vol), width=0.007, color=base_color, alpha=0.5, edgecolor='black')
+
+    plt.title(f"LOB at {time_in_hours(target_tod)} | Queue Position for ID {ID}")
+    plt.xlabel("Price")
+    plt.ylabel("Vol")
+    plt.legend()
+    plt.show()
     
     
 if __name__ == "__main__":  
     
-    TARGET_TIME = time_to_hours(11)
+    TARGET_TIME = time_to_hours(10.36)
     FEATURE_ANALYSE = 'LogVolAhead'
       
     from FileManager import get_data_paths
@@ -321,10 +469,11 @@ if __name__ == "__main__":
     regressormatrix = data_regressors(rawdata, cleandata, clear_RAM=False, dont_include_full_trading_day = True)['Binary Matrix']
     
     run_exploratory_analysis(rawdata, cleandata, regressormatrix, feature = FEATURE_ANALYSE, target_time = TARGET_TIME)
-
+    plot_order_queue_position(890099, cleandata, TSP = 0)
+    from Functions import order_life
+    print(order_life(890099, rawdata))
     
-    
-    
+    print(time_in_hours(34214635))
     
     
     

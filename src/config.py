@@ -27,7 +27,7 @@ USER_FNN_MODEL_METADATA = 'FFN_Models_user_Metadata.joblib' #Metadata is just a 
 
 #put this on true when not including full training day
 #also when changing this you have to delete and resave in main 
-DONT_INCLUDE_FULL_TRAINING_DAY = True 
+DONT_INCLUDE_FULL_TRAINING_DAY = False 
 
 #just has some project wide constans 
 
@@ -410,6 +410,8 @@ DYNAMIC_FEATURES = [ #Features that change (in general) depending on the LO you 
 
 
 ALL_FEATURES = [
+    
+    #This is not necessarily everything the full matrix returns sinec some stuff i needed it to return to use later but thats definitely not a feature
     
     # 1. Base Market & Order Status
     'TOD',

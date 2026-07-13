@@ -27,7 +27,9 @@ def time_in_hours(ms_past_midnight):
     
     hours%24
     
-    return f"{hours:02d}:{minutes:02d}:{seconds:02d}.{ms:03d}"
+    return f"{int(hours):02d}:{int(minutes):02d}:{int(seconds):02d}.{int(ms):03d}"
+
+print(time_in_hours(55184188))
 
 def time_to_hours(time):
     #Input time as follows: 9:15 am = 9.25
@@ -130,4 +132,3 @@ def calculate_rolling_moments(df, feature_list, window=config.EVENT_TIME_DELTA, 
             new_features[f'RollingMin_{feature}'] = roll.min().fillna(0).astype('float32')
 
     return new_features
-    

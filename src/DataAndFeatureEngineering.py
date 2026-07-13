@@ -943,8 +943,8 @@ def data_regressors(rawdata, cleandata, clear_RAM = True, dont_include_full_trad
     
     #Cols that either dont have necessary info or to prevent data leaking i.e we cant train on totalexecuted after since that happnes in the future
 
-    cols_to_drop = ['ActiveCanceledVol', 'BaseTime', 'ExecutedVol', 'ExpiredVol','InitialPlacementTime', 'Price', 'BestBid', 'BestAsk',
-                    'Side', 'SideOfBook', 'SideOfBook_past', 'Step', 'TotalActiveCanceledAfter', 'TotalExecutedAfter', 'TotalExpiredAfter', 'TotalFailureAfter', 'TOD_+_1000', 'TOD_past', 'LogVolAhead_past', 'Vol',
+    cols_to_drop = ['ActiveCanceledVol', 'BaseTime', 'ExecutedVol', 'ExpiredVol','InitialPlacementTime', 'BestBid', 'BestAsk',
+                    'Side', 'SideOfBook_past', 'Step', 'TotalActiveCanceledAfter', 'TotalExecutedAfter', 'TotalExpiredAfter', 'TotalFailureAfter', 'TOD_+_1000', 'TOD_past', 'LogVolAhead_past',
                     'DistanceToTouch_past', 
                     #'MicroMidDeviation_past' 
                     'MaxVol', 'SumVol' ,'DistanceToMicroprice_past', 'Is_Partial_Fill', 'Is_Partial_Cancel',

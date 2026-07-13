@@ -281,8 +281,143 @@ def train(train_files, train_matrix, model):
      
         print(f'Succesfully saved LR model to  {model_filepath}')
  
-def improve_qimbal(data, model):
-    return None
+def improve_qimbal(test_matrix, model, modata):
+    # Rebuild the absolute path using pathlib
+    script_dir = Path(__file__).resolve().parent 
+    models_dir = script_dir.parent / 'models'
+    
+    scalar = None
+ 
+    if model == 'FNN':
+        
+        import torch
+        from FNN import PyTorchSklearnWrapper, NN
+        
+        if torch.backends.mps.is_available():
+            device = torch.device('mps')
+            print('Training on Apple Silicon MPS')
+        elif torch.cuda.is_available():
+            device = torch.device('cuda')
+            print('Training on NVIDIA GPU (CUDA)')
+        else:
+            device = torch.device('cpu')
+            print('Training on CPU') 
+        
+       
+        model_filepath = models_dir / config.USER_FNN_MODEL_WEIGHTS
+        metadata_filepath = models_dir / config.USER_FNN_MODEL_METADATA
+        
+        print(f'Loading FNN weights from {model_filepath}')
+        
+        # #Load the package using the dynamic path
+        metadata_package = joblib.load(metadata_filepath)
+        
+        #Extracting the contents from the dictionary
+        features = metadata_package['features']
+        scalar = metadata_package['scalar']
+        
+        #re initiaze the 'empty' model blue print
+        input_size = len(config.FNN_MODEL_FEATURES)
+        loaded_model = NN(input_size = input_size).to(device)
+        
+        #fill the empty model with my loaded weights from training before
+        loaded_model.load_state_dict(torch.load(model_filepath, map_location = device))
+        
+        
+        #set to eval before testing
+        
+        loaded_model.eval()
+        
+        #Wrap so can use test_model function 
+        use_model = PyTorchSklearnWrapper(loaded_model, device)
+        
+    elif model == 'LGBM':
+        model_filepath = models_dir / config.USER_LGBM_MODEL
+        
+        print(f'Loading LGBM from {model_filepath}')
+        
+        # #Load the package using the dynamic path
+        loaded_model_package = joblib.load(model_filepath)
+        
+        #Extracting the contents from the dictionary
+        features = loaded_model_package['features']
+        base_lgbm = loaded_model_package['base_model']
+        use_model = loaded_model_package['calibrated_model']
+            
+    elif model == 'LR':
+
+        model_filepath = models_dir / config.USER_LR_MODEL
+        
+        print(f'Loading LR from {model_filepath}')
+        
+        # #Load the package using the dynamic path
+        loaded_model_package = joblib.load(model_filepath)
+        
+        #Extracting the contents from the dictionary
+        features = loaded_model_package['features']
+        scalar_lr = loaded_model_package['scalar']
+        base_lr = loaded_model_package['base_model']
+        use_model = loaded_model_package['calibrated_model']
+        
+    X_raw = test_matrix[features].astype(np.float32, copy = False)
+    X = scalar.transform(X_raw) if scalar else X_raw 
+             
+    test_matrix['fillprob'] = use_model.predict_proba(X)[:,1]
+    test_matrix['expvol'] = test_matrix['fillprob'] * test_matrix['Vol']  #Calculate prob weighted vol 
+    
+    at_touch = test_matrix[test_matrix['DistanceToTouch'] == 0].copy()
+    bids = at_touch[at_touch['SideOfBook'] == 1].copy()
+    asks = at_touch[at_touch['SideOfBook'] == 0].copy()
+    
+    bids_adds = bids['Type'].isin([66,83])
+    bids_remo = bids['Type'].isin([67,68,69,70])
+    bids['SignedProbVol'] = np.select([bids_adds, bids_remo], [bids['expvol'], -bids['expvol']], default = 0)
+    
+    asks_adds = asks['Type'].isin([66,83])
+    asks_remo = asks['Type'].isin([67,68,69,70])
+    asks['SignedProbVol'] = np.select([asks_adds, asks_remo], [asks['expvol'], -asks['expvol']], default = 0)
+    
+    test_matrix['Bid_Delta'] = bids['SignedProbVol']
+    test_matrix['Ask_Delta'] = asks['SignedProbVol']
+    
+    #Floor it at zero to prevent negative vol
+    test_matrix['Total_Prob_Bid_Vol'] = test_matrix['Bid_Delta'].fillna(0).cumsum().clip(lower = 0) 
+    test_matrix['Total_Prob_Ask_Vol'] = test_matrix['Ask_Delta'].fillna(0).cumsum().clip(lower = 0)
+    
+    test_matrix['ProbQImbal'] =(test_matrix['Total_Prob_Bid_Vol'] -  test_matrix['Total_Prob_Ask_Vol']) / (test_matrix['Total_Prob_Bid_Vol'] +   test_matrix['Total_Prob_Ask_Vol'])
+    
+    test_matrix.drop(columns = ['Bid_Delta', 'Ask_Delta'], inplace = True)
+    
+    #Now i want to recreate those plots from ryan with regular qimbal and probqimbal
+    #I want to look for one day at every instance of a qimbalance and sort that in the three bins and then for each one see what happened to the market orders after, were they buys or sells
+    
+    merged = pd.merge_asof(
+        modata.sort_values('TOD'), 
+        test_matrix[['TOD', 'ProbQImbal']].sort_values('TOD'), 
+        on='TOD', 
+        direction='backward'
+    )
+
+    bins = [-1.0, -1/3, 1/3, 1.0]
+    labels = ['Sell-Heavy', 'Neutral', 'Buy-Heavy']
+    
+    merged['Imbalance_Bin'] = pd.cut(merged['ProbQImbal'], bins=bins, labels=labels, include_lowest=True)
+
+    summary = merged.groupby(['Imbalance_Bin', 'BorS']).size().unstack(fill_value=0)
+    summary.columns = ['Market Sells', 'Market Buys'] 
+    
+    ax = summary.plot(kind='bar', figsize=(9, 6), color=['darkred', 'darkblue'], edgecolor='black')
+    
+    plt.title("Trade Type vs. ProbQImbal - INTC")
+    plt.xlabel("Imbalance Level")
+    plt.ylabel("Number of Trades")
+    plt.xticks(rotation=0)
+    plt.legend(["Market Sells", "Market Buys"])
+    plt.tight_layout()
+    plt.show()
+
+    
+    return print(test_matrix['ProbQImbal'].iloc[10000])
 
 def test_model_wrap(test_matrix, model):
     
@@ -406,7 +541,7 @@ def single_order_eval(ID, TSP, test_data, selected_model, features, scalar):
         return
     
     order_data = order_data.sort_values('TimeSincePlacement')
-    
+    print(f"Available range for ID {ID}: {order_data['TimeSincePlacement'].min()}ms to {order_data['TimeSincePlacement'].max()}ms")
     if TSP < order_data['TimeSincePlacement'].min():
         print('Order Does not exist yet at this time')
         return
@@ -424,9 +559,11 @@ def single_order_eval(ID, TSP, test_data, selected_model, features, scalar):
         X = X_raw
         
     prob = selected_model.predict_proba(X)[0,1]
+   
     
-    print(f'At {TSP}ms into this order ID life, the fill probability is {prob}')
+    print(f'At {TSP}ms into this order ID life, the fill probability is {prob*100:.2d}%')
     
+    #temporarily changed the below to output high prob of fill for other checks
     return prob
     
 if __name__ == "__main__":
@@ -447,7 +584,7 @@ if __name__ == "__main__":
     train_files = paths.get('train_bin', [])
     test_files = paths.get('test_bin', [])
     test_matrix = pd.read_parquet(test_files) 
-  
+    modata = 
     
     model_choice = ''
     while model_choice not in ['1', '2', '3']:
@@ -486,7 +623,7 @@ if __name__ == "__main__":
         test_model_wrap(test_matrix, selected_model)
         
     elif action_choice == 'qimbal':
-        improve_qimbal(test_matrix, selected_model)
+        improve_qimbal(test_matrix, selected_model, modata)
         
     elif action_choice == 'use':
         print(f'Use the {selected_model} to experiment on orders, type "exit" if you want to stop')
@@ -554,9 +691,33 @@ if __name__ == "__main__":
             base_lgbm = loaded_model_package['base_model']
             use_model = loaded_model_package['calibrated_model']
             scalar = None
+    
+        #This below is just temporary stuff to see if the use part works and yes it does, use the exploratory data part for that 
+        X_raw = test_matrix[features].astype(np.float32, copy=False).values
+        X_scaled = scalar.transform(X_raw) if scalar else X_raw 
         
+        # 2. Isolate ONLY the Fill Probabilities (Column 1)
+        fill_probs = use_model.predict_proba(X_scaled)[:, 1]
         
+        # 3. Find the index of the absolute highest fill probability
+        idx = np.argmax(fill_probs)
+        
+        # 4. Extract the exact ID, TSP, and Probability
+        highest_id = int(test_matrix['ID'].iloc[idx])
+        highest_tsp = int(test_matrix['TimeSincePlacement'].iloc[idx])
+        highest_prob = fill_probs[idx]
+        
+        print("\n" + "="*50)
+        print(f"MAX FILL PROBABILITY FOUND:")
+        print(f"Order ID: {highest_id}")
+        print(f"Time Since Placement: {highest_tsp} ms")
+        print(f"Fill Probability: {highest_prob * 100:.2f}%")
+        print("="*50 + "\n")
         while True:
+            
+            order_events = test_matrix[test_matrix['ID'] == 43663]
+            placements = order_events[order_events['Type'].isin([66, 83])]
+            
             print('Give Order ID from testdata you want to experiment on')
             print(f'Some Example IDs are {test_matrix["ID"].drop_duplicates().sample(5).values}')
             ID = input('Enter the ID here ').strip()
@@ -567,6 +728,9 @@ if __name__ == "__main__":
             if TSP.lower() == 'exit':
                 break
             try:
+                # Check how many times this specific ID appears in the full day
+                occurrences = test_matrix[test_matrix['ID'] == 43663]
+                print(occurrences['TOD'].describe())
                 single_order_eval(int(ID), int(TSP), test_matrix, use_model, features, scalar)
                 
             except ValueError:
