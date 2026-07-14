@@ -92,7 +92,6 @@ def objective(trial):
     preds = model.predict_proba(X_val_scaled)[:,1]
     
     #Performance metrics
-    #I believe for hyperpar tuning the precision recall is best for our situation i.e placing a lot of emphasis on TPs, true positives
     
     y_val_bin = np.where(y_val == 1, 1, 0)
     

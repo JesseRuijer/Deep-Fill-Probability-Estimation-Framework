@@ -433,10 +433,10 @@ if __name__ == "__main__":
     save_data()
     
    
-    print('What model to use')
-    model_choice = input('"LR" , "LGBM", "FNN"').strip().lower()
-    print('Do you want to train or test model')
-    job = input('"train", "test"')
+    # print('What model to use')
+    # model_choice = input('"LR" , "LGBM", "FNN"').strip().lower()
+    # print('Do you want to train or test model')
+    # job = input('"train", "test"')
     #Only run the whole project if explicitly call main.py
     #run_project(model_choice, job)
     

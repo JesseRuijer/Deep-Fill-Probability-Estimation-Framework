@@ -281,7 +281,7 @@ def train(train_files, train_matrix, model):
      
         print(f'Succesfully saved LR model to  {model_filepath}')
  
-def improve_qimbal(test_matrix, model, modata):
+def improve_qimbal(test_matrix, model, mo_data, cleandata):
     # Rebuild the absolute path using pathlib
     script_dir = Path(__file__).resolve().parent 
     models_dir = script_dir.parent / 'models'
@@ -362,62 +362,174 @@ def improve_qimbal(test_matrix, model, modata):
     X_raw = test_matrix[features].astype(np.float32, copy = False)
     X = scalar.transform(X_raw) if scalar else X_raw 
              
+    #This code below is now state based and doesnt need type it just looks at the delta change in volume for each step 
+    
+    
     test_matrix['fillprob'] = use_model.predict_proba(X)[:,1]
     test_matrix['expvol'] = test_matrix['fillprob'] * test_matrix['Vol']  #Calculate prob weighted vol 
     
-    at_touch = test_matrix[test_matrix['DistanceToTouch'] == 0].copy()
-    bids = at_touch[at_touch['SideOfBook'] == 1].copy()
-    asks = at_touch[at_touch['SideOfBook'] == 0].copy()
+    all_events = test_matrix[['ID', 'TOD', 'Type', 'SideOfBook', 'expvol', 'Price']].copy()
     
-    bids_adds = bids['Type'].isin([66,83])
-    bids_remo = bids['Type'].isin([67,68,69,70])
-    bids['SignedProbVol'] = np.select([bids_adds, bids_remo], [bids['expvol'], -bids['expvol']], default = 0)
+    #at_touch = test_matrix[test_matrix['DistanceToTouch'] == 0].copy()
     
-    asks_adds = asks['Type'].isin([66,83])
-    asks_remo = asks['Type'].isin([67,68,69,70])
-    asks['SignedProbVol'] = np.select([asks_adds, asks_remo], [asks['expvol'], -asks['expvol']], default = 0)
+    # Type 68/70 are dropped upstream in data_regressors, so every order's real final
+    # removal is invisible to test_matrix. Pull those events straight from the raw log --
+    # no prediction needed, a confirmed-dead order's contribution is just 0.
     
-    test_matrix['Bid_Delta'] = bids['SignedProbVol']
-    test_matrix['Ask_Delta'] = asks['SignedProbVol']
+    #touched_ids = set(at_touch['ID'].unique())
+    full_removals = cleandata['Event'][cleandata['Event']['Type'].isin([68, 70])][['ID', 'TOD', 'Type', 'SideOfBook', 'Price']].copy()
+    full_removals['expvol'] = 0.0
     
-    #Floor it at zero to prevent negative vol
-    test_matrix['Total_Prob_Bid_Vol'] = test_matrix['Bid_Delta'].fillna(0).cumsum().clip(lower = 0) 
-    test_matrix['Total_Prob_Ask_Vol'] = test_matrix['Ask_Delta'].fillna(0).cumsum().clip(lower = 0)
+   # Combine into one big chronological list of events
+    combined = pd.concat([all_events, full_removals], ignore_index=True)
+    combined = combined.sort_values(['ID', 'TOD'])
     
-    test_matrix['ProbQImbal'] =(test_matrix['Total_Prob_Bid_Vol'] -  test_matrix['Total_Prob_Ask_Vol']) / (test_matrix['Total_Prob_Bid_Vol'] +   test_matrix['Total_Prob_Ask_Vol'])
+    # Using .shift(), we look at the row immediately above to see what this order's volume and price were BEFORE this event
+    combined['prev_vol'] = combined.groupby('ID')['expvol'].shift(1).fillna(0.0)
+    combined['prev_price'] = combined.groupby('ID')['Price'].shift(1)
     
-    test_matrix.drop(columns = ['Bid_Delta', 'Ask_Delta'], inplace = True)
     
-    #Now i want to recreate those plots from ryan with regular qimbal and probqimbal
-    #I want to look for one day at every instance of a qimbalance and sort that in the three bins and then for each one see what happened to the market orders after, were they buys or sells
     
-    merged = pd.merge_asof(
-        modata.sort_values('TOD'), 
-        test_matrix[['TOD', 'ProbQImbal']].sort_values('TOD'), 
+   # The Negative Impact: Every event overwrites the old state, so we must subtract the previous volume
+    subs = combined[['TOD', 'SideOfBook', 'prev_price', 'prev_vol']].copy()
+    #just rename the columns from above
+    subs.columns = ['TOD', 'SideOfBook', 'Price', 'Vol_Delta']
+    subs['Vol_Delta'] = -subs['Vol_Delta'] 
+    subs = subs.dropna(subset=['Price']) 
+    
+    # The Positive Impact: Every event applies a new state, so we add the new volume
+    adds = combined[['TOD', 'SideOfBook', 'Price', 'expvol']].copy()
+    adds.columns = ['TOD', 'SideOfBook', 'Price', 'Vol_Delta']
+    
+    # Combine adds and subs to get a master timeline of all volume changes
+    impacts = pd.concat([adds, subs], ignore_index=True)
+   # Group by exact microsecond and price to net out simultaneous adds/subs
+    impacts = impacts.groupby(['TOD', 'SideOfBook', 'Price'])['Vol_Delta'].sum().reset_index()
+
+    # 3. Build the full Limit Order Book history using cumulative sum
+    impacts = impacts.sort_values('TOD')
+    impacts['Resting_Vol'] = impacts.groupby(['SideOfBook', 'Price'])['Vol_Delta'].cumsum()
+
+    # Separate the book by side for cleaner merging
+    bid_book = impacts[impacts['SideOfBook'] == 1].drop(columns=['SideOfBook'])
+    ask_book = impacts[impacts['SideOfBook'] == 0].drop(columns=['SideOfBook'])
+    
+    #match datatypes so pd.merge can continue, as we scaled down data during processing before
+# Force the merge keys to standard 64-bit types so the C-backend doesn't panic
+    bid_book['TOD'] = bid_book['TOD'].astype('int64')
+    ask_book['TOD'] = ask_book['TOD'].astype('int64')
+    test_matrix['TOD'] = test_matrix['TOD'].astype('int64')
+
+    bid_book['Price_Key'] = bid_book['Price'].abs().round().astype('int64')
+    ask_book['Price_Key'] = ask_book['Price'].abs().round().astype('int64')
+
+    test_matrix['BestBid_Key'] = test_matrix['BestBid'].abs().round().astype('int64')
+    test_matrix['BestAsk_Key'] = test_matrix['BestAsk'].abs().round().astype('int64')
+
+    # 4. Map the resting volume back to the main test_matrix BBO
+    test_matrix = test_matrix.sort_values('TOD')
+   # Merge Bid Volume
+    # This magically finds the most recent Resting_Vol where the TOD matches AND the book Price matches the BestBid
+    test_matrix = pd.merge_asof(
+        test_matrix, 
+        bid_book[['TOD', 'Price_Key', 'Resting_Vol']], 
         on='TOD', 
+        left_by ='BestBid_Key', 
+        right_by ='Price_Key', 
         direction='backward'
     )
+    test_matrix.rename(columns={'Resting_Vol': 'Total_Prob_Bid_Vol'}, inplace=True)
+
+    # Merge Ask Volume
+    test_matrix = pd.merge_asof(
+        test_matrix, 
+        ask_book[['TOD', 'Price_Key', 'Resting_Vol']], 
+        on='TOD', 
+        left_by='BestAsk_Key', 
+        right_by='Price_Key', 
+        direction='backward'
+    )
+    test_matrix.rename(columns={'Resting_Vol': 'Total_Prob_Ask_Vol'}, inplace=True)
+    
+
+    # Clean up missing data (if a price level hasn't been established yet) and drop the extra merge columns
+    test_matrix[['Total_Prob_Bid_Vol', 'Total_Prob_Ask_Vol']] = test_matrix[['Total_Prob_Bid_Vol', 'Total_Prob_Ask_Vol']].fillna(0)
+    test_matrix.drop(columns=['Price_x', 'Price_y'], inplace=True, errors='ignore')
+    
+    test_matrix['Total_Prob_Bid_Vol'] = test_matrix['Total_Prob_Bid_Vol'].round(4).clip(lower=0)
+    test_matrix['Total_Prob_Ask_Vol'] = test_matrix['Total_Prob_Ask_Vol'].round(4).clip(lower=0)
 
     bins = [-1.0, -1/3, 1/3, 1.0]
     labels = ['Sell-Heavy', 'Neutral', 'Buy-Heavy']
     
+    prob_denom = test_matrix['Total_Prob_Bid_Vol'] + test_matrix['Total_Prob_Ask_Vol']
+    
+    
+    
+    # 3. Calculate Imbalance, defaulting to 0 if the touch is completely empty
+    test_matrix['ProbQImbal'] = np.where(
+        prob_denom > 0, 
+        (test_matrix['Total_Prob_Bid_Vol'] - test_matrix['Total_Prob_Ask_Vol']) / prob_denom,
+        0.0
+    )
+  # 1. Map the calculated imbalances onto the actual Market Order timestamps
+  
+  # --- DIAGNOSTIC CHECK ---
+    print("\n" + "="*40)
+    print("1. AVERAGE FILL PROBABILITY BY SIDE (Model Check)")
+    print('THIS IS HIGH SINCE MODEL ONLY EVALUATED AT BEST PRICES')
+    print(test_matrix.groupby('SideOfBook')['fillprob'].mean())
+    
+    print("\n2. AVERAGE MAPPED VOLUME BY SIDE (Matching Check)")
+    print(f"Mean Mapped Bid Vol: {test_matrix['Total_Prob_Bid_Vol'].mean():.2f}")
+    print(f"Mean Mapped Ask Vol: {test_matrix['Total_Prob_Ask_Vol'].mean():.2f}")
+    print("="*40 + "\n")
+  
+    mo_data['TOD'] = mo_data['TOD'].astype('int64')
+    test_matrix['TOD'] = test_matrix['TOD'].astype('int64')
+    merged = pd.merge_asof(
+        mo_data.sort_values('TOD'), 
+        test_matrix[['TOD', 'ProbQImbal', 'QImbalance']].sort_values('TOD'), 
+        on='TOD', 
+        direction='backward'
+    )
+    
+    # --- Plotting ProbQImbal ---
     merged['Imbalance_Bin'] = pd.cut(merged['ProbQImbal'], bins=bins, labels=labels, include_lowest=True)
-
-    summary = merged.groupby(['Imbalance_Bin', 'BorS']).size().unstack(fill_value=0)
-    summary.columns = ['Market Sells', 'Market Buys'] 
     
-    ax = summary.plot(kind='bar', figsize=(9, 6), color=['darkred', 'darkblue'], edgecolor='black')
+    # For MO: BorS == 1 -> sell, BorS == 0 -> buy
+    summary = merged.groupby(['Imbalance_Bin', 'BorS'])['Vol'].sum().unstack(fill_value=0)
+    summary.columns = ['Market Buys', 'Market Sells']
     
-    plt.title("Trade Type vs. ProbQImbal - INTC")
+    ax = summary.plot(kind='bar', figsize=(9, 6), color=['darkblue', 'darkred'], edgecolor='black')
+    
+    #Plotting ProbQImbal
+    
+    plt.title("Trade Vol vs. ProbQImbal - INTC")
     plt.xlabel("Imbalance Level")
     plt.ylabel("Number of Trades")
     plt.xticks(rotation=0)
-    plt.legend(["Market Sells", "Market Buys"])
+    plt.legend(["Market Buys", "Market Sells"])
     plt.tight_layout()
     plt.show()
-
     
-    return print(test_matrix['ProbQImbal'].iloc[10000])
+    #Plotting RegularQimbal
+    merged['Imbalance_Bin'] = pd.cut(merged['QImbalance'], bins=bins, labels=labels, include_lowest=True)
+
+    #For MO BorS == 1 -> sell
+    summary = merged.groupby(['Imbalance_Bin', 'BorS'])['Vol'].sum().unstack(fill_value=0)
+    summary.columns = ['Market Buys', 'Market Sells'] 
+      
+    ax = summary.plot(kind='bar', figsize=(9, 6), color=['darkblue', 'darkred'], edgecolor='black')
+    plt.title("Trade Vol vs. RegularQImbal - INTC")
+    plt.xlabel("Imbalance Level")
+    plt.ylabel("Number of Trades")
+    plt.xticks(rotation=0)
+    plt.legend(["Market Buys", "Market Sells"])
+    plt.tight_layout()
+    plt.show()
+    
+    return print((test_matrix['ProbQImbal'].describe()), test_matrix['QImbalance'].describe())
 
 def test_model_wrap(test_matrix, model):
     
@@ -579,12 +691,16 @@ if __name__ == "__main__":
     print('Please select TRAINING Data (atleast one day)')
     print('Please select Test Data (One day only and no overlap with test data (obviously))')
 
-       
+    print('Here just select again the training day from above, its for plotting ProbQImbal we need the MO data')  
     paths = get_ml_training_paths()
     train_files = paths.get('train_bin', [])
     test_files = paths.get('test_bin', [])
     test_matrix = pd.read_parquet(test_files) 
-    modata = 
+    from FileManager import get_data_paths
+    data_path, mo_path = get_data_paths()
+    rawdata = import_data(data_path, mo_path)
+    mo_data = rawdata['MO']
+    cleandata = clean_data(rawdata)
     
     model_choice = ''
     while model_choice not in ['1', '2', '3']:
@@ -623,7 +739,7 @@ if __name__ == "__main__":
         test_model_wrap(test_matrix, selected_model)
         
     elif action_choice == 'qimbal':
-        improve_qimbal(test_matrix, selected_model, modata)
+        improve_qimbal(test_matrix, selected_model, mo_data, cleandata)
         
     elif action_choice == 'use':
         print(f'Use the {selected_model} to experiment on orders, type "exit" if you want to stop')

@@ -109,8 +109,6 @@ def clean_data(raw_data):
     df_SP = raw_data["SellPrice"]
     df_MO = raw_data["MO"]
     
-    #Security and basic market physics checks
-    
     df_dictionary = {
         'Event': df_E,
         'BV': df_BV,
@@ -119,6 +117,8 @@ def clean_data(raw_data):
         'SP': df_SP,
         'MO': df_MO,
         }
+    
+    #Safety checks
     
     for name, df in df_dictionary.items():
         assert not df.isna().any().any(), f'NaN detected in {df}'  #Checks this and if condition true continue if  false then immediately stops and prints, the double .any() is just to see if anywhere in the whole df the condition is there 
@@ -943,7 +943,7 @@ def data_regressors(rawdata, cleandata, clear_RAM = True, dont_include_full_trad
     
     #Cols that either dont have necessary info or to prevent data leaking i.e we cant train on totalexecuted after since that happnes in the future
 
-    cols_to_drop = ['ActiveCanceledVol', 'BaseTime', 'ExecutedVol', 'ExpiredVol','InitialPlacementTime', 'BestBid', 'BestAsk',
+    cols_to_drop = ['ActiveCanceledVol', 'BaseTime', 'ExecutedVol', 'ExpiredVol','InitialPlacementTime',
                     'Side', 'SideOfBook_past', 'Step', 'TotalActiveCanceledAfter', 'TotalExecutedAfter', 'TotalExpiredAfter', 'TotalFailureAfter', 'TOD_+_1000', 'TOD_past', 'LogVolAhead_past',
                     'DistanceToTouch_past', 
                     #'MicroMidDeviation_past' 
