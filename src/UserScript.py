@@ -17,7 +17,7 @@ from pathlib import Path
 from sklearn.preprocessing import StandardScaler
 
 import config
-
+from sklearn.metrics import roc_auc_score
 from ModelEvaluation import test_model
 from FileManager import get_ml_training_paths, get_batch_data_paths, generate_dynamic_paths
 from DataAndFeatureEngineering import import_data, clean_data, data_regressors
@@ -230,6 +230,8 @@ def train(train_files, train_matrix, model):
         joblib.dump(model_package, model_filepath)
      
         print(f'Succesfully saved LGBM model to  {model_filepath}')
+        scalar = None # I know this is ugly code but its just easy if the three models return the same two things from this function 
+        return calibrated_lgbm, scalar
         
     elif model == 'LR':
           
@@ -280,6 +282,7 @@ def train(train_files, train_matrix, model):
         joblib.dump(model_package, model_filepath)
      
         print(f'Succesfully saved LR model to  {model_filepath}')
+        return calibrated_lr, scalar_lr
  
 def improve_qimbal(test_matrix, model, mo_data, cleandata):
     # Rebuild the absolute path using pathlib
@@ -459,8 +462,7 @@ def improve_qimbal(test_matrix, model, mo_data, cleandata):
     test_matrix['Total_Prob_Bid_Vol'] = test_matrix['Total_Prob_Bid_Vol'].round(4).clip(lower=0)
     test_matrix['Total_Prob_Ask_Vol'] = test_matrix['Total_Prob_Ask_Vol'].round(4).clip(lower=0)
 
-    bins = [-1.0, -1/3, 1/3, 1.0]
-    labels = ['Sell-Heavy', 'Neutral', 'Buy-Heavy']
+   
     
     prob_denom = test_matrix['Total_Prob_Bid_Vol'] + test_matrix['Total_Prob_Ask_Vol']
     
@@ -484,6 +486,28 @@ def improve_qimbal(test_matrix, model, mo_data, cleandata):
     print(f"Mean Mapped Bid Vol: {test_matrix['Total_Prob_Bid_Vol'].mean():.2f}")
     print(f"Mean Mapped Ask Vol: {test_matrix['Total_Prob_Ask_Vol'].mean():.2f}")
     print("="*40 + "\n")
+    
+    # --- DEFINITIVE DIAGNOSTIC CHECK ---
+    print("\n" + "="*50)
+    print("1. RAW VOLUME IN TEST MATRIX (Input Check)")
+    raw_vols = test_matrix.groupby('SideOfBook')['Vol'].sum()
+    print(f"Total Raw Bid Vol (Side 1): {raw_vols.get(1.0, 0):,.0f}")
+    print(f"Total Raw Ask Vol (Side 0): {raw_vols.get(0.0, 0):,.0f}")
+    
+    print("\n2. VOLUME IN REBUILT BOOK (Rebuilder Check)")
+    print(f"Total Rebuilt Bid Vol: {bid_book['Resting_Vol'].sum():,.0f}")
+    print(f"Total Rebuilt Ask Vol: {ask_book['Resting_Vol'].sum():,.0f}")
+    
+    print("\n3. EXACT MATCH RATE (Merge Check)")
+    # Temporarily merge without fillna(0) to see how many rows actually found a match
+    test_bid_merge = pd.merge_asof(test_matrix, bid_book[['TOD', 'Price_Key', 'Resting_Vol']], on='TOD', left_by='BestBid_Key', right_by='Price_Key', direction='backward')
+    test_ask_merge = pd.merge_asof(test_matrix, ask_book[['TOD', 'Price_Key', 'Resting_Vol']], on='TOD', left_by='BestAsk_Key', right_by='Price_Key', direction='backward')
+    
+    bid_match_rate = (test_bid_merge['Resting_Vol'].notna().sum() / len(test_matrix)) * 100
+    ask_match_rate = (test_ask_merge['Resting_Vol'].notna().sum() / len(test_matrix)) * 100
+    print(f"Bid Price Match Rate: {bid_match_rate:.1f}%")
+    print(f"Ask Price Match Rate: {ask_match_rate:.1f}%")
+    print("="*50 + "\n")
   
     mo_data['TOD'] = mo_data['TOD'].astype('int64')
     test_matrix['TOD'] = test_matrix['TOD'].astype('int64')
@@ -494,20 +518,29 @@ def improve_qimbal(test_matrix, model, mo_data, cleandata):
         direction='backward'
     )
     
+    #Drop NaNs for trades that were placed before opening hours
+    merged = merged.dropna(subset=['ProbQImbal', 'QImbalance'])
+    
+    
+    #NOTE: The previous plots where i used the hardcoded bins did show a difference in heightratios in favor of the model
+    #but this was not right as our model is a nonlinear transformation so it could be that probqimbal is just a more squeezed or powered version of regular qimbal
+    #so we must use quantiles to see if then the ratios are still in favor cuz then the model is reranking the data and improving the regular qimbal 
+    bins = [-1.0, -1/3, 1/3, 1.0]
+    labels = ['Sell-Heavy', 'Neutral', 'Buy-Heavy']
     # --- Plotting ProbQImbal ---
     merged['Imbalance_Bin'] = pd.cut(merged['ProbQImbal'], bins=bins, labels=labels, include_lowest=True)
     
     # For MO: BorS == 1 -> sell, BorS == 0 -> buy
-    summary = merged.groupby(['Imbalance_Bin', 'BorS'])['Vol'].sum().unstack(fill_value=0)
-    summary.columns = ['Market Buys', 'Market Sells']
-    
-    ax = summary.plot(kind='bar', figsize=(9, 6), color=['darkblue', 'darkred'], edgecolor='black')
-    
+    summary_prob = merged.groupby(['Imbalance_Bin', 'BorS'])['Vol'].sum().unstack(fill_value=0)
+    summary_prob.columns = ['Market Buys', 'Market Sells']
+        
     #Plotting ProbQImbal
+    summary_prob.plot(kind='bar', figsize=(9, 6), color=['darkblue', 'darkred'], edgecolor='black')
+
     
     plt.title("Trade Vol vs. ProbQImbal - INTC")
     plt.xlabel("Imbalance Level")
-    plt.ylabel("Number of Trades")
+    plt.ylabel("Vol of Trades")
     plt.xticks(rotation=0)
     plt.legend(["Market Buys", "Market Sells"])
     plt.tight_layout()
@@ -517,17 +550,91 @@ def improve_qimbal(test_matrix, model, mo_data, cleandata):
     merged['Imbalance_Bin'] = pd.cut(merged['QImbalance'], bins=bins, labels=labels, include_lowest=True)
 
     #For MO BorS == 1 -> sell
-    summary = merged.groupby(['Imbalance_Bin', 'BorS'])['Vol'].sum().unstack(fill_value=0)
-    summary.columns = ['Market Buys', 'Market Sells'] 
+    summary_reg = merged.groupby(['Imbalance_Bin', 'BorS'])['Vol'].sum().unstack(fill_value=0)
+    summary_reg.columns = ['Market Buys', 'Market Sells'] 
       
-    ax = summary.plot(kind='bar', figsize=(9, 6), color=['darkblue', 'darkred'], edgecolor='black')
+    summary_reg.plot(kind='bar', figsize=(9, 6), color=['darkblue', 'darkred'], edgecolor='black')
     plt.title("Trade Vol vs. RegularQImbal - INTC")
     plt.xlabel("Imbalance Level")
-    plt.ylabel("Number of Trades")
+    plt.ylabel("Vol of Trades")
     plt.xticks(rotation=0)
     plt.legend(["Market Buys", "Market Sells"])
     plt.tight_layout()
     plt.show()
+
+    
+    #plotting with quantiles
+    #rank data to break ties, i.e if there are large blocks of 0 fill prob
+    merged['ProbQImbal_Rank'] = merged['ProbQImbal'].rank(method = 'first')
+    
+    merged['Imbalance_Bin'] = pd.qcut(merged['ProbQImbal_Rank'], q=3, labels=labels)
+    summary_prob = merged.groupby(['Imbalance_Bin', 'BorS'])['Vol'].sum().unstack(fill_value=0)
+    summary_prob.columns = ['Market Buys', 'Market Sells']
+    
+    summary_prob.plot(kind='bar', figsize=(9, 6), color=['darkblue', 'darkred'], edgecolor='black')
+    
+    #Plotting ProbQImbal
+    
+    plt.title("Trade Vol vs. ProbQImbal - INTC")
+    plt.xlabel("Imbalance Level")
+    plt.ylabel("Vol of Trades")
+    plt.xticks(rotation=0)
+    plt.legend(["Market Buys", "Market Sells"])
+    plt.tight_layout()
+    plt.show()
+    
+    #Plotting RegularQimbal
+    merged['QImbalance_Rank'] = merged['QImbalance'].rank(method = 'first')
+    merged['Imbalance_Bin'] = pd.qcut(merged['QImbalance_Rank'], q=3, labels=labels)
+    summary_reg = merged.groupby(['Imbalance_Bin', 'BorS'])['Vol'].sum().unstack(fill_value=0)
+    summary_reg.columns = ['Market Buys', 'Market Sells']
+    #For MO BorS == 1 -> sell
+      
+    summary_reg.plot(kind='bar', figsize=(9, 6), color=['darkblue', 'darkred'], edgecolor='black')
+    plt.title("Trade Vol vs. RegularQImbal - INTC")
+    plt.xlabel("Imbalance Level")
+    plt.ylabel("Vol of Trades")
+    plt.xticks(rotation=0)
+    plt.legend(["Market Buys", "Market Sells"])
+    plt.tight_layout()
+    plt.show()
+    
+    #Now lastly here we can use roc auc unlike before, now we just care about does based on probqimbal a buy and a sell order which metric is better at ordering them
+    from sklearn.metrics import roc_auc_score
+    
+    is_buy = (merged['BorS'] == -1).astype(int)
+    
+    auc_regular = roc_auc_score(is_buy, merged['QImbalance'])
+    auc_probq = roc_auc_score(is_buy, merged['ProbQImbal']) 
+    auc_increase = (auc_probq - auc_regular) / auc_regular
+    print(f' Regular AUC is {auc_regular} and Improved AUC is {auc_probq}, this is a {(auc_increase) * 100}% increase')
+
+    #Now just printing the initial ratios and the improved ratios between bins
+    regshmb = summary_reg.loc['Sell-Heavy', 'Market Buys']
+    regshms = summary_reg.loc['Sell-Heavy', 'Market Sells']
+    regshratio = regshms / regshmb
+    print(f'Regular QImbal bin ratio when market sell heavy is {regshratio}')
+    
+    regbhmb = summary_reg.loc['Buy-Heavy', 'Market Buys']
+    regbhms = summary_reg.loc['Buy-Heavy', 'Market Sells']
+    regbhratio = regbhmb / regbhms
+    print(f'Regular QImbal bin ratio when market buy heavy is {regbhratio}')
+    
+    probshmb = summary_prob.loc['Sell-Heavy', 'Market Buys']
+    probshms = summary_prob.loc['Sell-Heavy', 'Market Sells']
+    probshratio = probshms / probshmb
+    print(f'Prob QImbal bin ratio when market sell heavy is {probshratio}')
+    
+    probbhmb = summary_prob.loc['Buy-Heavy', 'Market Buys']
+    probbhms = summary_prob.loc['Buy-Heavy', 'Market Sells']
+    probbhratio = probbhmb / probbhms
+    print(f'Prob QImbal bin ratio when marekt buy heavy is {probbhratio}')
+    
+    shincrease = (probshratio - regshratio)/ regshratio
+    bhincrease = (probbhratio - regbhratio)/ regbhratio
+    
+    print(f'Increase in Sell heavy bin ratio is {(shincrease)*100} %')
+    print(f'Increase in Buy heavy bin ratio is {(bhincrease)*100} %')
     
     return print((test_matrix['ProbQImbal'].describe()), test_matrix['QImbalance'].describe())
 
@@ -660,8 +767,8 @@ def single_order_eval(ID, TSP, test_data, selected_model, features, scalar):
     if TSP > order_data['TimeSincePlacement'].max():
         print('Order Does is dead already at this time')
         return
-    else:
-        state_at_tsp = order_data[order_data['TimeSincePlacement'] <= TSP].iloc[-1:]    #Get the closest entry now or in the past to the requested TSP
+    
+    state_at_tsp = order_data[order_data['TimeSincePlacement'] <= TSP].iloc[-1:]    #Get the closest entry now or in the past to the requested TSP
         
     X_raw = state_at_tsp[features]
     
@@ -673,10 +780,229 @@ def single_order_eval(ID, TSP, test_data, selected_model, features, scalar):
     prob = selected_model.predict_proba(X)[0,1]
    
     
-    print(f'At {TSP}ms into this order ID life, the fill probability is {prob*100:.2d}%')
+    print(f'At {TSP}ms into this order ID life, the fill probability is {prob*100:.2f}%')
     
     #temporarily changed the below to output high prob of fill for other checks
     return prob
+
+def calc_daily_qimbal(test_matrix, use_model, scalar, features, mo_data, cleandata):
+    X_raw = test_matrix[features].astype(np.float32, copy = False)
+    X = scalar.transform(X_raw) if scalar else X_raw 
+             
+    #This code below is now state based and doesnt need type it just looks at the delta change in volume for each step 
+    
+    
+    test_matrix['fillprob'] = use_model.predict_proba(X)[:,1]
+    test_matrix['expvol'] = test_matrix['fillprob'] * test_matrix['Vol']  #Calculate prob weighted vol 
+    
+    all_events = test_matrix[['ID', 'TOD', 'Type', 'SideOfBook', 'expvol', 'Price']].copy()
+    
+    #at_touch = test_matrix[test_matrix['DistanceToTouch'] == 0].copy()
+    
+    # Type 68/70 are dropped upstream in data_regressors, so every order's real final
+    # removal is invisible to test_matrix. Pull those events straight from the raw log --
+    # no prediction needed, a confirmed-dead order's contribution is just 0.
+    
+    #touched_ids = set(at_touch['ID'].unique())
+    full_removals = cleandata['Event'][cleandata['Event']['Type'].isin([68, 70])][['ID', 'TOD', 'Type', 'SideOfBook', 'Price']].copy()
+    full_removals['expvol'] = 0.0
+    
+   # Combine into one big chronological list of events
+    combined = pd.concat([all_events, full_removals], ignore_index=True)
+    combined = combined.sort_values(['ID', 'TOD'])
+    
+    # Using .shift(), we look at the row immediately above to see what this order's volume and price were BEFORE this event
+    combined['prev_vol'] = combined.groupby('ID')['expvol'].shift(1).fillna(0.0)
+    combined['prev_price'] = combined.groupby('ID')['Price'].shift(1)
+    
+    
+    
+   # The Negative Impact: Every event overwrites the old state, so we must subtract the previous volume
+    subs = combined[['TOD', 'SideOfBook', 'prev_price', 'prev_vol']].copy()
+    #just rename the columns from above
+    subs.columns = ['TOD', 'SideOfBook', 'Price', 'Vol_Delta']
+    subs['Vol_Delta'] = -subs['Vol_Delta'] 
+    subs = subs.dropna(subset=['Price']) 
+    
+    # The Positive Impact: Every event applies a new state, so we add the new volume
+    adds = combined[['TOD', 'SideOfBook', 'Price', 'expvol']].copy()
+    adds.columns = ['TOD', 'SideOfBook', 'Price', 'Vol_Delta']
+    
+    # Combine adds and subs to get a master timeline of all volume changes
+    impacts = pd.concat([adds, subs], ignore_index=True)
+   # Group by exact microsecond and price to net out simultaneous adds/subs
+    impacts = impacts.groupby(['TOD', 'SideOfBook', 'Price'])['Vol_Delta'].sum().reset_index()
+
+    # 3. Build the full Limit Order Book history using cumulative sum
+    impacts = impacts.sort_values('TOD')
+    impacts['Resting_Vol'] = impacts.groupby(['SideOfBook', 'Price'])['Vol_Delta'].cumsum()
+
+    # Separate the book by side for cleaner merging
+    bid_book = impacts[impacts['SideOfBook'] == 1].drop(columns=['SideOfBook'])
+    ask_book = impacts[impacts['SideOfBook'] == 0].drop(columns=['SideOfBook'])
+    
+    #match datatypes so pd.merge can continue, as we scaled down data during processing before
+# Force the merge keys to standard 64-bit types so the C-backend doesn't panic
+    bid_book['TOD'] = bid_book['TOD'].astype('int64')
+    ask_book['TOD'] = ask_book['TOD'].astype('int64')
+    test_matrix['TOD'] = test_matrix['TOD'].astype('int64')
+
+    bid_book['Price_Key'] = bid_book['Price'].abs().round().astype('int64')
+    ask_book['Price_Key'] = ask_book['Price'].abs().round().astype('int64')
+
+    test_matrix['BestBid_Key'] = test_matrix['BestBid'].abs().round().astype('int64')
+    test_matrix['BestAsk_Key'] = test_matrix['BestAsk'].abs().round().astype('int64')
+
+    # 4. Map the resting volume back to the main test_matrix BBO
+    test_matrix = test_matrix.sort_values('TOD')
+   # Merge Bid Volume
+    # This magically finds the most recent Resting_Vol where the TOD matches AND the book Price matches the BestBid
+    test_matrix = pd.merge_asof(
+        test_matrix, 
+        bid_book[['TOD', 'Price_Key', 'Resting_Vol']], 
+        on='TOD', 
+        left_by ='BestBid_Key', 
+        right_by ='Price_Key', 
+        direction='backward'
+    )
+    test_matrix.rename(columns={'Resting_Vol': 'Total_Prob_Bid_Vol'}, inplace=True)
+
+    # Merge Ask Volume
+    test_matrix = pd.merge_asof(
+        test_matrix, 
+        ask_book[['TOD', 'Price_Key', 'Resting_Vol']], 
+        on='TOD', 
+        left_by='BestAsk_Key', 
+        right_by='Price_Key', 
+        direction='backward'
+    )
+    test_matrix.rename(columns={'Resting_Vol': 'Total_Prob_Ask_Vol'}, inplace=True)
+    
+
+    # Clean up missing data (if a price level hasn't been established yet) and drop the extra merge columns
+    test_matrix[['Total_Prob_Bid_Vol', 'Total_Prob_Ask_Vol']] = test_matrix[['Total_Prob_Bid_Vol', 'Total_Prob_Ask_Vol']].fillna(0)
+    test_matrix.drop(columns=['Price_x', 'Price_y'], inplace=True, errors='ignore')
+    
+    test_matrix['Total_Prob_Bid_Vol'] = test_matrix['Total_Prob_Bid_Vol'].round(4).clip(lower=0)
+    test_matrix['Total_Prob_Ask_Vol'] = test_matrix['Total_Prob_Ask_Vol'].round(4).clip(lower=0)
+    
+    prob_denom = test_matrix['Total_Prob_Bid_Vol'] + test_matrix['Total_Prob_Ask_Vol']
+    
+    # 3. Calculate Imbalance, defaulting to 0 if the touch is completely empty
+    test_matrix['ProbQImbal'] = np.where(
+        prob_denom > 0, 
+        (test_matrix['Total_Prob_Bid_Vol'] - test_matrix['Total_Prob_Ask_Vol']) / prob_denom,
+        0.0
+    )
+    
+    #add y true cuz maybe need later in monthly eval
+    
+    test_matrix['y_true'] = test_matrix[config.TARGET]
+    
+    mo_data['TOD'] = mo_data['TOD'].astype('int64')
+    test_matrix['TOD'] = test_matrix['TOD'].astype('int64')
+    merged = pd.merge_asof(
+        mo_data.sort_values('TOD'), 
+        test_matrix[['TOD', 'ProbQImbal', 'QImbalance', 'y_true', 'fillprob']].sort_values('TOD'), 
+        on='TOD', 
+        direction='backward'
+    )
+    
+    #Drop NaNs for trades that were placed before opening hours
+    merged = merged.dropna(subset=['ProbQImbal', 'QImbalance', 'fillprob'])
+    
+    return merged
+
+def plot_monthly_sum(monthly_merged, selected_model):
+    
+    is_buy = (monthly_merged['BorS'] == -1).astype(int)
+    
+    auc_regular = roc_auc_score(is_buy, monthly_merged['QImbalance'])
+    auc_probq = roc_auc_score(is_buy, monthly_merged['ProbQImbal']) 
+    auc_increase = (auc_probq - auc_regular) / auc_regular
+    print(f' Monthly Regular AUC is {auc_regular} and Monthly Improved AUC is {auc_probq}, this is a {(auc_increase) * 100}% increase')
+    
+    
+    bins = [-1.0, -1/3, 1/3, 1.0]
+    labels = ['Sell-Heavy', 'Neutral', 'Buy-Heavy']
+    #plotting with quantiles
+    monthly_merged['Imbalance_Bin'] = pd.qcut(monthly_merged['ProbQImbal'], q=3, labels=labels)
+    summary_prob = monthly_merged.groupby(['Imbalance_Bin', 'BorS'])['Vol'].sum().unstack(fill_value=0)
+    summary_prob.columns = ['Market Buys', 'Market Sells']
+    
+    summary_prob.plot(kind='bar', figsize=(9, 6), color=['darkblue', 'darkred'], edgecolor='black')
+    
+    #Plotting ProbQImbal
+    
+    plt.title("Trade Vol vs. ProbQImbal Month - INTC")
+    plt.xlabel("Imbalance Level")
+    plt.ylabel("Vol of Trades")
+    plt.xticks(rotation=0)
+    plt.legend(["Market Buys", "Market Sells"])
+    plt.tight_layout()
+    plt.show()
+    
+    #Plotting RegularQimbal
+    monthly_merged['Imbalance_Bin'] = pd.qcut(monthly_merged['QImbalance'], q=3, labels=labels)
+    summary_reg = monthly_merged.groupby(['Imbalance_Bin', 'BorS'])['Vol'].sum().unstack(fill_value=0)
+    summary_reg.columns = ['Market Buys', 'Market Sells']
+    #For MO BorS == 1 -> sell
+      
+    summary_reg.plot(kind='bar', figsize=(9, 6), color=['darkblue', 'darkred'], edgecolor='black')
+    plt.title("Trade Vol vs. RegularQImbal Month - INTC")
+    plt.xlabel("Imbalance Level")
+    plt.ylabel("Vol of Trades")
+    plt.xticks(rotation=0)
+    plt.legend(["Market Buys", "Market Sells"])
+    plt.tight_layout()
+    plt.show()
+    
+    #Plotting the other performance stuff for the month 
+    test_model_wrap(test_matrix, selected_model)
+    return None
+ 
+def walk_forward(all_data_paths, selected_model, train_window_days = 20):
+    
+    monthly_dataframes = []
+    
+    total_test_days = len(all_data_paths) - train_window_days
+   
+    for i in range(total_test_days):
+        
+        train_files = all_data_paths[i : i + train_window_days]
+        test_file = all_data_paths[i + train_window_days]
+       
+        train_frames = [pd.read_parquet(f) for f in train_files]
+        train_matrix = pd.concat(train_frames, ignore_index = True)
+       
+        
+        use_model, scalar = train(train_files, train_matrix, selected_model)
+        
+        del train_frames, train_matrix
+        gc.collect()
+        
+        test_matrix = pd.read_parquet(test_file)
+        test_matrix.replace([np.inf, -np.inf], 0, inplace=True)
+        
+        if selected_model == 'FNN':
+            features = config.FNN_MODEL_FEATURES
+        elif selected_model == 'LR':
+            features = config.LOGISTIC_MODEL_FEATURES
+        elif selected_model == 'LGBM':
+            features = config.LGBM_MODEL_FEATURES
+        
+        raw_data_path, raw_mo_path = get_data_paths()
+        rawdata = import_data(raw_data_path, raw_mo_path)
+        cleandata = clean_data(rawdata)
+        mo_data = rawdata['MO']
+        
+        daily_merged = calc_daily_qimbal(test_matrix, use_model, scalar, features, mo_data, cleandata)
+        monthly_dataframes.append(daily_merged)
+        del test_matrix, rawdata, cleandata, mo_data
+        
+    monthly_merged = pd.concat(monthly_dataframes, ignore_index = True)
+    plot_monthly_sum(monthly_merged,selected_model)
+        
     
 if __name__ == "__main__":
     
@@ -693,6 +1019,7 @@ if __name__ == "__main__":
 
     print('Here just select again the training day from above, its for plotting ProbQImbal we need the MO data')  
     paths = get_ml_training_paths()
+    #the second argument in .get is just an empty list it will proceed with if it cant find the list belonging to the key in the first argument for safety reasons
     train_files = paths.get('train_bin', [])
     test_files = paths.get('test_bin', [])
     test_matrix = pd.read_parquet(test_files) 
@@ -721,7 +1048,8 @@ if __name__ == "__main__":
         selected_model = 'FNN'
 
     print(f"\n[System] You selected: {selected_model}")
-    action_choice = input("Do you want to 'train' or 'test' or 'qimbal' or 'use' this model? ").strip().lower()
+    print('TRAINING IS REQUIRED BEFORE TESTING (whenever you select new data obviously otherwise not required)')
+    action_choice = input("Do you want to 'train' or 'test' or 'qimbal' or 'use' or 'eval' this model? ").strip().lower()
 
     if action_choice == 'train':
         
@@ -740,6 +1068,13 @@ if __name__ == "__main__":
         
     elif action_choice == 'qimbal':
         improve_qimbal(test_matrix, selected_model, mo_data, cleandata)
+        
+    elif action_choice == 'eval':
+        #just manually force a list on the one item in tesst files so we can concatenate in sorted below 
+        test_files = [test_files]
+        chronological_data = sorted(train_files + test_files)
+        walk_forward(chronological_data, selected_model, train_window_days = 20)
+        
         
     elif action_choice == 'use':
         print(f'Use the {selected_model} to experiment on orders, type "exit" if you want to stop')
@@ -831,8 +1166,8 @@ if __name__ == "__main__":
         print("="*50 + "\n")
         while True:
             
-            order_events = test_matrix[test_matrix['ID'] == 43663]
-            placements = order_events[order_events['Type'].isin([66, 83])]
+            # order_events = test_matrix[test_matrix['ID'] == 43663]
+            # placements = order_events[order_events['Type'].isin([66, 83])]
             
             print('Give Order ID from testdata you want to experiment on')
             print(f'Some Example IDs are {test_matrix["ID"].drop_duplicates().sample(5).values}')
@@ -844,13 +1179,13 @@ if __name__ == "__main__":
             if TSP.lower() == 'exit':
                 break
             try:
-                # Check how many times this specific ID appears in the full day
-                occurrences = test_matrix[test_matrix['ID'] == 43663]
-                print(occurrences['TOD'].describe())
-                single_order_eval(int(ID), int(TSP), test_matrix, use_model, features, scalar)
+                clean_ID = int(ID)
+                clean_TSP = int(TSP)
                 
             except ValueError:
                 print('Enter a valid ID or TOD (Integer Form)')
+                continue
+            single_order_eval(clean_ID, clean_TSP, test_matrix, use_model, features, scalar)
     else:
         exit()
     

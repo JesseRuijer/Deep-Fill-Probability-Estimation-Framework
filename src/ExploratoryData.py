@@ -139,7 +139,7 @@ def run_exploratory_analysis(rawdata, cleandata, regressormatrix,feature, target
     
     
     print('\n #########Some other metrics#############\n')
-    print(f" Total number of events on 1 April 2014 of INTC is {len(rawdata['Event'])}")
+    print(f" Total number of events on day of INTC is {len(rawdata['Event'])}")
     print(f' Frequency of different event types \n {freq_of_events}')
     print(f' Cancelation Ratio, i.e how many of total added vol in a day were cancelations is {(cancelation_ratio)*100} %')
     
@@ -148,11 +148,11 @@ def run_exploratory_analysis(rawdata, cleandata, regressormatrix,feature, target
     
     
     print(' \n #########Some Market Order Info #########\n')
-    print(f" Amount of Market Orders on 1 April 2014 of INTC is {len(rawdata['MO'])}")
-    print(f' Percentage of MO per total number of events on 1 April 2014 INTC is {(len(rawdata["MO"])/len(rawdata["Event"])*100):.04f}%')
+    print(f" Amount of Market Orders on day of INTC is {len(rawdata['MO'])}")
+    print(f' Percentage of MO per total number of events on day INTC is {(len(rawdata["MO"])/len(rawdata["Event"])*100):.04f}%')
     
     
-    print(f" Percentage of orders that did  walk the book for INTC on April 1 2024 is {(1 -((total_walk.sum())/(len(cleandata['MO'])))) * 100:.2f} % ")
+    print(f" Percentage of orders that did  walk the book for INTC on day is {(1 -((total_walk.sum())/(len(cleandata['MO'])))) * 100:.2f} % ")
     
     time_between_two_mos = rawdata['MO']['TOD'].diff(1)
     print(f'The max time between two market orders was {time_between_two_mos.max():.2f} ms')
@@ -436,11 +436,12 @@ if __name__ == "__main__":
    
 
     regressormatrix = data_regressors(rawdata, cleandata, clear_RAM=False, dont_include_full_trading_day = True)['Binary Matrix']
-    
+    print(regressormatrix.iloc[10000])
+    print(regressormatrix[regressormatrix['ID'] == 40143290]['UnitWeight'])
     run_exploratory_analysis(rawdata, cleandata, regressormatrix, feature = FEATURE_ANALYSE, target_time = TARGET_TIME)
-    plot_order_queue_position(890099, cleandata, TSP = 8006780)
+    plot_order_queue_position(40143290, cleandata, TSP = 0)
     from Functions import order_life
-    print(order_life(890099, rawdata))
+    print(order_life(40143290, rawdata))
     
     print(time_in_hours(34214635))
     

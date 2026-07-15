@@ -532,7 +532,7 @@ def data_regressors(rawdata, cleandata, clear_RAM = True, dont_include_full_trad
         InitialPlacementTime = ('TOD', 'min'),
         DeathTime = ('TOD', 'max'),
         Price = ('Price', 'first'),
-        Side = ('SideOfBook' , 'first'),
+        SideOfBook = ('SideOfBook' , 'first'),
         Vol = ('Vol', 'first')
         ).reset_index()     #To remove the native extra indexing pandas does
     
@@ -561,7 +561,7 @@ def data_regressors(rawdata, cleandata, clear_RAM = True, dont_include_full_trad
     heartbeats_df['Step'] = np.concatenate([np.arange(1, c+1) for c in heartbeat_counts]) * config.HEARTBEAT_INTERVAL   # creates col with 1 * 10000 as first entry, 2*10000 as second entry etc
     heartbeats_df['TOD'] = heartbeats_df['BaseTime'] + heartbeats_df['Step']
     
-    heartbeats_df = heartbeats_df.merge(hb_order_info[['ID' , 'Price', 'Side', 'InitialPlacementTime', 'Vol']], on='ID')
+    heartbeats_df = heartbeats_df.merge(hb_order_info[['ID' , 'Price', 'SideOfBook', 'InitialPlacementTime', 'Vol']], on='ID')
     
    #Look at last event if multiple events happened at same TOD, else programme will crash, ik this isnt optimal but theres not really any other way to sort them for the moment if they come in at the same tod i think
     # 1. Find exact row indices to keep by sorting ONLY the TOD column (Lightning fast)
@@ -610,13 +610,13 @@ def data_regressors(rawdata, cleandata, clear_RAM = True, dont_include_full_trad
     
     hb_order_info_with_market_general_features['DistanceToTouch'] = np.where( #np.where works like an if condition, its this, else do this
           
-          hb_order_info_with_market_general_features['Side'] == 1,
+          hb_order_info_with_market_general_features['SideOfBook'] == 1,
           hb_order_info_with_market_general_features['BestBid'] - hb_order_info_with_market_general_features['Price'],
           hb_order_info_with_market_general_features['Price'] - hb_order_info_with_market_general_features['BestAsk']
           
           )
     
-    hb_order_info_with_market_general_features['DistanceToMicroprice'] = np.where( hb_order_info_with_market_general_features['Side'] == 1, 
+    hb_order_info_with_market_general_features['DistanceToMicroprice'] = np.where( hb_order_info_with_market_general_features['SideOfBook'] == 1, 
                                                                                 hb_order_info_with_market_general_features['Microprice'] -  hb_order_info_with_market_general_features['Price'] ,  
                                                                                 hb_order_info_with_market_general_features['Price'] -  hb_order_info_with_market_general_features['Microprice'] )
     
@@ -643,7 +643,7 @@ def data_regressors(rawdata, cleandata, clear_RAM = True, dont_include_full_trad
         
         
     Vol_Ahead = np.where(
-        hb_order_info_with_market_general_features['Side'] == 1,
+        hb_order_info_with_market_general_features['SideOfBook'] == 1,
         total_buy_vol_ahead,
         total_sell_vol_ahead
         )
@@ -655,7 +655,7 @@ def data_regressors(rawdata, cleandata, clear_RAM = True, dont_include_full_trad
     hb_order_info_with_market_general_features['LogVolAhead'] = np.log1p(hb_order_info_with_market_general_features['VolAhead'])  
     
     Vol_At_Price = np.where(
-        hb_order_info_with_market_general_features['Side'] == 1,
+        hb_order_info_with_market_general_features['SideOfBook'] == 1,
         total_buy_vol_at_price,
         total_sell_vol_at_price
         )
@@ -754,7 +754,7 @@ def data_regressors(rawdata, cleandata, clear_RAM = True, dont_include_full_trad
     #Some Dynamic events that require dynamic features
     #This feature is positive if the market is moving away from you and negative if its moving towards you
     eventdeltadistancetomicroprice = np.where(
-        final_state_df['Side'] == 1, 
+        final_state_df['SideOfBook'] == 1, 
         final_state_df['EventDeltaMicroprice'], 
         -final_state_df['EventDeltaMicroprice']
     )
@@ -763,7 +763,7 @@ def data_regressors(rawdata, cleandata, clear_RAM = True, dont_include_full_trad
     
     #Distance to touch moves with the Bid for Buys, and Ask for Sells
     final_state_df['EventDeltaDistanceToTouch'] = np.where(
-        final_state_df['Side'] == 1, 
+        final_state_df['SideOfBook'] == 1, 
         final_state_df['EventDeltaBestBid'], 
         -final_state_df['EventDeltaBestAsk']
     )
@@ -944,7 +944,7 @@ def data_regressors(rawdata, cleandata, clear_RAM = True, dont_include_full_trad
     #Cols that either dont have necessary info or to prevent data leaking i.e we cant train on totalexecuted after since that happnes in the future
 
     cols_to_drop = ['ActiveCanceledVol', 'BaseTime', 'ExecutedVol', 'ExpiredVol','InitialPlacementTime',
-                    'Side', 'SideOfBook_past', 'Step', 'TotalActiveCanceledAfter', 'TotalExecutedAfter', 'TotalExpiredAfter', 'TotalFailureAfter', 'TOD_+_1000', 'TOD_past', 'LogVolAhead_past',
+                    'SideOfBook_past', 'Step', 'TotalActiveCanceledAfter', 'TotalExecutedAfter', 'TotalExpiredAfter', 'TotalFailureAfter', 'TOD_+_1000', 'TOD_past', 'LogVolAhead_past',
                     'DistanceToTouch_past', 
                     #'MicroMidDeviation_past' 
                     'MaxVol', 'SumVol' ,'DistanceToMicroprice_past', 'Is_Partial_Fill', 'Is_Partial_Cancel',

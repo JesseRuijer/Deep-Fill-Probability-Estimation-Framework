@@ -187,8 +187,8 @@ def get_ml_training_paths():
         if "MULTI" in f.upper(): paths['train_multi'].append(f)
 
     for f in test_files:
-        if "BINARY" in f.upper(): paths['test_bin'] = f
-        if "MULTI" in f.upper(): paths['test_multi'] = f
+        if "BINARY" in f.upper(): paths['test_bin'].append(f)
+        if "MULTI" in f.upper(): paths['test_multi'].append(f)
 
     # =========================================================================
     # 3. SAVE CHOICES TO CACHE FOR NEXT TIME

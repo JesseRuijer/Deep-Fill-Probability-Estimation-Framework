@@ -37,7 +37,7 @@ TARGET = 'FillNoFill'
 #These constants below are based on the ExploratoryDataScript results atm, but in the future could write something to extract it immediatley  
 
 HEARTBEAT_INTERVAL = 1000
-MAX_HEARTBEATS = 50 #Since exponential decay in fill prob as order been placed for longer, and to save RAM, need this implementation to only have a max of 60 heartbeats for a single order ID, but if i have more computing power, then this could be increased
+MAX_HEARTBEATS = 50 #Since exponential decay in fill prob as order been placed for longer, and to save RAM, need this implementation to only have a max of 50 heartbeats for a single order ID, but if i have more computing power, then this could be increased
 
 LOOKBACK_WINDOW = 3000
 
@@ -117,6 +117,7 @@ LOGISTIC_MODEL_FEATURES = [
     'LogVolAhead',
     #'QueuePositionRatio',
     'TimeSincePlacement',
+    'Is_Initial_Placement',
          
      #Before final submission train one more time also including this below:
      #'Is_Initial_Placement',
@@ -286,6 +287,7 @@ LGBM_MODEL_FEATURES = [
      'LogVolAhead',
      'QueuePositionRatio',
      'TimeSincePlacement',
+     'Is_Initial_Placement',
      
      #Before final submission train one more time also including this below:
      #'Is_Initial_Placement',
