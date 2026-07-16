@@ -35,18 +35,23 @@ def train_logistic_model(X_train, y_train, weights, X_calib, y_calib, weights_ca
         
     scalar = StandardScaler(copy = False)   #Apply standardscalar without needing a copy, saves ram 
     X_train_standardised = scalar.fit_transform(X_train.astype(np.float32, copy = False)) #Here we fit and transform
+    base_logistic_model = LogisticRegression(**params) # max iter higher then the standard 100 to take into account the noisy data we have
+        
+    #Saved the base model as well here, maybe thats useful for log odss not sure
+    base_logistic_model.fit(X_train_standardised, y_train, sample_weight = weights)
+    
+    if for_tuning: #This is just for speed optimsation for using Optuna as for that you just need the base model so dont want to waste time calibrating
+        return base_logistic_model, None, scalar
+    
+    
     
     X_calib_scaled = scalar.transform(X_calib.astype(np.float32, copy = False)) #Here we only transform and not fit. its cuz transform just applies the ruler and fit actually calculates it and we only want to calculate on the training data and not on the testing data
     
    #Logistic regression 
    #Might use somethiing of platt scaling to wrap the log res model as log res doesnt work very well with data where the output is very skewed, i.e here we have much more cancels then fills
-    base_logistic_model = LogisticRegression(**params) # max iter higher then the standard 100 to take into account the noisy data we have
+    
         
-    #Saved the base model as well here, maybe thats useful for log odss not sure
-    base_logistic_model.fit(X_train_standardised, y_train, sample_weight = weights)
-        
-    if for_tuning: #This is just for speed optimsation for using Optuna as for that you just need the base model so dont want to waste time calibrating
-        return base_logistic_model, None, scalar
+   
 
     
     calibrated_model = CalibratedClassifierCV(estimator=base_logistic_model, method='isotonic', 

@@ -32,7 +32,7 @@ DONT_INCLUDE_FULL_TRAINING_DAY = False
 #just has some project wide constans 
 
 TARGET = 'FillNoFill'
-
+TICK = 'INTC'
 
 #These constants below are based on the ExploratoryDataScript results atm, but in the future could write something to extract it immediatley  
 
@@ -112,15 +112,12 @@ LOGISTIC_MODEL_FEATURES = [
     #'LOTrailingPlaceExecuteRatio',
 
     # 6. Dynamic Order Metrics (Heartbeat Engine)
-    #'DistanceToTouch',
+    'DistanceToTouch',
     'DistanceToMicroprice',
     'LogVolAhead',
     #'QueuePositionRatio',
     'TimeSincePlacement',
     'Is_Initial_Placement',
-         
-     #Before final submission train one more time also including this below:
-     #'Is_Initial_Placement',
 
 
     # 7. Clock-Time Deltas (The 1-Second Lookbacks)
@@ -288,9 +285,7 @@ LGBM_MODEL_FEATURES = [
      'QueuePositionRatio',
      'TimeSincePlacement',
      'Is_Initial_Placement',
-     
-     #Before final submission train one more time also including this below:
-     #'Is_Initial_Placement',
+
 
      # 7. Clock-Time Deltas (The 1-Second Lookbacks)
      #'ClockDeltaMidprice',

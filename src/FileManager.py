@@ -177,8 +177,8 @@ def get_ml_training_paths():
 
     # Set up empty slots
     paths = {
-        'train_bin': [], 'test_bin': None, 
-        'train_multi': [], 'test_multi': None
+        'train_bin': [], 'test_bin': [], 
+        'train_multi': [], 'test_multi': []
     }
 
     # Automatically sort the files you highlighted into the right slots

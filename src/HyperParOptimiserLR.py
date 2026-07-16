@@ -47,11 +47,11 @@ gc.collect()
 train_matrix = train_matrix.sample(frac = 0.01, random_state = 67)
 val_matrix = pd.read_parquet(val_file) #Validation data different from training and testing data ofc
 
-X_train = train_matrix[config.LGBM_MODEL_FEATURES]
+X_train = train_matrix[config.LOGISTIC_MODEL_FEATURES]
 y_train = train_matrix[config.TARGET]
 weights_train = train_matrix['UnitWeight']
 
-X_val = val_matrix[config.LGBM_MODEL_FEATURES]
+X_val = val_matrix[config.LOGISTIC_MODEL_FEATURES]
 y_val = val_matrix[config.TARGET]
 val_weights = val_matrix['UnitWeight']
 

@@ -47,7 +47,7 @@ def train_lgbm_model(X_train, y_train, weights, X_calib, y_calib, weights_calib 
     
     #kwargs is just a name for keyword arguments which is somthing like sample_weight = weight inside the parameters of a function
     
-    # fit_kwargs = {'sample_weight': weights}
+    fit_kwargs = {'sample_weight': weights}
     
     # #Only need the below when running optuna 
     
@@ -56,10 +56,10 @@ def train_lgbm_model(X_train, y_train, weights, X_calib, y_calib, weights_calib 
     #     fit_kwargs['callbacks'] = [early_stopping(stopping_rounds = 50)]
     #     if val_weights is not None:
     #         fit_kwargs['eval_sample_weight'] = [val_weights]
-    # base_lgbm_model = base_lgbm.fit(X_train, y_train, **fit_kwargs)
+    base_lgbm_model = base_lgbm.fit(X_train, y_train, **fit_kwargs)
     
-    # if for_tuning: #This is just for speed optimsation for using Optuna as for that you just need the base model so dont want to waste time calibrating
-    #     return base_lgbm_model
+    if for_tuning: #This is just for speed optimsation for using Optuna as for that you just need the base model so dont want to waste time calibrating
+        return base_lgbm_model
     
     base_lgbm_model = base_lgbm.fit(X_train, y_train, sample_weight = weights)
     

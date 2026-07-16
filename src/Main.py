@@ -169,6 +169,8 @@ def run_project(model_choice, job):
             model_filepath = models_dir / config.CURRENT_LR_MODEL
             
             joblib.dump(model_package, model_filepath)
+            del train_X, train_Y, train_w, calib_X, calib_y, calib_weights
+            gc.collect()
             
             print(f'Succesfully saved logistic regression models to  {model_filepath}')
          
@@ -207,8 +209,7 @@ def run_project(model_choice, job):
                 is_multi = False
             )
             
-        del train_X, train_Y, train_w, calib_X, calib_y, calib_weights
-        gc.collect()
+
         
     elif model_choice == 'lgbm':
         
@@ -275,6 +276,8 @@ def run_project(model_choice, job):
               joblib.dump(model_package, model_filepath)
             
               print(f'Succesfully saved LGBM model to  {model_filepath}')
+              del train_X, train_Y, train_w, calib_X, calib_y, calib_weights
+              gc.collect()
               
               
           if job == 'test':
@@ -358,6 +361,8 @@ def run_project(model_choice, job):
                  }
             
             joblib.dump(metadata_package, metadata_filepath)
+            del train_X, train_Y, train_w, calib_X, calib_y, calib_weights
+            gc.collect()
             
             print(f'Succesfully saved FNN weights to  {model_filepath}')
         if job == 'test':
@@ -430,15 +435,15 @@ if __name__ == "__main__":
     
     #When theres new data uncomment this below and run once to store the data, if running same data leave this commented
     
-    save_data()
+    #save_data()
     
    
-    # print('What model to use')
-    # model_choice = input('"LR" , "LGBM", "FNN"').strip().lower()
-    # print('Do you want to train or test model')
-    # job = input('"train", "test"')
+    print('What model to use')
+    model_choice = input('"LR" , "LGBM", "FNN"').strip().lower()
+    print('Do you want to train or test model')
+    job = input('"train", "test"')
     #Only run the whole project if explicitly call main.py
-    #run_project(model_choice, job)
+    run_project(model_choice, job)
     
 
 

@@ -184,15 +184,31 @@ def train(train_files, train_matrix, model):
     elif model == 'LGBM':
           
         from LightGBMEngine import train_lgbm_model
+        
+        needed_cols = config.LGBM_MODEL_FEATURES + ['UnitWeight', config.TARGET]
+        
+        if train_matrix is None:
+            train_frames = [pd.read_parquet(f, columns = needed_cols).astype(np.float32) for f in train_files]
+            train_matrix = pd.concat(train_frames, ignore_index = True)
+            del train_frames
+            gc.collect()
             
         #Copy Required for final safety check below
-        lgbm_X = train_matrix[config.LGBM_MODEL_FEATURES].copy()
-        lgbm_Y = train_matrix[config.TARGET].copy()
-        lgbm_w = train_matrix['UnitWeight'].copy()
+        print('Pass1')
+        #it was ram spiking in the three lines below here when i used to use copy() so manage ram more efficiently now
+        #use .pop gets item and then removes it from df, so by doing that, we dont need to copy anything since removing these two immediatley isolates lr_X
+        lgbm_Y = train_matrix.pop(config.TARGET)
+        lgbm_w = train_matrix.pop('UnitWeight')
         
-        # Free up the massive original train_matrix from RAM immediately
-        del train_matrix
+        
+        lgbm_X = train_matrix
+        
         gc.collect()
+      
+        # Final safety check
+        print('Pass3')
+        lgbm_X.replace([np.inf, -np.inf], 0, inplace=True)
+        print('Pass4')
         
       
         # Final safety check
@@ -236,20 +252,30 @@ def train(train_files, train_matrix, model):
     elif model == 'LR':
           
         from LogisticRegressionEngine import train_logistic_model
+        needed_cols = config.LOGISTIC_MODEL_FEATURES + ['UnitWeight', config.TARGET]
+        
+        if train_matrix is None:
+            train_frames = [pd.read_parquet(f, columns = needed_cols).astype(np.float32) for f in train_files]
+            train_matrix = pd.concat(train_frames, ignore_index = True)
+            del train_frames
+            gc.collect()
             
         #Copy Required for final safety check below
-        lr_X = train_matrix[config.LOGISTIC_MODEL_FEATURES].copy()
-        lr_Y = train_matrix[config.TARGET].copy()
-        lr_w = train_matrix['UnitWeight'].copy()
+        print('Pass1')
+        #it was ram spiking in the three lines below here when i used to use copy() so manage ram more efficiently now
+        #use .pop gets item and then removes it from df, so by doing that, we dont need to copy anything since removing these two immediatley isolates lr_X
+        lr_Y = train_matrix.pop(config.TARGET)
+        lr_w = train_matrix.pop('UnitWeight')
         
-        # Free up the massive original train_matrix from RAM immediately
-        del train_matrix
+        
+        lr_X = train_matrix
+
         gc.collect()
-        
       
         # Final safety check
+        print('Pass3')
         lr_X.replace([np.inf, -np.inf], 0, inplace=True)
-        
+        print('Pass4')
         #use 80% for training and 20% to calibrate on, in chronological order since we have timeseries data 
         split_idx = int(len(lr_X) * .8)
     
@@ -538,7 +564,7 @@ def improve_qimbal(test_matrix, model, mo_data, cleandata):
     summary_prob.plot(kind='bar', figsize=(9, 6), color=['darkblue', 'darkred'], edgecolor='black')
 
     
-    plt.title("Trade Vol vs. ProbQImbal - INTC")
+    plt.title(f"Trade Vol vs. ProbQImbal - config.TICK for {model}")
     plt.xlabel("Imbalance Level")
     plt.ylabel("Vol of Trades")
     plt.xticks(rotation=0)
@@ -554,7 +580,7 @@ def improve_qimbal(test_matrix, model, mo_data, cleandata):
     summary_reg.columns = ['Market Buys', 'Market Sells'] 
       
     summary_reg.plot(kind='bar', figsize=(9, 6), color=['darkblue', 'darkred'], edgecolor='black')
-    plt.title("Trade Vol vs. RegularQImbal - INTC")
+    plt.title(f"Trade Vol vs. RegularQImbal - config.TICK for {model}")
     plt.xlabel("Imbalance Level")
     plt.ylabel("Vol of Trades")
     plt.xticks(rotation=0)
@@ -575,7 +601,7 @@ def improve_qimbal(test_matrix, model, mo_data, cleandata):
     
     #Plotting ProbQImbal
     
-    plt.title("Trade Vol vs. ProbQImbal - INTC")
+    plt.title(f"Trade Vol vs. ProbQImbal - config.TICK for {model}")
     plt.xlabel("Imbalance Level")
     plt.ylabel("Vol of Trades")
     plt.xticks(rotation=0)
@@ -591,7 +617,7 @@ def improve_qimbal(test_matrix, model, mo_data, cleandata):
     #For MO BorS == 1 -> sell
       
     summary_reg.plot(kind='bar', figsize=(9, 6), color=['darkblue', 'darkred'], edgecolor='black')
-    plt.title("Trade Vol vs. RegularQImbal - INTC")
+    plt.title(f"Trade Vol vs. RegularQImbal - config.TICK for {model}")
     plt.xlabel("Imbalance Level")
     plt.ylabel("Vol of Trades")
     plt.xticks(rotation=0)
@@ -921,9 +947,7 @@ def plot_monthly_sum(monthly_merged, selected_model):
     auc_probq = roc_auc_score(is_buy, monthly_merged['ProbQImbal']) 
     auc_increase = (auc_probq - auc_regular) / auc_regular
     print(f' Monthly Regular AUC is {auc_regular} and Monthly Improved AUC is {auc_probq}, this is a {(auc_increase) * 100}% increase')
-    
-    
-    bins = [-1.0, -1/3, 1/3, 1.0]
+
     labels = ['Sell-Heavy', 'Neutral', 'Buy-Heavy']
     #plotting with quantiles
     monthly_merged['Imbalance_Bin'] = pd.qcut(monthly_merged['ProbQImbal'], q=3, labels=labels)
@@ -934,7 +958,7 @@ def plot_monthly_sum(monthly_merged, selected_model):
     
     #Plotting ProbQImbal
     
-    plt.title("Trade Vol vs. ProbQImbal Month - INTC")
+    plt.title(f"Trade Vol vs. ProbQImbal Month - config.TICK for {selected_model}")
     plt.xlabel("Imbalance Level")
     plt.ylabel("Vol of Trades")
     plt.xticks(rotation=0)
@@ -949,7 +973,7 @@ def plot_monthly_sum(monthly_merged, selected_model):
     #For MO BorS == 1 -> sell
       
     summary_reg.plot(kind='bar', figsize=(9, 6), color=['darkblue', 'darkred'], edgecolor='black')
-    plt.title("Trade Vol vs. RegularQImbal Month - INTC")
+    plt.title(f"Trade Vol vs. RegularQImbal Month - config.TICK for {selected_model}")
     plt.xlabel("Imbalance Level")
     plt.ylabel("Vol of Trades")
     plt.xticks(rotation=0)
@@ -957,10 +981,35 @@ def plot_monthly_sum(monthly_merged, selected_model):
     plt.tight_layout()
     plt.show()
     
+    #something going wrong in passing monthly merged to test_model 
     #Plotting the other performance stuff for the month 
-    test_model_wrap(test_matrix, selected_model)
+    test_model_wrap(monthly_merged, selected_model)
     return None
- 
+
+def get_raw_paths_from_parquet(file_path):
+    #in filemanager my raw path stuff was for one while which i wanted to keep for all my other stuff, but for the sequential training that needs to be in a function i can call in walkforward below
+    filename = os.path.basename(file_path)
+    
+    # Example filename: "INTC_BINARY_2014_07_08.parquet"
+    name_without_ext = filename.replace('.parquet', '')
+    parts = name_without_ext.split('_')
+    
+    ticker = parts[0]
+    # Reconstruct the original 8-digit date string (YYYYMMDD) from the split formatted date
+    date = parts[2] + parts[3] + parts[4]
+    
+    script_dir = Path(__file__).resolve().parent
+    raw_dir = script_dir.parent / 'data' / 'raw' / f'{ticker}_NASDAQ'
+    
+    main_raw_path = raw_dir / f'{ticker}_{date}_NASDAQ.mat'
+    mo_raw_path = raw_dir / 'MO' / f'{ticker}_{date}.mat'
+    
+    if not main_raw_path.exists() or not mo_raw_path.exists():
+        print(f"WARNING: Could not locate raw files for {filename}")
+        
+    return str(main_raw_path), str(mo_raw_path)
+    
+    
 def walk_forward(all_data_paths, selected_model, train_window_days = 20):
     
     monthly_dataframes = []
@@ -972,13 +1021,8 @@ def walk_forward(all_data_paths, selected_model, train_window_days = 20):
         train_files = all_data_paths[i : i + train_window_days]
         test_file = all_data_paths[i + train_window_days]
        
-        train_frames = [pd.read_parquet(f) for f in train_files]
-        train_matrix = pd.concat(train_frames, ignore_index = True)
-       
+        use_model, scalar = train(train_files, None, selected_model)
         
-        use_model, scalar = train(train_files, train_matrix, selected_model)
-        
-        del train_frames, train_matrix
         gc.collect()
         
         test_matrix = pd.read_parquet(test_file)
@@ -991,7 +1035,8 @@ def walk_forward(all_data_paths, selected_model, train_window_days = 20):
         elif selected_model == 'LGBM':
             features = config.LGBM_MODEL_FEATURES
         
-        raw_data_path, raw_mo_path = get_data_paths()
+        raw_data_path, raw_mo_path = get_raw_paths_from_parquet(test_file)
+        
         rawdata = import_data(raw_data_path, raw_mo_path)
         cleandata = clean_data(rawdata)
         mo_data = rawdata['MO']
@@ -1022,12 +1067,7 @@ if __name__ == "__main__":
     #the second argument in .get is just an empty list it will proceed with if it cant find the list belonging to the key in the first argument for safety reasons
     train_files = paths.get('train_bin', [])
     test_files = paths.get('test_bin', [])
-    test_matrix = pd.read_parquet(test_files) 
-    from FileManager import get_data_paths
-    data_path, mo_path = get_data_paths()
-    rawdata = import_data(data_path, mo_path)
-    mo_data = rawdata['MO']
-    cleandata = clean_data(rawdata)
+   
     
     model_choice = ''
     while model_choice not in ['1', '2', '3']:
@@ -1050,6 +1090,14 @@ if __name__ == "__main__":
     print(f"\n[System] You selected: {selected_model}")
     print('TRAINING IS REQUIRED BEFORE TESTING (whenever you select new data obviously otherwise not required)')
     action_choice = input("Do you want to 'train' or 'test' or 'qimbal' or 'use' or 'eval' this model? ").strip().lower()
+    
+    if action_choice in ['test', 'qimbal', 'use']:
+        test_matrix = pd.read_parquet(test_files) 
+        from FileManager import get_data_paths
+        data_path, mo_path = get_data_paths()
+        rawdata = import_data(data_path, mo_path)
+        mo_data = rawdata['MO']
+        cleandata = clean_data(rawdata)
 
     if action_choice == 'train':
         
@@ -1059,7 +1107,7 @@ if __name__ == "__main__":
             train_frames.append(pd.read_parquet(f))
             
         train_matrix = pd.concat(train_frames, ignore_index = True)
-        train(train_files, train_matrix, selected_model)
+        train(train_files, None, selected_model)
         
         
     elif action_choice == 'test':
@@ -1071,7 +1119,6 @@ if __name__ == "__main__":
         
     elif action_choice == 'eval':
         #just manually force a list on the one item in tesst files so we can concatenate in sorted below 
-        test_files = [test_files]
         chronological_data = sorted(train_files + test_files)
         walk_forward(chronological_data, selected_model, train_window_days = 20)
         

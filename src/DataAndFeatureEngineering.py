@@ -497,6 +497,14 @@ def data_regressors(rawdata, cleandata, clear_RAM = True, dont_include_full_trad
     Regressors_df['ActiveCanceledVol'] = np.where(((mask_cancel.values) & (Regressors_df['TOD'].values < config.MARKET_CLOSE_TIME)), Regressors_df['Vol'].values, 0)
     Regressors_df['ExpiredVol'] = np.where(((mask_cancel.values) & (Regressors_df['TOD'].values >= config.MARKET_CLOSE_TIME)), Regressors_df['Vol'].values, 0)
     
+    #Saving total vol of specific order types for later
+    Regressors_df['TotalOrderExecutedVol'] = Regressors_df.groupby('ID')['ExecutedVol'].transform('sum')
+    Regressors_df['TotalOrderCanceledVol'] = Regressors_df.groupby('ID')['ActiveCanceledVol'].transform('sum')
+    Regressors_df['TotalOrderExpiredVol'] = Regressors_df.groupby('ID')['ExpiredVol'].transform('sum')
+    Regressors_df['TotalOrderFailureVol'] = Regressors_df['TotalOrderCanceledVol'] + Regressors_df['TotalOrderExpiredVol']
+
+    
+    
     #Remaining Vol = (Total Order Sum) - (Running Sum)
     Regressors_df['TotalExecutedAfter'] = Regressors_df.groupby('ID')['ExecutedVol'].transform('sum') - Regressors_df.groupby('ID')['ExecutedVol'].cumsum()
     Regressors_df['TotalActiveCanceledAfter'] = Regressors_df.groupby('ID')['ActiveCanceledVol'].transform('sum') - Regressors_df.groupby('ID')['ActiveCanceledVol'].cumsum()
@@ -683,7 +691,7 @@ def data_regressors(rawdata, cleandata, clear_RAM = True, dont_include_full_trad
 
     #Target inheritance for merging afterwards
     
-    order_event_targets = state_snapshot_df[['TOD', 'ID','TotalExecutedAfter', 'TotalFailureAfter', 'TotalActiveCanceledAfter', 'TotalExpiredAfter']].copy()
+    order_event_targets = state_snapshot_df[['TOD', 'ID','TotalExecutedAfter', 'TotalFailureAfter', 'TotalActiveCanceledAfter', 'TotalExpiredAfter', 'TotalOrderExecutedVol', 'TotalOrderFailureVol']].copy()
     order_event_targets = order_event_targets.sort_values('TOD').drop_duplicates(subset = ['ID', 'TOD'], keep = 'last')
     
     hb_order_info_with_market_general_features = hb_order_info_with_market_general_features.sort_values('TOD')
@@ -795,7 +803,6 @@ def data_regressors(rawdata, cleandata, clear_RAM = True, dont_include_full_trad
     final_state_df.fillna({
         'EventDeltaDistanceToMicroprice': 0 ,
         'EventDeltaDistanceToTouch': 0,
-        'DeltaLogVolAhead': 0, 
         'ClockDeltaDistanceToMicroprice': 0,
         'ClockDeltaLogVolAhead': 0, 
         'ClockDeltaDistanceToTouch': 0,
@@ -881,17 +888,18 @@ def data_regressors(rawdata, cleandata, clear_RAM = True, dont_include_full_trad
     fills_bin_df[config.TARGET] = 1
     
     #Full logic of the weighting explained in notebook
-    
-    fills_bin_df['MaxVol'] = fills_bin_df.groupby('ID')['TotalExecutedAfter'].transform('max') #Max here just means since each entry is like at a new snapshot, the max is just teh first entry, i.e the total amount that got filled etc. and .transfrom just gives back a new row with the general max in each entry
+    #max should just be the sum of the fills not repeatedly summed per snapshot
+    fills_bin_df['OrderVolWithoutSnapShots'] = final_state_df['TotalOrderExecutedVol'].fillna(0)
     fills_bin_df['SumVol'] = fills_bin_df.groupby('ID')['TotalExecutedAfter'].transform('sum')
-    fills_bin_df['UnitWeight'] = (fills_bin_df['TotalExecutedAfter'] / fills_bin_df['SumVol']) * fills_bin_df['MaxVol']
+    fills_bin_df['UnitWeight'] = (fills_bin_df['TotalExecutedAfter'] / fills_bin_df['SumVol']) * fills_bin_df['OrderVolWithoutSnapShots']
 
     # Generate the Failure Rows
     fails_bin_df = final_state_df[final_state_df['TotalFailureAfter'] > 0].copy()
     fails_bin_df[config.TARGET] = 0
-    fails_bin_df['MaxVol'] = fails_bin_df.groupby('ID')['TotalFailureAfter'].transform('max') #Max here just means since each entry is like at a new snapshot, the max is just teh first entry, i.e the total amount that got filled etc. and .transfrom just gives back a new row with the general max in each entry
+     
+    fails_bin_df['OrderVolWithoutSnapShots'] = final_state_df['TotalOrderFailureVol'].fillna(0)
     fails_bin_df['SumVol'] = fails_bin_df.groupby('ID')['TotalFailureAfter'].transform('sum')
-    fails_bin_df['UnitWeight'] = (fails_bin_df['TotalFailureAfter'] / fails_bin_df['SumVol']) * fails_bin_df['MaxVol']
+    fails_bin_df['UnitWeight'] = (fails_bin_df['TotalFailureAfter'] / fails_bin_df['SumVol']) * fails_bin_df['OrderVolWithoutSnapShots']
 
 
 
@@ -943,11 +951,11 @@ def data_regressors(rawdata, cleandata, clear_RAM = True, dont_include_full_trad
     
     #Cols that either dont have necessary info or to prevent data leaking i.e we cant train on totalexecuted after since that happnes in the future
 
-    cols_to_drop = ['ActiveCanceledVol', 'BaseTime', 'ExecutedVol', 'ExpiredVol','InitialPlacementTime',
+    cols_to_drop = ['ActiveCanceledVol', 'BaseTime', 'ExecutedVol', 'ExpiredVol','InitialPlacementTime','TotalOrderCanceledVol' , 'TotalOrderExpiredVol',
                     'SideOfBook_past', 'Step', 'TotalActiveCanceledAfter', 'TotalExecutedAfter', 'TotalExpiredAfter', 'TotalFailureAfter', 'TOD_+_1000', 'TOD_past', 'LogVolAhead_past',
                     'DistanceToTouch_past', 
                     #'MicroMidDeviation_past' 
-                    'MaxVol', 'SumVol' ,'DistanceToMicroprice_past', 'Is_Partial_Fill', 'Is_Partial_Cancel',
+                    'TotalOrderFailureVol', 'TotalOrderExecutedVol',  'SumVol' ,'DistanceToMicroprice_past', 'Is_Partial_Fill', 'Is_Partial_Cancel',
                     'VolAhead', 'Midprice_past', 'BestBid_past', 'BestAsk_past', 'BidSize_past', 'AskSize_past', 'Microprice_past', 'OrderFlowImbalance_past', 'QImbalance_past'
                     ]
     

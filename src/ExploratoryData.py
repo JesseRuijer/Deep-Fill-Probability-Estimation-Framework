@@ -49,7 +49,7 @@ def run_exploratory_analysis(rawdata, cleandata, regressormatrix,feature, target
     
     plt.xlabel("Price")
     plt.ylabel("Vol")
-    plt.title(f"Vol of Best Bid Vol and Best Ask Vol at {time_in_hours(TARGET_TIME)}")
+    plt.title(f"Vol of Best Bid Vol and Best Ask Vol at {time_in_hours(target_time)}")
     plt.legend()
     plt.show()
     
