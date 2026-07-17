@@ -6,12 +6,6 @@ Created on Thu Jun 11 10:42:59 2026
 @author: jesseruijer
 """
 
-#Importing libraries,classes, functions from other scripts
-
-
-#Make it multi class, i.e first class is fill, second is active cancel and third is expired and also have to use softmax function then 
-#But it probs uses that automatically (thats true it automatically uses softmax when you give it three distinct output vars), but still ahve to then change my output variable y to like have it seperate for logistic and with three levels for lightgbm and neural net
-
 import lightgbm as lgb 
 from lightgbm import early_stopping
 from sklearn.calibration import CalibratedClassifierCV
@@ -49,13 +43,14 @@ def train_lgbm_model(X_train, y_train, weights, X_calib, y_calib, weights_calib 
     
     fit_kwargs = {'sample_weight': weights}
     
-    # #Only need the below when running optuna 
+    #Only need the below when running optuna 
     
-    # if X_val is not None and y_val is not None:
-    #     fit_kwargs['eval_set'] = [(X_val, y_val)]
-    #     fit_kwargs['callbacks'] = [early_stopping(stopping_rounds = 50)]
-    #     if val_weights is not None:
-    #         fit_kwargs['eval_sample_weight'] = [val_weights]
+    if X_val is not None and y_val is not None:
+        fit_kwargs['eval_set'] = [(X_val, y_val)]
+        fit_kwargs['callbacks'] = [early_stopping(stopping_rounds = 50)]
+        if val_weights is not None:
+            fit_kwargs['eval_sample_weight'] = [val_weights]
+            
     base_lgbm_model = base_lgbm.fit(X_train, y_train, **fit_kwargs)
     
     if for_tuning: #This is just for speed optimsation for using Optuna as for that you just need the base model so dont want to waste time calibrating

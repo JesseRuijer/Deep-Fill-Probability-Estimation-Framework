@@ -6,6 +6,8 @@ Created on Wed Jul  8 14:22:54 2026
 @author: jesseruijer
 """
 
+#Standalone script that runs by itself and has all the functionality of the code base 
+
 import pandas as pd
 import numpy as np
 import os
@@ -15,7 +17,6 @@ import gc
 import random
 from pathlib import Path
 from sklearn.preprocessing import StandardScaler
-
 import config
 from sklearn.metrics import roc_auc_score
 from ModelEvaluation import test_model
@@ -26,10 +27,11 @@ from DataAndFeatureEngineering import import_data, clean_data, data_regressors
 os.environ["KMP_DUPLICATE_LIB_OK"] = "TRUE"
 os.environ["OMP_NUM_THREADS"] = "1"
 
-#####Use either lgbm or fnn to get outputs and performance on selected scripts and ID
-
 
 def prep_data_daily(file_path, file_path_mo):
+    
+    #copy of function in main but didnt want to import it from there since thats ugly habit
+    
     print(f'Runs full pipeline for {os.path.basename(file_path)}')
     rawdata = import_data(file_path, file_path_mo)
     cleandata = clean_data(rawdata)
@@ -44,6 +46,9 @@ def prep_data_daily(file_path, file_path_mo):
         }
 
 def save_data():
+    
+    #copy of function in main but didnt want to import it from there since thats ugly habit
+    
     print('Builds parquet files for easy storage and optimisation')
     
     batches_to_save = get_batch_data_paths()
@@ -115,7 +120,7 @@ def train(train_files, train_matrix, model):
             
             del df, X_train_raw
             gc.collect()
-
+        print('Pass1')
         model = UserFNN(input_size = input_size).to(device)
          
         criterion = nn.BCEWithLogitsLoss(reduction = 'none')    # BCE = Binary Cross Entropy = Logloss, this is just the scoring metric and saying reducion is none, it doesnt do any weighting by iteself it just spits out all the raw values and then with my manual weights i can do the weighint later
@@ -157,7 +162,8 @@ def train(train_files, train_matrix, model):
                  
                  del df, X_train_scaled, y_train, w_train, train_dataset, train_loader
                  gc.collect()
-             print(f' Epoch {epoch + 1} / {EPOCHS} \n')       
+             print(f' Epoch {epoch + 1} / {EPOCHS} \n')   
+        print('Pass2')
         wrapped_fnn = PyTorchSklearnWrapper(model, device)
        
         
@@ -175,7 +181,7 @@ def train(train_files, train_matrix, model):
             'features': config.FNN_MODEL_FEATURES,
             'scalar': scalar
             }
-      
+        print('Pass3')
         joblib.dump(metadata_package, metadata_filepath)
       
         print(f'Succesfully saved FNN weights to  {model_filepath}')
@@ -200,19 +206,16 @@ def train(train_files, train_matrix, model):
         lgbm_Y = train_matrix.pop(config.TARGET)
         lgbm_w = train_matrix.pop('UnitWeight')
         
-        
+        train_matrix = train_matrix[config.LGBM_MODEL_FEATURES]
         lgbm_X = train_matrix
         
         gc.collect()
       
         # Final safety check
+        print('Pass2')
+        lgbm_X.replace([np.inf, -np.inf], 0, inplace=True)
         print('Pass3')
-        lgbm_X.replace([np.inf, -np.inf], 0, inplace=True)
-        print('Pass4')
-        
-      
-        # Final safety check
-        lgbm_X.replace([np.inf, -np.inf], 0, inplace=True)
+
         
         #use 80% for training and 20% to calibrate on, in chronological order since we have timeseries data 
         split_idx = int(len(lgbm_X) * .8)
@@ -227,7 +230,7 @@ def train(train_files, train_matrix, model):
         
         #Training model, can be commented when saved model    
         base_lgbm, calibrated_lgbm = train_lgbm_model(train_X, train_Y, train_w, calib_X, calib_y, calib_weights)
-     
+        print('Pass4')
         model_package = {
          
           'base_model': base_lgbm,
@@ -264,18 +267,19 @@ def train(train_files, train_matrix, model):
         print('Pass1')
         #it was ram spiking in the three lines below here when i used to use copy() so manage ram more efficiently now
         #use .pop gets item and then removes it from df, so by doing that, we dont need to copy anything since removing these two immediatley isolates lr_X
+       
         lr_Y = train_matrix.pop(config.TARGET)
         lr_w = train_matrix.pop('UnitWeight')
-        
+        train_matrix = train_matrix[config.LOGISTIC_MODEL_FEATURES]
         
         lr_X = train_matrix
 
         gc.collect()
       
         # Final safety check
-        print('Pass3')
+        print('Pass2')
         lr_X.replace([np.inf, -np.inf], 0, inplace=True)
-        print('Pass4')
+        print('Pass3')
         #use 80% for training and 20% to calibrate on, in chronological order since we have timeseries data 
         split_idx = int(len(lr_X) * .8)
     
@@ -288,7 +292,7 @@ def train(train_files, train_matrix, model):
         calib_weights = lr_w.iloc[split_idx:]
           
         base_lr, calibrated_lr, scalar_lr = train_logistic_model(train_X, train_Y, train_w, calib_X, calib_y, calib_weights)
-         
+        print('Pass4')
         model_package = {
             
             'base_model': base_lr,
@@ -370,7 +374,6 @@ def improve_qimbal(test_matrix, model, mo_data, cleandata):
         
         #Extracting the contents from the dictionary
         features = loaded_model_package['features']
-        base_lgbm = loaded_model_package['base_model']
         use_model = loaded_model_package['calibrated_model']
             
     elif model == 'LR':
@@ -384,11 +387,13 @@ def improve_qimbal(test_matrix, model, mo_data, cleandata):
         
         #Extracting the contents from the dictionary
         features = loaded_model_package['features']
-        scalar_lr = loaded_model_package['scalar']
-        base_lr = loaded_model_package['base_model']
+        scalar = loaded_model_package['scalar']
         use_model = loaded_model_package['calibrated_model']
         
+   
+
     X_raw = test_matrix[features].astype(np.float32, copy = False)
+    
     X = scalar.transform(X_raw) if scalar else X_raw 
              
     #This code below is now state based and doesnt need type it just looks at the delta change in volume for each step 
@@ -661,6 +666,43 @@ def improve_qimbal(test_matrix, model, mo_data, cleandata):
     
     print(f'Increase in Sell heavy bin ratio is {(shincrease)*100} %')
     print(f'Increase in Buy heavy bin ratio is {(bhincrease)*100} %')
+    
+    
+    #Now doing it using more fine bins, maybe our model can capture an edge closer around the neutral parts
+    
+    merged['is_buy'] = (merged['BorS'] == -1).astype(int)
+    bins = np.linspace(-1.0,1.0,61)
+    merged['Reg_Fine_Bin'] = pd.cut(merged['QImbalance'], bins=bins)
+    merged['Prob_Fine_Bin'] = pd.cut(merged['ProbQImbal'], bins=bins)
+    
+    # Calculate the proportion of buys in each bin
+ 
+    reg_curve = merged.groupby('Reg_Fine_Bin', observed=False)['is_buy'].mean().dropna()
+    prob_curve = merged.groupby('Prob_Fine_Bin', observed=False)['is_buy'].mean().dropna()
+    
+    # Get the midpoints of the surviving bins for the x-axis
+    reg_x = [b.mid for b in reg_curve.index]
+    prob_x = [b.mid for b in prob_curve.index]
+    
+    # Plotting
+    plt.figure(figsize=(9, 6))
+    
+    plt.plot(reg_x, reg_curve.values, label='Regular QImbal', color='darkred', marker='o', markersize=4, alpha=0.7)
+    plt.plot(prob_x, prob_curve.values, label=f'Prob QImbal ({model})', color='darkblue', marker='x', markersize=4, alpha=0.8)
+
+    plt.axvline(x=0.0, color='gray', linestyle='--', label='Neutral Book (0.0)')
+    plt.axhline(y=0.5, color='gray', linestyle=':', label='50/50 Buy/Sell Split')
+    
+    plt.title('Probability of a Market Buy vs. Imbalance (-1 to 1)')
+    plt.xlabel('Imbalance (-1.0 = Max Sell Pressure, 1.0 = Max Buy Pressure)')
+    plt.ylabel('Proportion of Market Orders that are Buys')
+    plt.xlim(-.2, .2)
+    plt.ylim(.2,.8)
+    plt.plot([-1,1], [0,1], color = 'black', linewidth = 1, label = 'perfect')
+    plt.legend()
+    plt.grid(True, alpha=0.3)
+
+    plt.show()
     
     return print((test_matrix['ProbQImbal'].describe()), test_matrix['QImbalance'].describe())
 
@@ -981,13 +1023,15 @@ def plot_monthly_sum(monthly_merged, selected_model):
     plt.tight_layout()
     plt.show()
     
-    #something going wrong in passing monthly merged to test_model 
-    #Plotting the other performance stuff for the month 
-    test_model_wrap(monthly_merged, selected_model)
-    return None
+    return None 
+
 
 def get_raw_paths_from_parquet(file_path):
     #in filemanager my raw path stuff was for one while which i wanted to keep for all my other stuff, but for the sequential training that needs to be in a function i can call in walkforward below
+    
+    if isinstance(file_path, (list, tuple)):
+        file_path = file_path[0]
+    
     filename = os.path.basename(file_path)
     
     # Example filename: "INTC_BINARY_2014_07_08.parquet"
@@ -1010,9 +1054,14 @@ def get_raw_paths_from_parquet(file_path):
     return str(main_raw_path), str(mo_raw_path)
     
     
-def walk_forward(all_data_paths, selected_model, train_window_days = 20):
+def walk_forward(all_data_paths, selected_model, train_window_days):
+    
+    from ModelEvaluation import compute_daily_performance_curve
+    from ModelEvaluation import compute_daily_divergence
     
     monthly_dataframes = []
+    daily_curves = []
+    divergence_curves = []
     
     total_test_days = len(all_data_paths) - train_window_days
    
@@ -1034,6 +1083,19 @@ def walk_forward(all_data_paths, selected_model, train_window_days = 20):
             features = config.LOGISTIC_MODEL_FEATURES
         elif selected_model == 'LGBM':
             features = config.LGBM_MODEL_FEATURES
+            
+        X_raw = test_matrix[features].astype(np.float32, copy = False)   
+        X = scalar.transform(X_raw) if scalar else X_raw    
+        y_pred_prob = use_model.predict_proba(X)[:,1]    
+        y_true = test_matrix[config.TARGET]
+        weights = test_matrix['UnitWeight']
+        
+        at_touch_mask = test_matrix['DistanceToTouch'] == 0
+        
+        #you can add the at_touch_mask to mask here if you want the monthly plots to be for orders only placed at best price
+        day_pred, day_actual = compute_daily_performance_curve(y_true, y_pred_prob, weights, mask = None)
+         
+        daily_curves.append((day_pred, day_actual))
         
         raw_data_path, raw_mo_path = get_raw_paths_from_parquet(test_file)
         
@@ -1043,10 +1105,147 @@ def walk_forward(all_data_paths, selected_model, train_window_days = 20):
         
         daily_merged = calc_daily_qimbal(test_matrix, use_model, scalar, features, mo_data, cleandata)
         monthly_dataframes.append(daily_merged)
+        reg_vals, prob_vals = compute_daily_divergence(daily_merged)
+        divergence_curves.append((reg_vals, prob_vals))
         del test_matrix, rawdata, cleandata, mo_data
         
-    monthly_merged = pd.concat(monthly_dataframes, ignore_index = True)
-    plot_monthly_sum(monthly_merged,selected_model)
+    #monthly_merged = pd.concat(monthly_dataframes, ignore_index = True)
+    
+   # plot_monthly_sum(monthly_merged,selected_model)
+    plot_walk_forward_curves(daily_curves, selected_model)
+    plot_walk_forward_div(divergence_curves, selected_model)
+    
+def plot_walk_forward_curves(daily_curves, model_name):
+    #want the regular one and the one up till 30%
+    plt.figure(figsize = (20,10))
+    all_preds = []
+    all_actuals = []
+    
+    for day_pred, day_actual in daily_curves:
+        all_preds.append(day_pred)
+        all_actuals.append(day_actual)
+        
+        #Filter nans i.e empty bins out, ~ is numpy NOT operator and we need more thatn one point to draw a line bewteen points, thats the following logic
+        valid_mask = ~np.isnan(day_pred) & ~np.isnan(day_actual)
+        if valid_mask.sum() > 1:
+            plt.plot(day_pred[valid_mask], day_actual[valid_mask], color = 'blue', alpha = 0.5, linewidth = 1)
+    
+    #compute mean of bins ignoring nan bins
+    
+    mean_pred = np.nanmean(all_preds, axis = 0)
+    mean_acc = np.nanmean(all_actuals, axis = 0)
+    
+    #plot thick avg line
+    valid_mean = ~np.isnan(mean_acc) & ~np.isnan(mean_pred)
+    plt.plot(mean_pred[valid_mean], mean_acc[valid_mean], color = 'black', linewidth = 5, label = f'Avg of {model_name}')
+    
+    #regular plot
+    plt.plot([0,1], [0,1], color = 'black', label = 'Perfect', linestyle = '--')
+    plt.xlim(0,1)
+    plt.ylim(0,1)
+    plt.xlabel('Predicted Fill Prob')
+    plt.ylabel('Actual Fill Prob')
+    plt.title(f'Performance of {model_name}')
+    plt.legend()
+    plt.show()
+    
+    
+    #40% plot, wehre most of the data is at 
+    for day_pred, day_actual in daily_curves:
+        all_preds.append(day_pred)
+        all_actuals.append(day_actual)
+        
+        #Filter nans i.e empty bins out, ~ is numpy NOT operator and we need more thatn one point to draw a line bewteen points, thats the following logic
+        valid_mask = ~np.isnan(day_pred) & ~np.isnan(day_actual)
+        if valid_mask.sum() > 1:
+            plt.plot(day_pred[valid_mask], day_actual[valid_mask], color = 'blue', alpha = 0.5, linewidth = 1)
+    #plot thick avg line
+    valid_mean = ~np.isnan(mean_acc) & ~np.isnan(mean_pred)
+    plt.plot(mean_pred[valid_mean], mean_acc[valid_mean], color = 'black', linewidth = 5, label = f'Avg of {model_name}')
+    plt.plot([0,1], [0,1], color = 'black', label = 'Perfect', linestyle = '--')
+    plt.xlim(0,.4)
+    plt.ylim(0,.4)
+    plt.xlabel('Predicted Fill Prob')
+    plt.ylabel('Actual Fill Prob')
+    plt.title(f'Performance of {model_name}')
+    plt.legend()
+    plt.show()
+ 
+    
+    return None   
+
+def plot_walk_forward_div(divergence_curves, model_name):
+    
+    plt.figure(figsize=(9, 6))
+
+    all_reg = [day[0] for day in divergence_curves]
+    all_prob = [day[1] for day in divergence_curves]
+    
+    bins = np.linspace(-1.0, 1.0, 101)
+    x_mids = (bins[:-1] + bins[1:]) / 2 #slicing, [:-1] means slice everything from start but exlude last entry 
+    
+    # Calculate the mathematical average across the month per bin
+    mean_reg = np.nanmean(all_reg, axis=0)
+    mean_prob = np.nanmean(all_prob, axis=0)
+
+    for i, reg_day in enumerate(all_reg):
+        valid = ~np.isnan(reg_day)
+        if valid.sum() > 1:
+            label = 'Daily Regular' if i == 0 else None
+            plt.plot(x_mids[valid], reg_day[valid], color='red', alpha=0.15, linewidth=1, label=label)
+            
+    for i, prob_day in enumerate(all_prob):
+        valid = ~np.isnan(prob_day)
+        if valid.sum() > 1:
+            label = 'Daily Improved' if i == 0 else None
+            plt.plot(x_mids[valid], prob_day[valid], color='blue', alpha=0.15, linewidth=1, label=label)
+
+    valid_mean_reg = ~np.isnan(mean_reg)
+    plt.plot(x_mids[valid_mean_reg], mean_reg[valid_mean_reg], color='darkred', linewidth=5, label='Average Regular QImbal')
+    
+    valid_mean_prob = ~np.isnan(mean_prob)
+    plt.plot(x_mids[valid_mean_prob], mean_prob[valid_mean_prob], color='darkblue', linewidth=5, label=f'Average Prob QImbal ({model_name})')
+
+    plt.axvline(x=0.0, color='gray', linestyle='--', label='Neutral Book (0.0)')
+    plt.axhline(y=0.5, color='gray', linestyle=':', label='50/50 Split')
+    plt.plot([-1, 1], [0, 1], color='black', linewidth=1, label='Perfect Signal')
+    
+    plt.title(f'Improved vs Reg Qimbal using {model_name}')
+    plt.xlabel('Imbalance (-1.0 to 1.0)')
+    plt.ylabel('Proportion of Market Orders that are Buys')
+    
+    # Zoomed in to see the divergence around zero
+    plt.xlim(-0.1, 0.1)
+    plt.ylim(0.3, 0.7)
+    
+    plt.legend()
+    plt.grid(True, alpha=0.3)
+    
+    plt.tight_layout()
+    plt.show()
+    
+    #numerical way of showing improvement  
+    
+    perfect_y = 0.5 * x_mids + 0.5
+    
+    # We only want to integrate where both curves have valid data points
+    valid_mask = ~np.isnan(mean_reg) & ~np.isnan(mean_prob)
+    valid_x = x_mids[valid_mask]
+    
+    # Calculate the exact geometric AREA between the curves using the Trapezoidal rule
+    area_reg = np.trapz(np.abs(mean_reg[valid_mask] - perfect_y[valid_mask]), x=valid_x)
+    area_prob = np.trapz(np.abs(mean_prob[valid_mask] - perfect_y[valid_mask]), x=valid_x)
+    
+    # Calculate the percentage improvement (smaller area is better)
+    if area_reg > 0:
+        improvement = ((area_reg - area_prob) / area_reg) * 100
+    else:
+        improvement = 0.0
+        
+    print(f"\n--- Geometric Area Between Curves & Perfect Line ---")
+    print(f"Regular QImbal Area Error: {area_reg:.4f}")
+    print(f"Prob QImbal Area Error:    {area_prob:.4f}")
+    print(f"Improvement:               {improvement:.1f}%\n")
         
     
 if __name__ == "__main__":
@@ -1093,20 +1292,13 @@ if __name__ == "__main__":
     
     if action_choice in ['test', 'qimbal', 'use']:
         test_matrix = pd.read_parquet(test_files) 
-        from FileManager import get_data_paths
-        data_path, mo_path = get_data_paths()
+        data_path, mo_path = get_raw_paths_from_parquet(test_files)
         rawdata = import_data(data_path, mo_path)
         mo_data = rawdata['MO']
         cleandata = clean_data(rawdata)
 
     if action_choice == 'train':
         
-        train_frames = []
-        
-        for f in train_files:
-            train_frames.append(pd.read_parquet(f))
-            
-        train_matrix = pd.concat(train_frames, ignore_index = True)
         train(train_files, None, selected_model)
         
         
@@ -1120,7 +1312,7 @@ if __name__ == "__main__":
     elif action_choice == 'eval':
         #just manually force a list on the one item in tesst files so we can concatenate in sorted below 
         chronological_data = sorted(train_files + test_files)
-        walk_forward(chronological_data, selected_model, train_window_days = 20)
+        walk_forward(chronological_data, selected_model, train_window_days = 15)
         
         
     elif action_choice == 'use':

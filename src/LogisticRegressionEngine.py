@@ -46,27 +46,11 @@ def train_logistic_model(X_train, y_train, weights, X_calib, y_calib, weights_ca
     
     
     X_calib_scaled = scalar.transform(X_calib.astype(np.float32, copy = False)) #Here we only transform and not fit. its cuz transform just applies the ruler and fit actually calculates it and we only want to calculate on the training data and not on the testing data
-    
-   #Logistic regression 
-   #Might use somethiing of platt scaling to wrap the log res model as log res doesnt work very well with data where the output is very skewed, i.e here we have much more cancels then fills
-    
-        
    
-
-    
     calibrated_model = CalibratedClassifierCV(estimator=base_logistic_model, method='isotonic', 
                                               cv = 'prefit') # fit calibrator only on reserved data for calibration, since model has already been trained before this overrides cross validation and prevents us from training on past data since our data is in chronological order
   
-    
-    #Look at the required assumptions for logistic regression, i think need iid and for example
-    #below i included price related features but if the price changes they dont follow the same distribution
-    #on a given day anymore and the whole model breaks, so now the model only looks at volume
-    #and position dynamics
 
-    
-    
-    
-   
     #Fit Scikit logistic regrssion
     
     calibrated_logistic_model = calibrated_model.fit(X_calib_scaled, y_calib, sample_weight = weights_calib)

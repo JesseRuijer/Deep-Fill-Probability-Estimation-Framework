@@ -30,7 +30,9 @@ def time_in_hours(ms_past_midnight):
     return f"{int(hours):02d}:{int(minutes):02d}:{int(seconds):02d}.{int(ms):03d}"
 
 def time_to_hours(time):
+    
     #Input time as follows: 9:15 am = 9.25
+    
     return time*3600000
 
 def order_life(order_ID, df):
@@ -40,7 +42,9 @@ def order_life(order_ID, df):
     return df["Event"][df["Event"]["ID"] == order_ID ].sort_values(by = "TOD")
 
 def find_order_pattern(df, start_type, middle_type, middle_count, end_type):
+    
     #Pass it some type of TYPE pattern you want a specific order ID to satisfy and it returns those
+    
     def check_rules(history):
         history_list = list(history)
         
@@ -97,6 +101,9 @@ def speedmetric(df, feature_list):
 
 
 def trailing_calc(tod_targets, tod_source, vol_source, lookback):
+    
+    #Calculates vol and index related information for trailing features
+    
     cum_vol = np.pad(np.cumsum(vol_source), (1,0), constant_values = 0)      #pads to add a zero at thes start and then cumsum calculates the running total so to know the order arrival rate between two different times you just calculate the difference in their total running values
     start_indices = np.searchsorted(tod_source, tod_targets - lookback, side = 'left')   #Finds the row indices where the lookback window starts and below where it finishes
     end_indices = np.searchsorted(tod_source, tod_targets , side = 'right') 

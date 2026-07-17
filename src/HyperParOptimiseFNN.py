@@ -9,12 +9,11 @@ Created on Wed Jul  8 09:31:32 2026
 
 import torch
 import torch.nn as nn
-import torchvision
 import pandas as pd
 import numpy as np
 from sklearn.preprocessing import StandardScaler
 import config
-from torch.utils.data import DataLoader, Dataset
+from torch.utils.data import DataLoader
 import random
 import optuna 
 import gc
@@ -23,6 +22,9 @@ from FileManager import get_ml_training_paths
 
 
 class DynamicFNN(nn.Module):
+    
+    #Initialize new neural net thats modifiable per optuna trial 
+    
     def __init__(self, trial, input_size):
         super(DynamicFNN, self).__init__()
               
@@ -56,7 +58,10 @@ class DynamicFNN(nn.Module):
         
         
         
-def objective(trial, train_files, val_files, pre_fitted_scalar):    
+def objective(trial, train_files, val_files, pre_fitted_scalar):   
+    
+    #optuna trial function 
+    
     if torch.backends.mps.is_available():
         device = torch.device('mps')
         print('Training on Apple Silicon MPS')

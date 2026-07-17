@@ -29,7 +29,9 @@ import config
 #For Shap and importance plots you have to use the base model 
 
 def plot_lgbm_importances(base_model, features):
+    
     #Visualising the important features in LGBM
+    
     print("\n--- Extracting LightGBM Feature Importances ---")
     
     # LightGBM stores how many times a feature was used to split the data
@@ -55,6 +57,8 @@ def plot_lgbm_importances(base_model, features):
     
 
 def test_model(test_data, base_model, calibrated_model, scalar, model_name, features, is_multi):
+    
+    #Tests model performance
     
     print(f'Evaluating {model_name}')
     
@@ -490,12 +494,15 @@ def test_model(test_data, base_model, calibrated_model, scalar, model_name, feat
     plt.plot(middle, vol_per_bin, color = 'b', label = 'LO Vol')
     plt.xlabel('Probability Bins')
     plt.xlim(0, 1)
-    plt.ylabel('Vol of LOs')
+    plt.ylabel('Log Vol of LOs')
+    plt.yscale('log')
     plt.title(f'Amount Of LO Vol appearing in each predictive probability bin {model_name}')
     plt.legend()
     plt.show()
  
     def plot_fnn_importances(model, features, test_data, scalar):
+        
+        #Use Shap to visualise FNN 'decisions'
         
         if torch.backends.mps.is_available():
             device = torch.device('mps')
@@ -557,6 +564,7 @@ def test_model(test_data, base_model, calibrated_model, scalar, model_name, feat
         plt.tight_layout()
         plt.show() 
         
+
         
     if model_name == "Light Gradient Boosted Model":
         plot_lgbm_importances(base_model, features)
@@ -564,26 +572,55 @@ def test_model(test_data, base_model, calibrated_model, scalar, model_name, feat
     if model_name == 'FNN':
         plot_fnn_importances(calibrated_model, features, test_data, scalar)
 
-
-
-
-
-
-
-
+def compute_daily_performance_curve(y_true, y_pred_prob, weights, mask = None):
+    
+    #this function is only used by userscript for the monthly eval process
+    
+    if mask is not None:
+        y_true = y_true[mask]
+        y_pred_prob = y_pred_prob[mask]
+        weights = weights[mask]
         
+    df = pd.DataFrame({
+        'y_true': y_true, 
+        'y_pred': y_pred_prob, 
+        'weights': weights
+        })
+    
+    deltap = 0.01
+    bins_low = np.arange(0, 0.401, deltap)
+    bins_high = np.arange(0.43, 1, 3 * deltap)
+    bins_custom = np.concatenate((bins_low, bins_high))
+    
+    df['bins'] = pd.cut(df['y_pred'], bins=bins_custom)
+    grouped = df.groupby('bins', observed=False)
+    
+    def safe_weights(x, col):
+        if x['weights'].sum() == 0:
+            return np.nan
+        return np.average(x[col], weights=x['weights'])
+    
+    # Dont have dropna here like above since for the average we need same length arrays for every day, so empty bins are not dropped here
+    weighted_actual = grouped.apply(lambda x: safe_weights(x, 'y_true'))
+    weighted_pred = grouped.apply(lambda x: safe_weights(x, 'y_pred')) 
+    
+    return weighted_pred.values, weighted_actual.values
 
-# def predict_order_fill_prob(features):
-#     #predicts specific probability for a given limit order being filled using the logistic regression engine from above
-#     #since pd dfs are slow its better to use np array here
+def compute_daily_divergence(merged):
     
-#     input_array = np.array(features).reshape(1,-1) #resshape needed 1 means passing 1 row, -1 means calculate the right dim for the columns so this creates a matrix which is whats needed for sci kit later
-#     scaled_input  = (input_array - scalar.mean_) / scalar.scale_ # I think the trailing _ tells sci kit to look at the fitted values and calculate mean and std of those                   using scalar so we do the standardizations for each value and not all at the same time
-#     fill_prob = calibrated_model.predict_proba(scaled_input)[0,1]
+    #Similar to above function but for different plot, also only used in userscript file 
     
-#     return fill_prob
-#     #Better to also create a function that extracts these features for maybe a given order ID?
+    merged['is_buy'] = (merged['BorS'] == -1).astype(int)
+    bins = np.linspace(-1.0,1.0,101)
+    merged['Reg_Fine_Bin'] = pd.cut(merged['QImbalance'], bins=bins)
+    merged['Prob_Fine_Bin'] = pd.cut(merged['ProbQImbal'], bins=bins)
     
+    # Calculate the proportion of buys in each bin
+ 
+    reg_curve = merged.groupby('Reg_Fine_Bin', observed=False)['is_buy'].mean().dropna()
+    prob_curve = merged.groupby('Prob_Fine_Bin', observed=False)['is_buy'].mean().dropna()
+    
+    return reg_curve.values, prob_curve.values
     
     
     

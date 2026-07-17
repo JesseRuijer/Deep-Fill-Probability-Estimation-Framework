@@ -12,10 +12,10 @@ import optuna
 import config
 from LightGBMEngine import train_lgbm_model
 from sklearn.metrics import log_loss
-from pathlib import Path
 from FileManager import get_ml_training_paths
 import gc
 
+#Script to use Optuna to find best hyperparameters for LGBM
 
 #Loading data in 
 
@@ -86,7 +86,7 @@ def objective(trial):
     preds = model.predict_proba(X_val)[:,1]
     
     #Performance metrics
-    #I believe for hyperpar tuning the precision recall is best for our situation i.e placing a lot of emphasis on TPs, true positives
+    #I believe for hyperpar tuning in our situation the log loss is best
     
     y_val_bin = np.where(y_val == 1, 1, 0)
     

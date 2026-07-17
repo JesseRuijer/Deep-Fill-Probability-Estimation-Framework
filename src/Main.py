@@ -6,8 +6,8 @@ Created on Wed May 20 19:41:13 2026
 @author: jesseruijer
 """
 
+#Main script for controlling the process, to access functionality, go to UserScript
 
-#Mabye make a partial dependence plot where the calibration curve updates as time passes where its like a few different plots during a normalised order lifetime
 
 #Importing libraries,classes, functions from other scripts
 import pandas as pd
@@ -21,9 +21,8 @@ from DataAndFeatureEngineering import import_data, clean_data, data_regressors
 from LightGBMEngine import train_lgbm_model
 from ModelEvaluation import test_model
 from LogisticRegressionEngine import train_logistic_model
-from FileManager import select_files_via_finder, get_data_paths, generate_dynamic_paths, get_ml_training_paths, get_batch_data_paths
-from FeatureFinder import feature_finder
-from sklearn.preprocessing import StandardScaler
+from FileManager import generate_dynamic_paths, get_ml_training_paths, get_batch_data_paths
+
 
 #For some strange reason, due to C++ threading libraryß managaemnt, importing torch causes lgbm to crash, thats why i had to serperately import that below in the script only when its necessary
 
@@ -32,6 +31,9 @@ from sklearn.preprocessing import StandardScaler
 pd.set_option('display.max_columns', None)
 
 def prep_data_daily(file_path, file_path_mo):
+    
+    #prep data, i.e run dataandfeaturengineering script on it
+    
     print(f'Runs full pipeline for {os.path.basename(file_path)}')
     rawdata = import_data(file_path, file_path_mo)
     cleandata = clean_data(rawdata)
@@ -53,6 +55,9 @@ def prep_data_daily(file_path, file_path_mo):
         }
 
 def save_data():
+    
+    #Save feature data for ML training in parquet format
+    
     print('Builds parquet files for easy storage and optimisation')
     
     batches_to_save = get_batch_data_paths()
@@ -85,6 +90,8 @@ def save_data():
     
 
 def run_project(model_choice, job):
+    
+    #Main script
     
     #Used first 80% of April to train on and last 20% to calibraet on
     #Used May 1 as validation day for Optuna, so any test day should be later than that
@@ -199,7 +206,7 @@ def run_project(model_choice, job):
             #feature_finder(base_lr, 'Logistic Regression', train_matrix_bin , config.LOGISTIC_MODEL_FEATURES, logistic_regY , fill_weights)
             print(f'Features used: {features}')
             
-            logistic_test = test_model(
+            test_model(
                 test_data = test_matrix, 
                 base_model = base_lr,
                 calibrated_model = calibrated_lr,
@@ -306,7 +313,7 @@ def run_project(model_choice, job):
               # return 
             
               print(f'Features used: {features}')
-              lgbm_test = test_model(
+              test_model(
                   test_data = test_matrix, 
                   base_model = base_lgbm,
                   calibrated_model = calibrated_lgbm,
@@ -409,7 +416,7 @@ def run_project(model_choice, job):
              fnn_wrapped = PyTorchSklearnWrapper(loaded_model, device)
                   
              print(f'Features used: {features}')
-             fnn_test = test_model(
+             test_model(
                    test_data = test_matrix, 
                    base_model = fnn_wrapped,
                    calibrated_model = fnn_wrapped,
@@ -435,15 +442,15 @@ if __name__ == "__main__":
     
     #When theres new data uncomment this below and run once to store the data, if running same data leave this commented
     
-    #save_data()
+    save_data()
     
    
-    print('What model to use')
-    model_choice = input('"LR" , "LGBM", "FNN"').strip().lower()
-    print('Do you want to train or test model')
-    job = input('"train", "test"')
-    #Only run the whole project if explicitly call main.py
-    run_project(model_choice, job)
+    # print('What model to use')
+    # model_choice = input('"LR" , "LGBM", "FNN"').strip().lower()
+    # print('Do you want to train or test model')
+    # job = input('"train", "test"')
+    # #Only run the whole project if explicitly call main.py
+    # run_project(model_choice, job)
     
 
 

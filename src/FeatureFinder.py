@@ -8,14 +8,18 @@ Created on Tue Jun 23 10:21:54 2026
 import shap
 import numpy as np
 import pandas as pd
-from sklearn.calibration import CalibratedClassifierCV
 from sklearn.linear_model import LogisticRegression
 from sklearn.preprocessing import StandardScaler
+
+#Script to find relevant features for model, give this script all features, and it returns important ones
 
 #For Shap use testdata, as its the same features as trained on
 #For l1 finder for logistic, you have to use traindata
 
+
 def feature_finder(model, model_name, data, features, y_train, weights):
+    
+    #Find features, uses shap for lgbm or l1 for logistic
 
     def shap_feature_finder(model, data, features):
         print("\n--- Calculating SHAP Values ---")

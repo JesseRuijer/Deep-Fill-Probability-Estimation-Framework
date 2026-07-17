@@ -91,19 +91,16 @@ def generate_dynamic_paths(main_file_path):
     
     
     binary_out = processed_dir / f"{ticker}_BINARY_{formatted_date}.parquet"
-    multi_out = processed_dir / f"{ticker}_MULTI_{formatted_date}.parquet"
+    #multi_out = processed_dir / f"{ticker}_MULTI_{formatted_date}.parquet"
 
     return binary_out
 
 def get_ml_training_paths():
-    """Opens Finder for Train and Test selection, sorts them, and caches for fast reruns."""
     
+    #Gives paths to the training and testing files
     
     ML_CACHE_FILE = SCRIPT_DIR / ".ml_cache.json"
-    
-    # =========================================================================
-    # 1. CHECK SHORT-TERM MEMORY (CACHE)
-    # =========================================================================
+
     if os.path.exists(ML_CACHE_FILE):
         with open(ML_CACHE_FILE, 'r') as f:
             saved_paths = json.load(f)
@@ -147,9 +144,6 @@ def get_ml_training_paths():
         else:
             print("\n[WARNING] Cached paths do not exist on this machine")
 
-    # =========================================================================
-    # 2. OPEN FINDER IF NO CACHE OR USER TYPED 'n'
-    # =========================================================================
     root = tk.Tk()
     root.withdraw()
     
@@ -190,17 +184,14 @@ def get_ml_training_paths():
         if "BINARY" in f.upper(): paths['test_bin'].append(f)
         if "MULTI" in f.upper(): paths['test_multi'].append(f)
 
-    # =========================================================================
-    # 3. SAVE CHOICES TO CACHE FOR NEXT TIME
-    # =========================================================================
     with open(ML_CACHE_FILE, 'w') as f:
         json.dump(paths, f)
 
     return paths
 
-########Add a funciton to select multiple files for main and mo 
 def get_batch_data_paths():
-    """Allows selecting multiple MAIN files and auto-locates their MO files."""
+    
+    #Gets strings of files to save from finder, also automatically finds the corresponding MO files to the event files 
     
     batch_jobs = []
     script_dir = Path(__file__).resolve().parent

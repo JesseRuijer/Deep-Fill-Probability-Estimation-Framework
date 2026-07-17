@@ -6,13 +6,6 @@ Created on Wed Jun 17 10:53:13 2026
 @author: jesseruijer
 """
 
-#!/usr/bin/env python3
-# -*- coding: utf-8 -*-
-"""
-Created on Tue Jun 16 14:36:01 2026
-
-@author: jesseruijer
-"""
 
 import pandas as pd
 import numpy as np
@@ -21,7 +14,6 @@ import config
 import gc
 from LogisticRegressionEngine import train_logistic_model
 from sklearn.metrics import log_loss
-from pathlib import Path
 from FileManager import get_ml_training_paths
 
 #Loading data in 
@@ -106,7 +98,7 @@ if __name__ == '__main__':
     
     #Running search for optimal params
     
-    study = optuna.create_study(direction = 'minimize') # Since our criterion for finetuning here is average precision score (AUC of Precision Recall) we aim to maximisze
+    study = optuna.create_study(direction = 'minimize') # Since our criterion for finetuning here is log loss we aim to minimize
     study.optimize(objective, n_trials = 40)
     
     print(f' Best average prediction score was {study.best_value:.3f}')

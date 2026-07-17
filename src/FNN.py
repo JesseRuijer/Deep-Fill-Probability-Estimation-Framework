@@ -8,18 +8,19 @@ Created on Mon Jul  6 15:18:19 2026
 
 import torch
 import torch.nn as nn
-import torchvision
 import pandas as pd
 import numpy as np
 from sklearn.preprocessing import StandardScaler
 import config
 from torch.utils.data import DataLoader, Dataset
 import random
-
 import gc
 
 
-class PyTorchSklearnWrapper:    #My test model function in ModelEvaluation expects a 2d array but the outputs of the FNN are in tensors, so have to wrap
+class PyTorchSklearnWrapper:   
+    
+    #My test model function in ModelEvaluation expects a 2d array but the outputs of the FNN are in tensors, so have to wrap
+    
     def __init__(self, model, device):
         self.model = model
         self.device = device
@@ -43,8 +44,10 @@ class PyTorchSklearnWrapper:    #My test model function in ModelEvaluation expec
         return np.hstack((class_0_probs, class_1_probs))    #Horizontal stack to return a 2d array
 
 
-class DataSet(Dataset):     #in a class what you pass in () is not a par like with functions, its the parent class you're inheriting from 
+class DataSet(Dataset):  
+   
     #class for putting the LOB data in the right tensorformat so tensor flow can use it 
+    
     def __init__(self, features, labels, weights):
         self.X = torch.tensor(features, dtype = torch.float32)
         self.y = torch.tensor(labels, dtype = torch.float32).reshape(-1,1)      #outputs are just 1d array, and this puts them into a fixed 1 column and for the amount of rows it just sorts it out itself, this reshaping is necessary to later compare it to the outputs of the NN
@@ -58,7 +61,9 @@ class DataSet(Dataset):     #in a class what you pass in () is not a par like wi
 
 
 class NN(nn.Module):  #you need a class because classes function as blueprints that keep track of its internal state which is necessary bcecause it needs to remeber what it did before everytime you pass a new batch into it, then pass nn>module giving it all the pytorch capabilities
-    #Neural net architecture
+    
+#Neural net architecture
+
     def __init__(self, input_size, dropout_rate = 0.16669353086758615): #Dropout rate ensures during every single training step 20% of neurons get turned off to prevent overfitting, can be increased later
         super(NN, self).__init__() #to unlock the power of nn.Module
         
@@ -89,6 +94,7 @@ class NN(nn.Module):  #you need a class because classes function as blueprints t
         return self.network(x)
     
 def prepdata_and_train(train_files):
+    
     ##Device configuration
     #Training is much faster on gpu, but apple silicon has MPS and if its on a different deivce you have to use NVIDIA CUDA if available (like on the cluster probs)
     #this if else statement make sure to try and train on gpu no matter the device
@@ -233,6 +239,9 @@ def prepdata_and_train(train_files):
 
 
 class UserFNN(nn.Module):
+    
+    #Similar neural net class as above but now for use in userscript 
+    
     def __init__(self, input_size):
         super(UserFNN, self).__init__()
         

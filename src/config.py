@@ -6,11 +6,6 @@ Created on Thu Jun 11 10:04:48 2026
 @author: jesseruijer
 """
 
-
-
-
-
-
 #This below is for use in Main
 
 CURRENT_LR_MODEL = 'Logistic_Regression_Models_V1.joblib'
@@ -29,12 +24,11 @@ USER_FNN_MODEL_METADATA = 'FFN_Models_user_Metadata.joblib' #Metadata is just a 
 #also when changing this you have to delete and resave in main 
 DONT_INCLUDE_FULL_TRAINING_DAY = False 
 
-#just has some project wide constans 
+#some project wide constans 
 
 TARGET = 'FillNoFill'
 TICK = 'INTC'
-
-#These constants below are based on the ExploratoryDataScript results atm, but in the future could write something to extract it immediatley  
+ 
 
 HEARTBEAT_INTERVAL = 1000
 MAX_HEARTBEATS = 50 #Since exponential decay in fill prob as order been placed for longer, and to save RAM, need this implementation to only have a max of 50 heartbeats for a single order ID, but if i have more computing power, then this could be increased
@@ -54,9 +48,6 @@ EOMARKET_NOISE =  55800000 # 3:30 PM
 
 
 
-#CHANGE FEATURE SELECTION FOR MODELS STILL 
-
-#For the features that get passed to the models i should ban all raw prices and absolute timestamps as that will cause models to perform poorly on new data
 
 LOGISTIC_MODEL_FEATURES = [
      
@@ -374,8 +365,6 @@ UNIVERSAL_FEATURES = [ # Features that apply to any LO, so for ex midprice yes, 
 ]
 
 DYNAMIC_FEATURES = [ #Features that change (in general) depending on the LO you look at
-    # Static Order Attributes
-
     
     # Event-Time Deltas (Order-Direction Dependent)
     'EventDeltaDistanceToMicroprice',
@@ -388,11 +377,7 @@ DYNAMIC_FEATURES = [ #Features that change (in general) depending on the LO you 
     'LogVolAhead',
     'QueuePositionRatio',
     'TimeSincePlacement',
-    
-         
-     #Before final submission train one more time also including this below:
-     #'Is_Initial_Placement',
-
+    'IsInitialPlacement'
 
     # Clock-Time Deltas (Order-Direction/Position Dependent)
     'ClockDeltaDistanceToMicroprice',
@@ -471,10 +456,9 @@ ALL_FEATURES = [
     'LogVolAhead',
     'QueuePositionRatio',
     'TimeSincePlacement',
+    'IsInitialPlacement'
     
-         
-     #Before final submission train one more time also including this below:
-     #'Is_Initial_Placement',
+
 
 
     # 7. Clock-Time Deltas (The 1-Second Lookbacks)

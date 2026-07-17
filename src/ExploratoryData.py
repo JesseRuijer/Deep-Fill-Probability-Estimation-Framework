@@ -19,7 +19,7 @@ import numpy as np
 
 def run_exploratory_analysis(rawdata, cleandata, regressormatrix,feature, target_time):
         
-    #Function that plots Bar chart at target_time of Vol of bids and asks around midpoint
+    #Gives basic data info and plots
 
     row_index_event = (cleandata["Event"]["TOD"] - target_time).abs().idxmin()#this finds the row index closest to the time
     buy_prices = cleandata["BuyPrice"].loc[row_index_event] / 10000
@@ -434,7 +434,8 @@ if __name__ == "__main__":
     
     print(f'Starting Exploratory Data Analysis on {os.path.basename(main_path)} and {os.path.basename(mo_path)} \n')
    
-
+    
+   #Below is for checking performance of the hist plot where you can see an exact order and compare it to the models predicted prob
     regressormatrix = data_regressors(rawdata, cleandata, clear_RAM=False, dont_include_full_trading_day = True)['Binary Matrix']
     print(regressormatrix.iloc[10000])
     print(regressormatrix[regressormatrix['ID'] == 40143290]['UnitWeight'])
