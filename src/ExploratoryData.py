@@ -139,7 +139,7 @@ def run_exploratory_analysis(rawdata, cleandata, regressormatrix,feature, target
     
     
     print('\n #########Some other metrics#############\n')
-    print(f" Total number of events on day of INTC is {len(rawdata['Event'])}")
+    print(f" Total number of events on day of {config.TICK} is {len(rawdata['Event'])}")
     print(f' Frequency of different event types \n {freq_of_events}')
     print(f' Cancelation Ratio, i.e how many of total added vol in a day were cancelations is {(cancelation_ratio)*100} %')
     
@@ -148,11 +148,11 @@ def run_exploratory_analysis(rawdata, cleandata, regressormatrix,feature, target
     
     
     print(' \n #########Some Market Order Info #########\n')
-    print(f" Amount of Market Orders on day of INTC is {len(rawdata['MO'])}")
-    print(f' Percentage of MO per total number of events on day INTC is {(len(rawdata["MO"])/len(rawdata["Event"])*100):.04f}%')
+    print(f" Amount of Market Orders on day of {config.TICK} is {len(rawdata['MO'])}")
+    print(f' Percentage of MO per total number of events on day {config.TICK} is {(len(rawdata["MO"])/len(rawdata["Event"])*100):.04f}%')
     
     
-    print(f" Percentage of orders that did  walk the book for INTC on day is {(1 -((total_walk.sum())/(len(cleandata['MO'])))) * 100:.2f} % ")
+    print(f" Percentage of orders that did  walk the book for {config.TICK} on day is {(1 -((total_walk.sum())/(len(cleandata['MO'])))) * 100:.2f} % ")
     
     time_between_two_mos = rawdata['MO']['TOD'].diff(1)
     print(f'The max time between two market orders was {time_between_two_mos.max():.2f} ms')
@@ -160,7 +160,6 @@ def run_exploratory_analysis(rawdata, cleandata, regressormatrix,feature, target
     print(f'The average time between two market orders was {time_between_two_mos.mean():.2f} ms')
     
     #Make a plot on x axis TOD and on y axis MO amount vol placed
-    
     plt.figure(figsize = (20,10))
     mo_tods = rawdata['MO']['TOD']
     mo_vols = rawdata['MO']['Vol']

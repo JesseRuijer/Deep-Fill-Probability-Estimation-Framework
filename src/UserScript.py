@@ -569,7 +569,7 @@ def improve_qimbal(test_matrix, model, mo_data, cleandata):
     summary_prob.plot(kind='bar', figsize=(9, 6), color=['darkblue', 'darkred'], edgecolor='black')
 
     
-    plt.title(f"Trade Vol vs. ProbQImbal - config.TICK for {model}")
+    plt.title(f"Trade Vol vs. ProbQImbal - {config.TICK} for {model}")
     plt.xlabel("Imbalance Level")
     plt.ylabel("Vol of Trades")
     plt.xticks(rotation=0)
@@ -585,7 +585,7 @@ def improve_qimbal(test_matrix, model, mo_data, cleandata):
     summary_reg.columns = ['Market Buys', 'Market Sells'] 
       
     summary_reg.plot(kind='bar', figsize=(9, 6), color=['darkblue', 'darkred'], edgecolor='black')
-    plt.title(f"Trade Vol vs. RegularQImbal - config.TICK for {model}")
+    plt.title(f"Trade Vol vs. RegularQImbal - {config.TICK} for {model}")
     plt.xlabel("Imbalance Level")
     plt.ylabel("Vol of Trades")
     plt.xticks(rotation=0)
@@ -606,7 +606,7 @@ def improve_qimbal(test_matrix, model, mo_data, cleandata):
     
     #Plotting ProbQImbal
     
-    plt.title(f"Trade Vol vs. ProbQImbal - config.TICK for {model}")
+    plt.title(f"Trade Vol vs. ProbQImbal - {config.TICK} for {model}")
     plt.xlabel("Imbalance Level")
     plt.ylabel("Vol of Trades")
     plt.xticks(rotation=0)
@@ -622,7 +622,7 @@ def improve_qimbal(test_matrix, model, mo_data, cleandata):
     #For MO BorS == 1 -> sell
       
     summary_reg.plot(kind='bar', figsize=(9, 6), color=['darkblue', 'darkred'], edgecolor='black')
-    plt.title(f"Trade Vol vs. RegularQImbal - config.TICK for {model}")
+    plt.title(f"Trade Vol vs. RegularQImbal - {config.TICK} for {model}")
     plt.xlabel("Imbalance Level")
     plt.ylabel("Vol of Trades")
     plt.xticks(rotation=0)
@@ -693,12 +693,11 @@ def improve_qimbal(test_matrix, model, mo_data, cleandata):
     plt.axvline(x=0.0, color='gray', linestyle='--', label='Neutral Book (0.0)')
     plt.axhline(y=0.5, color='gray', linestyle=':', label='50/50 Buy/Sell Split')
     
-    plt.title('Probability of a Market Buy vs. Imbalance (-1 to 1)')
+    plt.title(f'Probability of a Market Buy vs. Imbalance (-1 to 1), {config.TICK}')
     plt.xlabel('Imbalance (-1.0 = Max Sell Pressure, 1.0 = Max Buy Pressure)')
     plt.ylabel('Proportion of Market Orders that are Buys')
-    plt.xlim(-.2, .2)
-    plt.ylim(.2,.8)
-    plt.plot([-1,1], [0,1], color = 'black', linewidth = 1, label = 'perfect')
+    plt.xlim(-.5, .5)
+    plt.ylim(0,1)
     plt.legend()
     plt.grid(True, alpha=0.3)
 
@@ -1000,7 +999,7 @@ def plot_monthly_sum(monthly_merged, selected_model):
     
     #Plotting ProbQImbal
     
-    plt.title(f"Trade Vol vs. ProbQImbal Month - config.TICK for {selected_model}")
+    plt.title(f"Trade Vol vs. ProbQImbal Month - {config.TICK} for {selected_model}")
     plt.xlabel("Imbalance Level")
     plt.ylabel("Vol of Trades")
     plt.xticks(rotation=0)
@@ -1015,7 +1014,7 @@ def plot_monthly_sum(monthly_merged, selected_model):
     #For MO BorS == 1 -> sell
       
     summary_reg.plot(kind='bar', figsize=(9, 6), color=['darkblue', 'darkred'], edgecolor='black')
-    plt.title(f"Trade Vol vs. RegularQImbal Month - config.TICK for {selected_model}")
+    plt.title(f"Trade Vol vs. RegularQImbal Month - {config.TICK} for {selected_model}")
     plt.xlabel("Imbalance Level")
     plt.ylabel("Vol of Trades")
     plt.xticks(rotation=0)
@@ -1145,7 +1144,7 @@ def plot_walk_forward_curves(daily_curves, model_name):
     plt.ylim(0,1)
     plt.xlabel('Predicted Fill Prob')
     plt.ylabel('Actual Fill Prob')
-    plt.title(f'Performance of {model_name}')
+    plt.title(f'Performance of {model_name} on {config.TICK}')
     plt.legend()
     plt.show()
     
@@ -1167,7 +1166,7 @@ def plot_walk_forward_curves(daily_curves, model_name):
     plt.ylim(0,.4)
     plt.xlabel('Predicted Fill Prob')
     plt.ylabel('Actual Fill Prob')
-    plt.title(f'Performance of {model_name}')
+    plt.title(f'Performance of {model_name} on {config.TICK}')
     plt.legend()
     plt.show()
  
@@ -1181,7 +1180,9 @@ def plot_walk_forward_div(divergence_curves, model_name):
     all_reg = [day[0] for day in divergence_curves]
     all_prob = [day[1] for day in divergence_curves]
     
-    bins = np.linspace(-1.0, 1.0, 101)
+    
+    #Restrict domain to -0.1, 0.1 for qimbal since there the regular qimbal is weakest predictor and our model improves it the most
+    bins = np.linspace(-0.5, 0.5, 51)
     x_mids = (bins[:-1] + bins[1:]) / 2 #slicing, [:-1] means slice everything from start but exlude last entry 
     
     # Calculate the mathematical average across the month per bin
@@ -1208,15 +1209,14 @@ def plot_walk_forward_div(divergence_curves, model_name):
 
     plt.axvline(x=0.0, color='gray', linestyle='--', label='Neutral Book (0.0)')
     plt.axhline(y=0.5, color='gray', linestyle=':', label='50/50 Split')
-    plt.plot([-1, 1], [0, 1], color='black', linewidth=1, label='Perfect Signal')
     
-    plt.title(f'Improved vs Reg Qimbal using {model_name}')
+    plt.title(f'Improved vs Reg Qimbal using {model_name} on {config.TICK}')
     plt.xlabel('Imbalance (-1.0 to 1.0)')
     plt.ylabel('Proportion of Market Orders that are Buys')
     
     # Zoomed in to see the divergence around zero
-    plt.xlim(-0.1, 0.1)
-    plt.ylim(0.3, 0.7)
+    plt.xlim(-0.5, 0.5)
+    plt.ylim(0, 1)
     
     plt.legend()
     plt.grid(True, alpha=0.3)
@@ -1224,28 +1224,17 @@ def plot_walk_forward_div(divergence_curves, model_name):
     plt.tight_layout()
     plt.show()
     
-    #numerical way of showing improvement  
+    #For bins above and below qimbal 0 how far are we from the 0.5 line, i.e how good of an indicator are we
+    dev_reg = np.mean(np.abs(mean_reg[valid_mean_reg] - 0.5))
+    dev_prob = np.mean(np.abs(mean_prob[valid_mean_prob] - 0.5))
     
-    perfect_y = 0.5 * x_mids + 0.5
+    improvement = ((dev_prob - dev_reg) / dev_reg) * 100 if dev_reg > 0 else 0.0
     
-    # We only want to integrate where both curves have valid data points
-    valid_mask = ~np.isnan(mean_reg) & ~np.isnan(mean_prob)
-    valid_x = x_mids[valid_mask]
-    
-    # Calculate the exact geometric AREA between the curves using the Trapezoidal rule
-    area_reg = np.trapz(np.abs(mean_reg[valid_mask] - perfect_y[valid_mask]), x=valid_x)
-    area_prob = np.trapz(np.abs(mean_prob[valid_mask] - perfect_y[valid_mask]), x=valid_x)
-    
-    # Calculate the percentage improvement (smaller area is better)
-    if area_reg > 0:
-        improvement = ((area_reg - area_prob) / area_reg) * 100
-    else:
-        improvement = 0.0
-        
-    print(f"\n--- Geometric Area Between Curves & Perfect Line ---")
-    print(f"Regular QImbal Area Error: {area_reg:.4f}")
-    print(f"Prob QImbal Area Error:    {area_prob:.4f}")
-    print(f"Improvement:               {improvement:.1f}%\n")
+    print(f"\n--- Signal Strength (Deviation from 50/50 Baseline) ---")
+    print(f"Raw QImbal Mean Deviation:  {dev_reg:.4f}")
+    print(f"Prob QImbal Mean Deviation: {dev_prob:.4f}")
+    print(f"Signal Strength Gain:       {improvement:+.1f}%\n")
+
         
     
 if __name__ == "__main__":

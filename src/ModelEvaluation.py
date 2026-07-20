@@ -609,9 +609,10 @@ def compute_daily_performance_curve(y_true, y_pred_prob, weights, mask = None):
 def compute_daily_divergence(merged):
     
     #Similar to above function but for different plot, also only used in userscript file 
-    
     merged['is_buy'] = (merged['BorS'] == -1).astype(int)
-    bins = np.linspace(-1.0,1.0,101)
+    
+    #same logic as in userscript, restrict qimbal domain
+    bins = np.linspace(-0.5, 0.5,51)
     merged['Reg_Fine_Bin'] = pd.cut(merged['QImbalance'], bins=bins)
     merged['Prob_Fine_Bin'] = pd.cut(merged['ProbQImbal'], bins=bins)
     

@@ -8,6 +8,8 @@ Created on Thu Jun 11 10:04:48 2026
 
 #This below is for use in Main
 
+TICK = 'ORCL'
+
 CURRENT_LR_MODEL = 'Logistic_Regression_Models_V1.joblib'
 CURRENT_LGBM_MODEL = 'LGBM_Models_V1.joblib'
 CURRENT_FNN_MODEL_WEIGHTS = 'FFN_Models_V1_Weights.pth'
@@ -27,7 +29,7 @@ DONT_INCLUDE_FULL_TRAINING_DAY = False
 #some project wide constans 
 
 TARGET = 'FillNoFill'
-TICK = 'INTC'
+
  
 
 HEARTBEAT_INTERVAL = 1000
@@ -104,7 +106,7 @@ LOGISTIC_MODEL_FEATURES = [
 
     # 6. Dynamic Order Metrics (Heartbeat Engine)
     'DistanceToTouch',
-    'DistanceToMicroprice',
+    #'DistanceToMicroprice', #Need distance to touch for model analysis and since logistic very fragile to multicollinearity decided to comment out distancetomicroprice
     'LogVolAhead',
     #'QueuePositionRatio',
     'TimeSincePlacement',
