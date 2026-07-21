@@ -1225,8 +1225,26 @@ def plot_walk_forward_div(divergence_curves, model_name):
     plt.show()
     
     #For bins above and below qimbal 0 how far are we from the 0.5 line, i.e how good of an indicator are we
-    dev_reg = np.mean(np.abs(mean_reg[valid_mean_reg] - 0.5))
-    dev_prob = np.mean(np.abs(mean_prob[valid_mean_prob] - 0.5))
+    valid_mask = ~np.isnan(mean_reg) & ~np.isnan(mean_prob)
+    # Filter x_mids using that mask to create valid_x
+    valid_x = x_mids[valid_mask]
+    
+    dev_array_reg = np.where(
+        valid_x >= 0, 
+        mean_reg[valid_mask] - 0.5, 
+        0.5 - mean_reg[valid_mask]   
+        )
+    
+    dev_array_prob = np.where(
+        valid_x >= 0, 
+        mean_prob[valid_mask] - 0.5, 
+        0.5 - mean_prob[valid_mask]
+    )
+    
+    dev_reg = np.mean(dev_array_reg)
+    dev_prob = np.mean(dev_array_prob)
+    
+    # Calculate improvement percentage
     
     improvement = ((dev_prob - dev_reg) / dev_reg) * 100 if dev_reg > 0 else 0.0
     

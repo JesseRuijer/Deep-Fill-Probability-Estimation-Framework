@@ -246,21 +246,6 @@ def data_regressors(rawdata, cleandata, clear_RAM = True, dont_include_full_trad
                                  ]].copy()
     market_past['TOD_+_1000'] = (market_past['TOD'] + config.FEATURE_DELTA).astype('int32')
     
-    #Protecting index in regressors df
-    original_index = Regressors_df.index
-    
-    Regressors_df = pd.merge_asof(
-        Regressors_df, 
-        market_past.sort_values('TOD_+_1000'),
-        left_on = 'TOD',
-        right_on = 'TOD_+_1000',
-        direction = 'backward',
-        suffixes = ['', '_past'])
-    
-    #Restore index after merge asof
-    
-    Regressors_df.index = original_index
-    
     mid_arr = Regressors_df['Midprice'].values
     mid_past = Regressors_df['Midprice'].shift(config.EVENT_TIME_DELTA).values
     bestbid = Regressors_df['BestBid'].values
@@ -307,10 +292,6 @@ def data_regressors(rawdata, cleandata, clear_RAM = True, dont_include_full_trad
     OrderFlowImbalance_past = Regressors_df['OrderFlowImbalance'].shift(config.EVENT_TIME_DELTA).values
     EventDeltaOrderFlowImbalance = OrderFlowImbalance - OrderFlowImbalance_past
     Regressors_df['EventDeltaOrderFlowImbalance'] = np.nan_to_num(EventDeltaOrderFlowImbalance, nan=0.0, posinf=0.0, neginf=0.0)
-    
-    Regressors_df.drop(columns = ['TOD_+_1000', 'TOD_past', 'BestBid_past', 'BestAsk_past', 'BidSize_past', 'AskSize_past', 'Midprice_past', 'Microprice_past', 
-                                  #'MicroMidDeviation_past'
-                                  ], inplace = True)
 
     
     #Immediately clear temporary arrays to save RAM

@@ -47,9 +47,11 @@ def run_exploratory_analysis(rawdata, cleandata, regressormatrix,feature, target
     
     plt.xlim(min_active_price - buffer, max_active_price + buffer)
     
-    plt.xlabel("Price")
-    plt.ylabel("Vol")
-    plt.title(f"Vol of Best Bid Vol and Best Ask Vol at {time_in_hours(target_time)}")
+    plt.xlabel("Price ($)")
+    plt.ylabel("Volume")
+    #plt.yscale('log')
+    #plt.title(f"Vol of Best Bid Vol and Best Ask Vol at {time_in_hours(target_time)}")
+    plt.grid(True, alpha = 0.3)
     plt.legend()
     plt.show()
     
@@ -169,9 +171,9 @@ def run_exploratory_analysis(rawdata, cleandata, regressormatrix,feature, target
     
     plt.plot(middle, counts, color = 'b', label = 'MO Vol')
     plt.xlim(config.MARKET_OPEN_TIME, config.MARKET_CLOSE_TIME)
-    current_ticks = plt.xticks()[0]
-    clock_labels = [time_in_hours(int(tick)) for tick in current_ticks]
-    plt.xticks(current_ticks, clock_labels)
+    custom_ticks = np.linspace(config.MARKET_OPEN_TIME, config.MARKET_CLOSE_TIME, num=9)
+    clock_labels = [time_in_hours(int(tick)) for tick in custom_ticks]
+    plt.xticks(custom_ticks, clock_labels)
     plt.xlabel('TOD')
     plt.ylabel('Vol of MOs')
     plt.title('Vol of MOs vs TOD')
@@ -189,9 +191,9 @@ def run_exploratory_analysis(rawdata, cleandata, regressormatrix,feature, target
     
     plt.plot(middle, counts, color = 'b', label = 'MO Freq')
     plt.xlim(config.MARKET_OPEN_TIME, config.MARKET_CLOSE_TIME)
-    current_ticks = plt.xticks()[0]
-    clock_labels = [time_in_hours(int(tick)) for tick in current_ticks]
-    plt.xticks(current_ticks, clock_labels)
+    custom_ticks = np.linspace(config.MARKET_OPEN_TIME, config.MARKET_CLOSE_TIME, num=9)
+    clock_labels = [time_in_hours(int(tick)) for tick in custom_ticks]
+    plt.xticks(custom_ticks, clock_labels)
     plt.xlabel('TOD')
     plt.ylabel('Freq of MOs')
     plt.title('Freq of MOs vs TOD')
@@ -200,7 +202,7 @@ def run_exploratory_analysis(rawdata, cleandata, regressormatrix,feature, target
 
     plt.show()
     
-    #Same two plots as above but now for LOs with three sperate lines, one for placings, one for fills, one for cancels 
+    #Same two plots as above but now for LOs  
     
     plt.figure(figsize = (20,10))
     lo_tods = rawdata['Event']['TOD']
@@ -209,11 +211,11 @@ def run_exploratory_analysis(rawdata, cleandata, regressormatrix,feature, target
     
     middle = (bin_edges[:-1] + bin_edges[1:]) / 2
     
-    plt.plot(middle, counts, color = 'b', label = 'MO Vol')
+    plt.plot(middle, counts, color = 'b', label = 'LO Vol')
     plt.xlim(config.MARKET_OPEN_TIME, config.MARKET_CLOSE_TIME)
-    current_ticks = plt.xticks()[0]
-    clock_labels = [time_in_hours(int(tick)) for tick in current_ticks]
-    plt.xticks(current_ticks, clock_labels)
+    custom_ticks = np.linspace(config.MARKET_OPEN_TIME, config.MARKET_CLOSE_TIME, num=9)
+    clock_labels = [time_in_hours(int(tick)) for tick in custom_ticks]
+    plt.xticks(custom_ticks, clock_labels)
     plt.xlabel('TOD')
     plt.ylabel('Vol of LOs')
     plt.title('Vol of LOs vs TOD')
@@ -229,16 +231,17 @@ def run_exploratory_analysis(rawdata, cleandata, regressormatrix,feature, target
     
     middle = (bin_edges[:-1] + bin_edges[1:]) / 2
     
-    plt.plot(middle, counts, color = 'b', label = 'MO Freq')
+    plt.plot(middle, counts, color = 'b', label = 'LO Frequency')
     plt.xlim(config.MARKET_OPEN_TIME, config.MARKET_CLOSE_TIME)
-    current_ticks = plt.xticks()[0]
-    clock_labels = [time_in_hours(int(tick)) for tick in current_ticks]
-    plt.xticks(current_ticks, clock_labels)
-    plt.xlabel('TOD')
-    plt.ylabel('Freq of MOs')
-    plt.title('Freq of MOs vs TOD')
+    custom_ticks = np.linspace(config.MARKET_OPEN_TIME, config.MARKET_CLOSE_TIME, num=9)
+    clock_labels = [time_in_hours(int(tick)) for tick in custom_ticks]
+    plt.xticks(custom_ticks, clock_labels)
+    plt.xlabel('Time of Day')
+    plt.ylabel('Frequency of LOs')
+    #plt.title('Freq of LOs vs TOD')
     plt.legend()
     plt.tight_layout()
+    plt.grid(True, alpha = 0.3)
 
     plt.show()
     
@@ -420,7 +423,7 @@ def plot_order_queue_position(ID, cleandata, TSP):
     
 if __name__ == "__main__":  
     
-    TARGET_TIME = time_to_hours(10.36)
+    TARGET_TIME = time_to_hours(11)
     FEATURE_ANALYSE = 'LogVolAhead'
       
     from FileManager import get_data_paths
@@ -436,14 +439,15 @@ if __name__ == "__main__":
     
    #Below is for checking performance of the hist plot where you can see an exact order and compare it to the models predicted prob
     regressormatrix = data_regressors(rawdata, cleandata, clear_RAM=False, dont_include_full_trading_day = True)['Binary Matrix']
-    print(regressormatrix.iloc[10000])
+    print(regressormatrix['ID'].iloc[10000:10100])
     print(regressormatrix[regressormatrix['ID'] == 40143290]['UnitWeight'])
     run_exploratory_analysis(rawdata, cleandata, regressormatrix, feature = FEATURE_ANALYSE, target_time = TARGET_TIME)
-    plot_order_queue_position(40143290, cleandata, TSP = 0)
+    plot_order_queue_position(33090271, cleandata, TSP = 97754)
     from Functions import order_life
-    print(order_life(40143290, rawdata))
+    print(order_life(33090271, rawdata))
+    print(rawdata['Event']['TOD'].tail())
     
-    print(time_in_hours(34214635))
+    print(time_in_hours(72000071))
     
     
     
