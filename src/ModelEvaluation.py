@@ -13,7 +13,7 @@ import seaborn as sns
 import shap
 import torch 
 import matplotlib.pyplot as plt
-
+from matplotlib.ticker import PercentFormatter
 from sklearn.metrics import (
     brier_score_loss, 
     log_loss, 
@@ -197,9 +197,12 @@ def test_model(test_data, base_model, calibrated_model, scalar, model_name, feat
     engine_true, engine_prob_pred = weighted_calibration_curve(y_true, y_pred_prob_vis, weights, n_bins=10) #tuple unpacking since the function returns two variables, we just name them immediately in one line
     axes[0,0].plot([0,1], [0,1], color = 'grey', label = "Perfect Calibration") # axes[0] means we're talking about the left figure then [0,1] , [0,1] are x list and y list and are read vertically so the first point is 0,0 and the second point is 1,1 and a line is drawn between them i.e the perfect prediction line i think but check this
     axes[0,0].plot(engine_prob_pred, engine_true, color = 'b' ,label = f'{model_name}')
-    axes[0,0].set_title('Calibration curve')
+    axes[0,0].set_title('Calibration Curve')
     axes[0,0].set_xlim(0, 0.5)
     axes[0,0].set_ylim(0, 0.5)
+    axes.xaxis.set_major_formatter(PercentFormatter(1.0))
+    axes.yaxis.set_major_formatter(PercentFormatter(1.0))
+    axes[0,0].grid(True, alpha = 0.3)
     axes[0,0].set_xlabel('Average Predicted Probability of Fill')
     axes[0,0].set_ylabel('Average Actual Fill Rate')
     axes[0,0].legend()
@@ -232,9 +235,11 @@ def test_model(test_data, base_model, calibrated_model, scalar, model_name, feat
     
     axes[0,1].plot(avg_time, temp_acc, color = 'b', label = 'Actual fill rate')
     axes[0,1].plot(avg_time, temp_pred, color = 'r', label = f'{model_name} prediction')
-    axes[0,1].set_title('Fill prob during lifetime of order')
-    axes[0,1].set_xlabel('Time since placement') 
+    axes[0,1].set_title('Fill Probability During Lifetime')
+    axes[0,1].set_xlabel('Time since placement (ms)') 
+    axes.yaxis.set_major_formatter(PercentFormatter(1.0))
     axes[0,1].set_ylabel('P(fill)')
+    axes[0,1].grid(True, alpha = 0.3)
     axes[0,1].legend()
   
     
@@ -259,6 +264,9 @@ def test_model(test_data, base_model, calibrated_model, scalar, model_name, feat
     axes[1,0].set_ylabel('Precision')
     axes[1,0].plot([0,1], [dummy_fill_prob, dummy_fill_prob], color = 'red', label = 'Dummy') #the dummy PR is just the baseline fill rate i.e here just a horizontal line
     axes[1,0].set_title('Precision-Recall curve')
+    axes.xaxis.set_major_formatter(PercentFormatter(1.0))
+    axes.yaxis.set_major_formatter(PercentFormatter(1.0))
+    axes[1,0].grid(True, alpha = 0.3)
     axes[1,0].set_ylabel('Fills Correctly Identified / All Orders Predicted To Fill')   #Precision = TP/(TP + FP)
     axes[1,0].set_xlabel('Fills correctly identified as Fills / All Actual Fills')  #Recall = TP /(TP + FN) = Sensitivity = True Positive Rate
     axes[1,0].legend()
@@ -278,6 +286,8 @@ def test_model(test_data, base_model, calibrated_model, scalar, model_name, feat
     axes[1, 1].hist(cancels_df['y_pred'], bins=50, alpha=0.3, color='red', label='Actual Cancels/Expires (0)', log = True, weights = cancels_df['weights'])
     axes[1, 1].hist(fills_df['y_pred'], bins=50, alpha=0.3, color='green', label='Actual Fills (1)', log = True, weights = fills_df['weights'])
     axes[1, 1].set_title(f'Distribution of Predicted Probabilities (Log Scale) for {model_name}')
+    axes[1,1].grid(True, alpha = 0.3)
+    axes.xaxis.set_major_formatter(PercentFormatter(1.0))
     axes[1, 1].set_xlabel('Predicted Probability of Fill')
     axes[1, 1].set_ylabel('Vol of Orders (Log Scale)')
     axes[1, 1].legend()
@@ -353,6 +363,7 @@ def test_model(test_data, base_model, calibrated_model, scalar, model_name, feat
         plt.axhline(0, color='gray', linestyle='--', linewidth=1,
                         label='Dummy baseline (BSS = 0)')
         plt.xlabel('Heartbeat index (intervals since placement)')
+        plt.grid(True, alpha = 0.3)
         plt.ylabel('Brier Skill Score')
         plt.title(f'Does more LOB info improve accuracy? {model_name}')
         plt.legend()
@@ -367,8 +378,9 @@ def test_model(test_data, base_model, calibrated_model, scalar, model_name, feat
         if 0 in trajectory.columns:
             plt.plot(trajectory[0], 'o-', color='r', label='Eventually canceled')
         plt.xlabel('Normalized order lifetime (0=placement, 1=death)')
-        plt.ylabel('Avg p(fill)')
-        plt.title(f'Predicted prob over lifetime by eventual outcome {model_name}')
+        plt.ylabel('Average Fill Probability')
+        plt.grid(True, alpha = 0.3)
+        plt.title(f'Predicted Probability over lifetime by eventual outcome {model_name}')
         plt.legend()
     
         # Brier over normalized lifetime with naive baseline for reference
@@ -376,6 +388,7 @@ def test_model(test_data, base_model, calibrated_model, scalar, model_name, feat
         plt.plot(brier_by_time, 'o-', color='#D85A30', label='Model')
         plt.axhline(naive_bs, color='gray', linestyle='--',
                         linewidth=1, label=f'Naive BS ({naive_bs:.3f})')
+        plt.grid(True, alpha = 0.3)
         plt.xlabel('Normalized order lifetime')
         plt.ylabel('Brier score')
         plt.title(f'Brier score over order lifetime {model_name}')
@@ -429,8 +442,9 @@ def test_model(test_data, base_model, calibrated_model, scalar, model_name, feat
     plt.plot([0,1], [0,1], color = 'black', label = 'Perfect')
     plt.xlim(0,1)
     plt.ylim(0,1)
-    plt.xlabel('Predicted Fill Prob')
-    plt.ylabel('Actual Fill Prob')
+    plt.xlabel('Predicted Fill Probability')
+    plt.ylabel('Actual Fill Probability')
+    plt.grid(True, alpha = 0.3)
     plt.title(f'Performance of {model_name}')
     plt.legend()
     plt.show()
@@ -440,8 +454,9 @@ def test_model(test_data, base_model, calibrated_model, scalar, model_name, feat
     plt.plot([0,1], [0,1], color = 'black', label = 'Perfect')
     plt.xlim(0,.4)
     plt.ylim(0,.4)
-    plt.xlabel('Predicted Fill Prob')
-    plt.ylabel('Actual Fill Prob')
+    plt.xlabel('Predicted Fill Probability')
+    plt.ylabel('Actual Fill Probability')
+    plt.grid(True, alpha = 0.3)
     plt.title(f'Performance of {model_name}')
     plt.legend()
     plt.show()
@@ -477,8 +492,9 @@ def test_model(test_data, base_model, calibrated_model, scalar, model_name, feat
     plt.plot([0,1], [0,1], color = 'black', label = 'Perfect')
     plt.xlim(0,1)
     plt.ylim(0,1)
-    plt.xlabel('Predicted Fill Prob')
-    plt.ylabel('Actual Fill Prob')
+    plt.xlabel('Predicted Fill Probability')
+    plt.grid(True, alpha = 0.3)
+    plt.ylabel('Actual Fill Probability')
     plt.title(f'Performance of {model_name} On Orders only placed at Best Bid or Best Ask')
     plt.legend()
     plt.show()
@@ -495,6 +511,7 @@ def test_model(test_data, base_model, calibrated_model, scalar, model_name, feat
     plt.xlabel('Probability Bins')
     plt.xlim(0, 1)
     plt.ylabel('Log Vol of LOs')
+    plt.grid(True, alpha = 0.3)
     plt.yscale('log')
     plt.title(f'Amount Of LO Vol appearing in each predictive probability bin {model_name}')
     plt.legend()

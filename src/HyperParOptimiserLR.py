@@ -36,7 +36,7 @@ train_matrix = pd.concat(train_frames, ignore_index = True)
 del train_frames
 gc.collect()
 
-train_matrix = train_matrix.sample(frac = 0.01, random_state = 67)
+train_matrix = train_matrix.sample(frac = 0.1, random_state = 67)
 val_matrix = pd.read_parquet(val_file) #Validation data different from training and testing data ofc
 
 X_train = train_matrix[config.LOGISTIC_MODEL_FEATURES]

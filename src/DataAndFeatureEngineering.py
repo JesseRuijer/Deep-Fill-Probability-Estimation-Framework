@@ -299,9 +299,8 @@ def data_regressors(rawdata, cleandata, clear_RAM = True, dont_include_full_trad
     gc.collect() 
 
     
-    #Features for which during the trail i want to calculate some moments and extremes to summarize the behavior  
+    #Features for which during the trail i want to calculate some moments and extremes to summarize the behavior  over past 50 ticks
     features_for_std = ['Microprice', 'OrderFlowImbalance', 'BASpread', 'QImbalance', 'WeightedVolImbalance', 
-                        #'MicroMidDeviation'
                         ]
     features_for_skew = ['OrderFlowImbalance']
     features_for_extremes = ['OrderFlowImbalance', 'BASpread', 'Microprice']
@@ -327,22 +326,22 @@ def data_regressors(rawdata, cleandata, clear_RAM = True, dont_include_full_trad
     #Clean up temporary dicts
     del std_dict, skew_dict, extremes_dict 
     
-    #HiddenVol
-    hidden_vol = np.where(df_E["Type"] ==  84, df_E['Vol'], 0) #returns the vol of types 84 else zero in a new numpy array
-    cum_vol_pad = np.pad(np.cumsum(hidden_vol), (1,0), constant_values = 0) #says add a zero to the start, nothing to the back and then we take cumsum of all the vols
-    tod_values = df_E['TOD'].values
-    lookback = 5000 #Lookback time in MS for hidden vol trades
-    lookback_times = tod_values - lookback
-    start_indices = np.searchsorted(tod_values, lookback_times, side='left')    #Does binary search st for every lookback time we calculate the row index it woud land on in tod_values
-    current_indices = np.arange(1, len(tod_values) + 1)
-    Regressors_df["LookBackHiddenVol"] = cum_vol_pad[current_indices] - cum_vol_pad[start_indices]
+    # #HiddenVol
+    # hidden_vol = np.where(df_E["Type"] ==  84, df_E['Vol'], 0) #returns the vol of types 84 else zero in a new numpy array
+    # cum_vol_pad = np.pad(np.cumsum(hidden_vol), (1,0), constant_values = 0) #says add a zero to the start, nothing to the back and then we take cumsum of all the vols
+    # tod_values = df_E['TOD'].values
+    # lookback = 5000 #Lookback time in MS for hidden vol trades
+    # lookback_times = tod_values - lookback
+    # start_indices = np.searchsorted(tod_values, lookback_times, side='left')    #Does binary search st for every lookback time we calculate the row index it woud land on in tod_values
+    # current_indices = np.arange(1, len(tod_values) + 1)
+    # Regressors_df["LookBackHiddenVol"] = cum_vol_pad[current_indices] - cum_vol_pad[start_indices]
     
     mo_buy = df_MO['BorS'] == -1
     mo_sell = df_MO['BorS'] == 1
     
 
     
-    #Qimbalance ratio sortof but then for trailing MOs
+    
     Regressors_df['MOTrailingVolBuy'] = trailing_calc(df_E['TOD'].values, df_MO.loc[mo_buy , 'TOD'].values, df_MO.loc[mo_buy , 'Vol'].values, config.LOOKBACK_WINDOW)[0]
     Regressors_df['MOTrailingVolSell'] = trailing_calc(df_E['TOD'].values, df_MO.loc[mo_sell , 'TOD'].values, df_MO.loc[mo_sell , 'Vol'].values, config.LOOKBACK_WINDOW)[0]
     Regressors_df['MOTrailingVolRatio'] = ((Regressors_df['MOTrailingVolSell'] - Regressors_df['MOTrailingVolBuy']) / (Regressors_df['MOTrailingVolBuy'] + Regressors_df['MOTrailingVolSell'])).fillna(0)
@@ -448,7 +447,7 @@ def data_regressors(rawdata, cleandata, clear_RAM = True, dont_include_full_trad
     
     
     ########### Heartbeat Engine ##########################
-    #Trying to create the 'Heartbeat' logic where for an orders life it takes a snapshot of LOB every 10 seconds or so or other custom time ofc
+    #Trying to create the 'Heartbeat' logic where for an orders life it takes a snapshot of LOB every 1 seconds or so or other custom time ofc
     
     hb_order_info = Regressors_df.groupby('ID').agg(     #agg just puts all this info into one row, syntax like Death( tod, max) means we give this new column name to the old col name tod where we perform the operation max to it
         InitialPlacementTime = ('TOD', 'min'),
@@ -674,7 +673,8 @@ def data_regressors(rawdata, cleandata, clear_RAM = True, dont_include_full_trad
     final_state_df["ClockQImbalance"] = (final_state_df['QImbalance'] - final_state_df['QImbalance_past']).fillna(0)
    
     #Some Dynamic events that require dynamic features
-    #This feature is positive if the market is moving away from you and negative if its moving towards you
+    #the deltadistance to microprice is equivalent to deltamicroprice so this is just a name
+    
     eventdeltadistancetomicroprice = np.where(
         final_state_df['SideOfBook'] == 1, 
         final_state_df['EventDeltaMicroprice'], 
@@ -720,7 +720,6 @@ def data_regressors(rawdata, cleandata, clear_RAM = True, dont_include_full_trad
         'ClockDeltaDistanceToMicroprice': 0,
         'ClockDeltaLogVolAhead': 0, 
         'ClockDeltaDistanceToTouch': 0,
-       # 'ClockMicroMidDeviation' : 0 ,
     }, inplace=True)
     
     
@@ -730,7 +729,6 @@ def data_regressors(rawdata, cleandata, clear_RAM = True, dont_include_full_trad
         'DeltaMidprice',
         'DeltaDistanceToMicroprice', 
         'DeltaDistanceToTouch',
-      #  'MicroMidDeviation'
     ]
     
     speed_featuresdic = speedmetric(final_state_df, speed_features_to_test)
@@ -755,6 +753,7 @@ def data_regressors(rawdata, cleandata, clear_RAM = True, dont_include_full_trad
     
     sweep_times = df_MO[df_MO['SweepNoSweep'] == 1]['TOD'].values
     
+    #boolean of whether there was a sweep in last 2000ms
     final_state_df['SweepInLast_2000ms'] = trailing_calc(
         final_state_df['TOD'], 
         sweep_times, 
