@@ -109,8 +109,13 @@ def train(train_files, train_matrix, model):
         EPOCHS = 7
         BATCH_SIZE = 16384 
         
+        idx = int(len(train_files) * .8)
+                
+        active_train_files  = train_files[: idx]
+        active_val_files_df = train_files[idx:]
+        
         scalar = StandardScaler()
-        for f in train_files:
+        for f in active_train_files:
             df = pd.read_parquet(f)
             df.replace([np.inf, -np.inf], 0, inplace = True)
 
@@ -121,16 +126,22 @@ def train(train_files, train_matrix, model):
             del df, X_train_raw
             gc.collect()
         print('Pass1')
+        
         model = UserFNN(input_size = input_size).to(device)
          
         criterion = nn.BCEWithLogitsLoss(reduction = 'none')    # BCE = Binary Cross Entropy = Logloss, this is just the scoring metric and saying reducion is none, it doesnt do any weighting by iteself it just spits out all the raw values and then with my manual weights i can do the weighint later
         optimizer = torch.optim.Adam(model.parameters(), lr = LEARNING_RATE, weight_decay = WEIGHT_DECAY)
-         
+        
+        #training
+        
         for epoch in range(EPOCHS):
              model.train()
-             random.shuffle(train_files)
+             train_loss = 0.0
+             total_train_weight = 0.0
+             shuffled_files = active_train_files.copy()
+             random.shuffle(shuffled_files)
              
-             for f in train_files:
+             for f in shuffled_files:
                  
                  df = pd.read_parquet(f)
                  df.replace([np.inf, -np.inf], 0, inplace = True)
@@ -158,11 +169,54 @@ def train(train_files, train_matrix, model):
                      optimizer.zero_grad()   #By default gradients accumulate in pytorch so zero them out here
                      loss.backward()
                      optimizer.step()
+                     
+                     train_loss += weighted_batch_loss.item()
+                     total_train_weight += batch_weights.sum().item()
 
                  
                  del df, X_train_scaled, y_train, w_train, train_dataset, train_loader
                  gc.collect()
              print(f' Epoch {epoch + 1} / {EPOCHS} \n')   
+             
+             
+        avg_train_loss = train_loss / total_train_weight
+        
+        #Evaluation/calibration loop    
+        
+        model.eval() 
+        val_loss = 0.0
+        total_val_weight = 0.0
+        
+        with torch.no_grad():
+            
+            for f in active_val_files_df: 
+                df = pd.read_parquet(f)
+                df.replace([np.inf, -np.inf], 0, inplace = True)
+                
+                X_val_scaled = scalar.transform(df[config.FNN_MODEL_FEATURES].values)
+                y_val = df[config.TARGET].values
+                w_val = df['UnitWeight'].values
+                
+                val_dataset = DataSet(X_val_scaled, y_val, w_val)
+                val_loader = DataLoader(dataset = val_dataset, batch_size = BATCH_SIZE, shuffle = False)  
+                
+                for features, labels, batch_weights in val_loader:
+                    features, labels, batch_weights = features.to(device), labels.to(device), batch_weights.to(device)
+       
+                    outputs = model(features)
+                    raw_loss = criterion(outputs, labels)
+                    
+                    val_loss += (raw_loss * batch_weights).sum().item()
+                    total_val_weight += batch_weights.sum().item()
+                
+                del df, X_val_scaled, y_val, w_val, val_dataset, val_loader
+                gc.collect()
+
+            avg_val_logloss = val_loss / total_val_weight
+            
+            print(f' Epoch {epoch + 1} / {EPOCHS}')
+            print(f' Weighted Train Logloss: {avg_train_loss:.3f}')
+            print(f' Weighted Test Logloss:  {avg_val_logloss:.3f}\n')
         print('Pass2')
         wrapped_fnn = PyTorchSklearnWrapper(model, device)
        
@@ -1160,7 +1214,7 @@ def plot_walk_forward_curves(daily_curves, model_name):
             plt.plot(day_pred[valid_mask], day_actual[valid_mask], color = 'blue', alpha = 0.5, linewidth = 1)
     #plot thick avg line
     valid_mean = ~np.isnan(mean_acc) & ~np.isnan(mean_pred)
-    plt.plot(mean_pred[valid_mean], mean_acc[valid_mean], color = 'black', linewidth = 5, label = f'Avg of {model_name}')
+    plt.plot(mean_pred[valid_mean], mean_acc[valid_mean], color = 'darkblue', linewidth = 5, label = f'Avg of {model_name}')
     plt.plot([0,1], [0,1], color = 'black', label = 'Perfect', linestyle = '--')
     plt.xlim(0,.4)
     plt.ylim(0,.4)
@@ -1253,7 +1307,100 @@ def plot_walk_forward_div(divergence_curves, model_name):
     print(f"Prob QImbal Mean Deviation: {dev_prob:.4f}")
     print(f"Signal Strength Gain:       {improvement:+.1f}%\n")
 
+def run_is_backtest(test_matrix, use_model, scalar, features):
+    print("\nStarting Implementation Shortfall (IS) Backtest...")
+    
+    # 1. Vectorize probability predictions for the entire day (Fast)
+    X_raw = test_matrix[features].astype(np.float32, copy=False)
+    X = scalar.transform(X_raw) if scalar else X_raw
+    test_matrix['fillprob'] = use_model.predict_proba(X)[:, 1]
+    
+    # We need the Mid Price to calculate IS
+    test_matrix['MidPrice'] = (test_matrix['BestBid'] + test_matrix['BestAsk']) / 2.0
+    
+    # 2. Isolate passive BUY orders placed exactly at the Best Bid
+    # SideOfBook == 1 is Bid based on your framework. 
+    # DistanceToTouch == 0 ensures we only evaluate aggressive queue capture.
+    placements = test_matrix[(test_matrix['TimeSincePlacement'] == 0) & 
+                             (test_matrix['SideOfBook'] == 1.0) & 
+                             (test_matrix['DistanceToTouch'] == 0)].copy()
+    
+    valid_ids = set(placements['ID'].unique())
+    print(f"Tracking {len(valid_ids)} passive touch orders...")
+    
+    # Filter matrix to only include these IDs, sorted chronologically
+    sim_data = test_matrix[test_matrix['ID'].isin(valid_ids)].sort_values(['ID', 'TOD'])
+    
+    taus = [0.05, 0.1, 0.15, 0.2, 0.25, 0.3, 0.35, 0.4, 0.5]
+    results = {tau: [] for tau in taus}
+    baseline_results = []
+    
+    # 3. Simulate chronological execution for each order
+    for order_id, order_ticks in sim_data.groupby('ID'):
+        arrival_mid = order_ticks.iloc[0]['MidPrice']
+        arrival_bid = order_ticks.iloc[0]['BestBid']
         
+        # --- BASELINE LOGIC ---
+        # Assuming a passive fill occurs if the market BestBid drops below our placement price
+        traded_through = order_ticks[order_ticks['BestBid'] < arrival_bid]
+        
+        if not traded_through.empty:
+            baseline_is = ((arrival_bid - arrival_mid) / arrival_mid) * 10000
+        else:
+            # End of window forced cross
+            last_ask = order_ticks.iloc[-1]['BestAsk']
+            baseline_is = ((last_ask - arrival_mid) / arrival_mid) * 10000
+            
+        baseline_results.append(baseline_is)
+        
+        # --- MODEL LOGIC ---
+        for tau in taus:
+            breach = order_ticks[order_ticks['fillprob'] < tau]
+            
+            if breach.empty:
+                # Model never triggered. Did it fill passively?
+                if not traded_through.empty:
+                    results[tau].append(((arrival_bid - arrival_mid) / arrival_mid) * 10000)
+                else:
+                    results[tau].append(((order_ticks.iloc[-1]['BestAsk'] - arrival_mid) / arrival_mid) * 10000)
+            else:
+                # Trigger activated. Did it fill passively BEFORE the trigger?
+                first_breach_time = breach.iloc[0]['TOD']
+                
+                if not traded_through.empty and traded_through.iloc[0]['TOD'] < first_breach_time:
+                    results[tau].append(((arrival_bid - arrival_mid) / arrival_mid) * 10000)
+                else:
+                    # Cancel and cross spread at exact moment of probability breach
+                    execution_ask = breach.iloc[0]['BestAsk']
+                    results[tau].append(((execution_ask - arrival_mid) / arrival_mid) * 10000)
+                    
+    # 4. Results & Plotting
+    mean_baseline = np.mean(baseline_results)
+    mean_model = [np.mean(results[tau]) for tau in taus]
+    
+    plt.figure(figsize=(9, 6))
+    plt.plot(taus, mean_model, marker='o', color='darkblue', linewidth=2, label=f'Model Dynamic Trigger')
+    plt.axhline(y=mean_baseline, color='darkred', linestyle='--', linewidth=2, label='Baseline (Naive Wait)')
+    
+    plt.title(f'Implementation Shortfall vs. Probability Threshold (τ) - {config.TICK}')
+    plt.xlabel('Urgency Threshold τ (Cross spread if prob < τ)')
+    plt.ylabel('Implementation Shortfall (bps) - Lower is Better')
+    plt.legend()
+    plt.grid(True, alpha=0.3)
+    plt.tight_layout()
+    plt.show()
+    
+    # Print numerical summary for the console
+    best_tau_idx = np.argmin(mean_model)
+    best_tau = taus[best_tau_idx]
+    best_is = mean_model[best_tau_idx]
+    
+    print("\n" + "="*50)
+    print("BACKTEST RESULTS (Cost in Basis Points)")
+    print(f"Baseline (Naive Wait): {mean_baseline:.2f} bps")
+    print(f"Optimal Strategy (τ = {best_tau}): {best_is:.2f} bps")
+    print(f"Total Savings: {mean_baseline - best_is:.2f} bps per trade")
+    print("="*50 + "\n")      
     
 if __name__ == "__main__":
     
@@ -1295,9 +1442,9 @@ if __name__ == "__main__":
 
     print(f"\n[System] You selected: {selected_model}")
     print('TRAINING IS REQUIRED BEFORE TESTING (whenever you select new data obviously otherwise not required)')
-    action_choice = input("Do you want to 'train' or 'test' or 'qimbal' or 'use' or 'eval' this model? ").strip().lower()
+    action_choice = input("Do you want to 'train' or 'test' or 'qimbal' or 'use' or 'eval' or 'is_test' this model? ").strip().lower()
     
-    if action_choice in ['test', 'qimbal', 'use']:
+    if action_choice in ['test', 'qimbal', 'use', 'is_test']:
         test_matrix = pd.read_parquet(test_files) 
         data_path, mo_path = get_raw_paths_from_parquet(test_files)
         rawdata = import_data(data_path, mo_path)
@@ -1319,9 +1466,9 @@ if __name__ == "__main__":
     elif action_choice == 'eval':
         #just manually force a list on the one item in tesst files so we can concatenate in sorted below 
         chronological_data = sorted(train_files + test_files)
-        walk_forward(chronological_data, selected_model, train_window_days = 15)
+        walk_forward(chronological_data, selected_model, train_window_days = 7)
         
-        
+   
     elif action_choice == 'use':
         print(f'Use the {selected_model} to experiment on orders, type "exit" if you want to stop')
         
@@ -1410,6 +1557,9 @@ if __name__ == "__main__":
         print(f"Time Since Placement: {highest_tsp} ms")
         print(f"Fill Probability: {highest_prob * 100:.2f}%")
         print("="*50 + "\n")
+        
+        run_is_backtest(test_matrix, use_model, scalar, features)
+        
         while True:
             
             # order_events = test_matrix[test_matrix['ID'] == 43663]
@@ -1432,6 +1582,11 @@ if __name__ == "__main__":
                 print('Enter a valid ID or TOD (Integer Form)')
                 continue
             single_order_eval(clean_ID, clean_TSP, test_matrix, use_model, features, scalar)
+            
+    #elif action_choice == 'is_test':
+   
+         
+         
     else:
         exit()
     

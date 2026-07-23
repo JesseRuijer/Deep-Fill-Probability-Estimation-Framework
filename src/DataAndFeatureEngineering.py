@@ -907,4 +907,176 @@ if __name__ == "__main__":
         
         print(X.head())
         
+        # Dummy code to show how the output variable regulation works 
+        #Just creating a dummy df from the info above
+        df_E = pd.DataFrame({
+            'TOD': [57237043, 57241428, 57241429, 57241430, 57250845],
+            'ID': [211736361,211736361,211736361, 211736361, 211736361],
+            'Type': [66, 67, 67, 67, 68],  
+            'Vol': [3600, 100, 1200, 1800, 500]  
+        })
+
+        # #Just creating a dummy df from the info above
+        # df_E = pd.DataFrame({
+        #     'TOD': [55548745, 56340804, 57600222],
+        #     'ID': [193745485,193745485,193745485],
+        #     'Type': [66, 67, 68],  
+        #     'Vol': [1000, 500, 500]  
+        # })
+
+        # Initialize the Regressors DataFrame with dummy market features
+        # We vary 'VolAhead' to simulate the order book changing in real-time
+        R_df = pd.DataFrame()
+        R_df['TOD'] = df_E['TOD']
+        R_df['Type'] = df_E['Type']
+        R_df['ID'] = df_E['ID']
+        R_df['Vol'] = df_E['Vol']
+
+        print("--- STEP 1: INITIAL COMPILING GRID ---")
+        print(df_E)
+        print("\n" + "="*60 + "\n")
+
+        # =========================================================================
+        # 2. RUN THE CONTINUOUS TARGET LOGIC
+        # =========================================================================
+
+
+        # Isolate exact event behaviors
+        R_df['ExecutedVol'] = np.where(R_df['Type'].isin([69, 70]), R_df['Vol'], 0)
+
+        R_df['ActiveCanceledVol'] = np.where(((R_df['Type'].isin([67, 68])) & (R_df['TOD'] < config.MARKET_CLOSE_TIME)), R_df['Vol'], 0)
+
+        R_df['ExpiredVol'] = np.where(((R_df['Type'].isin([67, 68])) & (R_df['TOD'] >= config.MARKET_CLOSE_TIME)), R_df['Vol'], 0)
+
+        # Execute the double-flip reverse cumsum calculation
+        R_df['TotalExecutedAfter'] = (R_df.iloc[::-1].groupby('ID')['ExecutedVol'].cumsum().iloc[::-1] - R_df['ExecutedVol'])
+        R_df['TotalActiveCanceledAfter'] = (R_df.iloc[::-1].groupby('ID')['ActiveCanceledVol'].cumsum().iloc[::-1] - R_df['ActiveCanceledVol'])
+        R_df['TotalExpiredAfter'] = (R_df.iloc[::-1].groupby('ID')['ExpiredVol'].cumsum().iloc[::-1] - R_df['ExpiredVol'])
+
+        print("--- STEP 2: Vol After Now (Looking into the future) ---")
+        print(R_df[['Type', 'Vol', 'ExecutedVol', 'ActiveCanceledVol','ExpiredVol' ,'TotalExecutedAfter', 'TotalActiveCanceledAfter', 'TotalExpiredAfter']])
+        print("\n" + "="*60 + "\n")
+
+        # =========================================================================
+        # 3. STATE-SPACE FILTERING & SNAPSHOT EXTRACTION
+        # =========================================================================
+        # Isolate rows where order states are born or transformed
+        state_snapshots_df2 = R_df[R_df['Type'].isin([66,67,69,83])].copy()
+
+        state_snapshots_df2['TotalFailureAfter'] = state_snapshots_df2['TotalActiveCanceledAfter'] + state_snapshots_df2['TotalExpiredAfter']
+
+        print("--- STEP 3: STATE SNAPSHOTS RETAINED  ---")
+        print(state_snapshots_df2[['TOD', 'Type','TotalExecutedAfter', 'TotalFailureAfter']])
+        print("\n" + "="*60 + "\n")
+
+        # =========================================================================
+        # 4. TARGET GENERATION AND MATRIX PURGE
+        # =========================================================================
+        # Generate the Success Rows
+        fills_df = state_snapshots_df2[state_snapshots_df2['TotalExecutedAfter'] > 0].copy()
+        fills_df['FillNoFill'] = 1
+        fills_df['Unit_Weight'] = fills_df['TotalExecutedAfter']
+
+        # Generate the Failure Rows
+        cancels_df = state_snapshots_df2[state_snapshots_df2['TotalFailureAfter'] > 0].copy()
+        cancels_df['FillNoFill'] = 0
+        cancels_df['Unit_Weight'] = cancels_df['TotalFailureAfter']
+
+        # Combine into final training array
+        Clean_Regression_Data = pd.concat([fills_df, cancels_df], ignore_index=True)
+
+
+
+        Clean_Regression_Data = Clean_Regression_Data.sort_values(by = 'TOD')
+
+        # Drop intermediate infrastructure tracking keys
+        #Also for the proper code above i should drop type but just kept it in now since easier to check what im doing
+        cols_to_drop = ['ID','Vol', 'ExecutedVol', 'ActiveCanceledVol', 'ExpiredVol' ,'TotalExecutedAfter', 'TotalActiveCanceledAfter', 'TotalExpiredAfter', 'TotalFailureAfter' ]
+        Clean_Regression_Data = Clean_Regression_Data.drop(columns=cols_to_drop)
+
+        print("--- STEP 4: FINAL CLEAN MACHINE LEARNING MATRIX ---")
+        print(Clean_Regression_Data)
+        
+        # =========================================================================
+        # DUMMY DEMONSTRATION: HEARTBEAT & TARGET INHERITANCE ENGINE
+        # =========================================================================
+        print("\n" + "="*80)
+        print("--- HEARTBEAT & TARGET INHERITANCE DEMONSTRATION ---")
+        print("="*80 + "\n")
+
+        # STEP 1: Simulate a single order that lives for 35 seconds
+        # t=0 (Place), t=15000 (Partial Fill), t=35000 (Cancel)
+        df_dummy = pd.DataFrame({
+            'TOD': [100000, 115000, 135000],  
+            'ID': [999, 999, 999],
+            'Type': [66, 69, 68],             
+            'Vol': [1000, 400, 600]
+        })
+        
+        print("STEP 1: RAW EVENTS OVER 35 SECONDS")
+        print(df_dummy)
+        print("\n" + "-"*60 + "\n")
+
+        # STEP 2: Calculate Actual Event Targets (Using the fast Math Trick!)
+        df_dummy['ExecutedVol'] = np.where(df_dummy['Type'].isin([69, 70]), df_dummy['Vol'], 0)
+        df_dummy['CanceledVol'] = np.where(df_dummy['Type'].isin([67, 68]), df_dummy['Vol'], 0)
+        
+        df_dummy['TotalExecutedAfter'] = df_dummy.groupby('ID')['ExecutedVol'].transform('sum') - df_dummy.groupby('ID')['ExecutedVol'].cumsum()
+        df_dummy['TotalCanceledAfter'] = df_dummy.groupby('ID')['CanceledVol'].transform('sum') - df_dummy.groupby('ID')['CanceledVol'].cumsum()
+        
+        print("STEP 2: TARGETS CALCULATED FOR REAL EVENTS")
+        print(df_dummy[['TOD', 'Type', 'Vol', 'TotalExecutedAfter', 'TotalCanceledAfter']])
+        print("\n" + "-"*60 + "\n")
+
+        # STEP 3: Generate Heartbeats (10s intervals = 10000ms)
+        interval = 10000
+        duration = 135000 - 100000
+        num_beats = duration // interval  # 35000 // 10000 = 3 heartbeats
+        
+        hb_df = pd.DataFrame({
+            'ID': [999] * num_beats,
+            'TOD': 100000 + (np.arange(1, num_beats + 1) * interval)
+        })
+        hb_df['Type'] = 26 # Custom flag for Heartbeats
+        
+        print("STEP 3: GENERATE ARTIFICIAL HEARTBEAT TIMESTAMPS (Every 10s)")
+        print(hb_df)
+        print("\n" + "-"*60 + "\n")
+
+        # STEP 4: Target Inheritance via merge_asof
+        hb_df = hb_df.sort_values('TOD')
+        df_dummy = df_dummy.sort_values('TOD')
+        
+        # Force datatypes to prevent merge crash
+        hb_df['TOD'] = hb_df['TOD'].astype('int32')
+        df_dummy['TOD'] = df_dummy['TOD'].astype('int32')
+        
+        hb_with_targets = pd.merge_asof(
+            hb_df,
+            df_dummy[['TOD', 'TotalExecutedAfter', 'TotalCanceledAfter']],
+            on='TOD',
+            direction='backward'
+        )
+        
+        print("STEP 4: HEARTBEATS LOOK BACKWARDS AND INHERIT TARGETS")
+        print(hb_with_targets)
+        print("\n" + "-"*60 + "\n")
+
+        # STEP 5: Stack and Sort to see the final combined timeline!
+        final_view = pd.concat([
+            df_dummy[['TOD', 'Type', 'Vol', 'TotalExecutedAfter', 'TotalCanceledAfter', 'ID']],
+            hb_with_targets
+        ], ignore_index=True).sort_values('TOD').fillna({'Vol': 0})
+        
+        # Convert floats to ints for cleaner printing
+        final_view['TotalExecutedAfter'] = final_view['TotalExecutedAfter'].astype(int)
+        final_view['TotalCanceledAfter'] = final_view['TotalCanceledAfter'].astype(int)
+        final_view['Vol'] = final_view['Vol'].astype(int)
+        
+        print("STEP 5: FINAL COMBINED CHRONOLOGICAL TIMELINE")
+        print("Notice how Heartbeat 1 thinks there are 400 shares left to execute,")
+        print("but Heartbeat 2 knows the execution already happened!")
+        print("-" * 65)
+        print(final_view.to_string(index=False))
+        
        

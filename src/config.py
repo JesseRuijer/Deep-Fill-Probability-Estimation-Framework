@@ -354,7 +354,7 @@ UNIVERSAL_FEATURES = [ # Features that apply to any LO, so for ex midprice yes, 
     'RollingMin_Microprice',
 
     # Trailing Volumes & Lookbacks
-    'LookBackHiddenVol',
+    #'LookBackHiddenVol',
     'MOTrailingVolBuy',
     'MOTrailingVolSell',
     'MOTrailingVolRatio',

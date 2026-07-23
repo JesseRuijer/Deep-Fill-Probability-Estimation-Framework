@@ -93,8 +93,8 @@ def run_project(model_choice, job):
     
     #Main script
     
-    #Used first 80% of April to train on and last 20% to calibraet on
-    #Used May 1 as validation day for Optuna, so any test day should be later than that
+    #when training models use sliding window starting at jan 1 then slide over three weeks of testing, three weeks of training
+    #For optuna used whole april as training and Used May 1 as validation day for Optuna, so any test day should be later than that
     
     #Selecting files to use
     
