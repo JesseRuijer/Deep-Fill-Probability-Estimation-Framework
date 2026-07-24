@@ -629,7 +629,7 @@ def compute_daily_divergence(merged):
     merged['is_buy'] = (merged['BorS'] == -1).astype(int)
     
     #same logic as in userscript, restrict qimbal domain
-    bins = np.linspace(-0.5, 0.5,51)
+    bins = np.linspace(-1.0, 1.0,101)
     merged['Reg_Fine_Bin'] = pd.cut(merged['QImbalance'], bins=bins)
     merged['Prob_Fine_Bin'] = pd.cut(merged['ProbQImbal'], bins=bins)
     

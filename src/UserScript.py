@@ -15,6 +15,9 @@ import joblib
 import matplotlib.pyplot as plt
 import gc
 import random
+
+
+
 from pathlib import Path
 from sklearn.preprocessing import StandardScaler
 import config
@@ -23,9 +26,12 @@ from ModelEvaluation import test_model
 from FileManager import get_ml_training_paths, get_batch_data_paths, generate_dynamic_paths
 from DataAndFeatureEngineering import import_data, clean_data, data_regressors
 
+
+
 #Below is a fix to be able to run lgbm and torch in one script 
 os.environ["KMP_DUPLICATE_LIB_OK"] = "TRUE"
-os.environ["OMP_NUM_THREADS"] = "1"
+
+
 
 
 def prep_data_daily(file_path, file_path_mo):
@@ -86,12 +92,29 @@ def train(train_files, train_matrix, model):
     
     if model == 'FNN':
         
-                
+        
+        #import FNN required pytorch stuff only when using FNN
         import torch
         import torch.nn as nn
         from torch.utils.data import DataLoader
         from FNN import PyTorchSklearnWrapper, DataSet, UserFNN
-    
+        #Set seed to ensure reproducability for FNN
+        SEED = 67
+        random.seed(SEED)
+        np.random.seed(SEED)
+        torch.manual_seed(SEED)
+        
+        #additional seeding for GPU and if user uses CUDA
+        
+        if torch.backends.mps.is_available():
+            torch.mps.manual_seed(SEED)
+            
+        elif torch.cuda.is_available():
+            torch.cuda.manual_seed(SEED)
+        
+        torch.backends.cudnn.deterministic = True
+        torch.backends.cudnn.benchmark = False
+            
         if torch.backends.mps.is_available():
             device = torch.device('mps')
             print('Training on Apple Silicon MPS')
@@ -104,9 +127,9 @@ def train(train_files, train_matrix, model):
         
         input_size = len(config.FNN_MODEL_FEATURES)
         
-        LEARNING_RATE = 0.003143153725649377
+        LEARNING_RATE = 0.001    #0.003143153725649377
         WEIGHT_DECAY = 2.5475947521348294e-06
-        EPOCHS = 7
+        EPOCHS = 1
         BATCH_SIZE = 16384 
         
         idx = int(len(train_files) * .8)
@@ -176,47 +199,46 @@ def train(train_files, train_matrix, model):
                  
                  del df, X_train_scaled, y_train, w_train, train_dataset, train_loader
                  gc.collect()
-             print(f' Epoch {epoch + 1} / {EPOCHS} \n')   
              
              
-        avg_train_loss = train_loss / total_train_weight
-        
-        #Evaluation/calibration loop    
-        
-        model.eval() 
-        val_loss = 0.0
-        total_val_weight = 0.0
-        
-        with torch.no_grad():
+             avg_train_loss = train_loss / total_train_weight
             
-            for f in active_val_files_df: 
-                df = pd.read_parquet(f)
-                df.replace([np.inf, -np.inf], 0, inplace = True)
+            #Evaluation/calibration loop    
+            
+             model.eval() 
+             val_loss = 0.0
+             total_val_weight = 0.0
+            
+             with torch.no_grad():
                 
-                X_val_scaled = scalar.transform(df[config.FNN_MODEL_FEATURES].values)
-                y_val = df[config.TARGET].values
-                w_val = df['UnitWeight'].values
-                
-                val_dataset = DataSet(X_val_scaled, y_val, w_val)
-                val_loader = DataLoader(dataset = val_dataset, batch_size = BATCH_SIZE, shuffle = False)  
-                
-                for features, labels, batch_weights in val_loader:
-                    features, labels, batch_weights = features.to(device), labels.to(device), batch_weights.to(device)
-       
-                    outputs = model(features)
-                    raw_loss = criterion(outputs, labels)
+                 for f in active_val_files_df: 
+                     df = pd.read_parquet(f)
+                     df.replace([np.inf, -np.inf], 0, inplace = True)
                     
-                    val_loss += (raw_loss * batch_weights).sum().item()
-                    total_val_weight += batch_weights.sum().item()
+                     X_val_scaled = scalar.transform(df[config.FNN_MODEL_FEATURES].values)
+                     y_val = df[config.TARGET].values
+                     w_val = df['UnitWeight'].values
+                    
+                     val_dataset = DataSet(X_val_scaled, y_val, w_val)
+                     val_loader = DataLoader(dataset = val_dataset, batch_size = BATCH_SIZE, shuffle = False)  
+                    
+                     for features, labels, batch_weights in val_loader:
+                         features, labels, batch_weights = features.to(device), labels.to(device), batch_weights.to(device)
+           
+                         outputs = model(features)
+                         raw_loss = criterion(outputs, labels)
+                        
+                         val_loss += (raw_loss * batch_weights).sum().item()
+                         total_val_weight += batch_weights.sum().item()
+                    
+                     del df, X_val_scaled, y_val, w_val, val_dataset, val_loader
+                     gc.collect()
+    
+                 avg_val_logloss = val_loss / total_val_weight
                 
-                del df, X_val_scaled, y_val, w_val, val_dataset, val_loader
-                gc.collect()
-
-            avg_val_logloss = val_loss / total_val_weight
-            
-            print(f' Epoch {epoch + 1} / {EPOCHS}')
-            print(f' Weighted Train Logloss: {avg_train_loss:.3f}')
-            print(f' Weighted Test Logloss:  {avg_val_logloss:.3f}\n')
+             print(f' Epoch {epoch + 1} / {EPOCHS}')
+             print(f' Weighted Train Logloss: {avg_train_loss:.3f}')
+             print(f' Weighted Test Logloss:  {avg_val_logloss:.3f}\n')
         print('Pass2')
         wrapped_fnn = PyTorchSklearnWrapper(model, device)
        
@@ -249,7 +271,7 @@ def train(train_files, train_matrix, model):
         
         if train_matrix is None:
             train_frames = [pd.read_parquet(f, columns = needed_cols).astype(np.float32) for f in train_files]
-            train_matrix = pd.concat(train_frames, ignore_index = True)
+            train_matrix = pd.concat(train_frames, ignore_index = True).astype(np.float32)
             del train_frames
             gc.collect()
             
@@ -260,27 +282,31 @@ def train(train_files, train_matrix, model):
         lgbm_Y = train_matrix.pop(config.TARGET)
         lgbm_w = train_matrix.pop('UnitWeight')
         
-        train_matrix = train_matrix[config.LGBM_MODEL_FEATURES]
-        lgbm_X = train_matrix
+        lgbm_X = train_matrix[config.LGBM_MODEL_FEATURES]
+        del train_matrix
         
         gc.collect()
       
         # Final safety check
         print('Pass2')
         lgbm_X.replace([np.inf, -np.inf], 0, inplace=True)
+        lgbm_X = lgbm_X.astype(np.float32, copy = False)
         print('Pass3')
 
         
         #use 80% for training and 20% to calibrate on, in chronological order since we have timeseries data 
         split_idx = int(len(lgbm_X) * .8)
     
-        train_X = lgbm_X.iloc[:split_idx]
-        train_Y = lgbm_Y[:split_idx]
-        train_w = lgbm_w.iloc[:split_idx]
+        train_X = lgbm_X.iloc[:split_idx].copy()
+        train_Y = lgbm_Y.iloc[:split_idx].copy()
+        train_w = lgbm_w.iloc[:split_idx].copy()
         
-        calib_X = lgbm_X.iloc[split_idx:]
-        calib_y = lgbm_Y.iloc[split_idx:]
-        calib_weights = lgbm_w.iloc[split_idx:]
+        calib_X = lgbm_X.iloc[split_idx:].copy()
+        calib_y = lgbm_Y.iloc[split_idx:].copy()
+        calib_weights = lgbm_w.iloc[split_idx:].copy()
+        
+        del lgbm_X, lgbm_Y, lgbm_w
+        gc.collect()
         
         #Training model, can be commented when saved model    
         base_lgbm, calibrated_lgbm = train_lgbm_model(train_X, train_Y, train_w, calib_X, calib_y, calib_weights)
@@ -338,7 +364,7 @@ def train(train_files, train_matrix, model):
         split_idx = int(len(lr_X) * .8)
     
         train_X = lr_X.iloc[:split_idx]
-        train_Y = lr_Y[:split_idx]
+        train_Y = lr_Y.iloc[:split_idx]
         train_w = lr_w.iloc[:split_idx]
         
         calib_X = lr_X.iloc[split_idx:]
@@ -1190,7 +1216,7 @@ def plot_walk_forward_curves(daily_curves, model_name):
     
     #plot thick avg line
     valid_mean = ~np.isnan(mean_acc) & ~np.isnan(mean_pred)
-    plt.plot(mean_pred[valid_mean], mean_acc[valid_mean], color = 'black', linewidth = 5, label = f'Avg of {model_name}')
+    plt.plot(mean_pred[valid_mean], mean_acc[valid_mean], color = 'darkblue', linewidth = 5, label = f'Avg of {model_name}')
     
     #regular plot
     plt.plot([0,1], [0,1], color = 'black', label = 'Perfect', linestyle = '--')
@@ -1198,6 +1224,7 @@ def plot_walk_forward_curves(daily_curves, model_name):
     plt.ylim(0,1)
     plt.xlabel('Predicted Fill Prob')
     plt.ylabel('Actual Fill Prob')
+    plt.grid(True, alpha = 0.3)
     plt.title(f'Performance of {model_name} on {config.TICK}')
     plt.legend()
     plt.show()
@@ -1220,6 +1247,7 @@ def plot_walk_forward_curves(daily_curves, model_name):
     plt.ylim(0,.4)
     plt.xlabel('Predicted Fill Prob')
     plt.ylabel('Actual Fill Prob')
+    plt.grid(True, alpha = 0.3)
     plt.title(f'Performance of {model_name} on {config.TICK}')
     plt.legend()
     plt.show()
@@ -1236,7 +1264,7 @@ def plot_walk_forward_div(divergence_curves, model_name):
     
     
     #Restrict domain to -0.1, 0.1 for qimbal since there the regular qimbal is weakest predictor and our model improves it the most
-    bins = np.linspace(-0.5, 0.5, 51)
+    bins = np.linspace(-1.0, 1.0, 101)
     x_mids = (bins[:-1] + bins[1:]) / 2 #slicing, [:-1] means slice everything from start but exlude last entry 
     
     # Calculate the mathematical average across the month per bin
@@ -1269,7 +1297,7 @@ def plot_walk_forward_div(divergence_curves, model_name):
     plt.ylabel('Proportion of Market Orders that are Buys')
     
     # Zoomed in to see the divergence around zero
-    plt.xlim(-0.5, 0.5)
+    plt.xlim(-1.0, 1.0)
     plt.ylim(0, 1)
     
     plt.legend()
@@ -1466,7 +1494,7 @@ if __name__ == "__main__":
     elif action_choice == 'eval':
         #just manually force a list on the one item in tesst files so we can concatenate in sorted below 
         chronological_data = sorted(train_files + test_files)
-        walk_forward(chronological_data, selected_model, train_window_days = 7)
+        walk_forward(chronological_data, selected_model, train_window_days = 15)
         
    
     elif action_choice == 'use':

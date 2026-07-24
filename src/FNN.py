@@ -16,6 +16,22 @@ from torch.utils.data import DataLoader, Dataset
 import random
 import gc
 
+#Set seed to ensure reproducability
+SEED = 67
+random.seed(SEED)
+np.random.seed(SEED)
+torch.manual_seed(SEED)
+
+#additional seeding for GPU and if user uses CUDA
+
+if torch.backends.mps.is_available():
+    torch.mps.manual_seed(SEED)
+    
+elif torch.cuda.is_available():
+    torch.cuda.manual_seed(SEED)
+
+torch.backends.cudnn.deterministic = True
+torch.backends.cudnn.benchmark = False
 
 class PyTorchSklearnWrapper:   
     
@@ -132,9 +148,9 @@ def prepdata_and_train(train_files):
     
     #Initialize model 
     input_size = len(config.FNN_MODEL_FEATURES)
-    LEARNING_RATE = 0.003143153725649377
+    LEARNING_RATE = 0.001    #0.003143153725649377
     WEIGHT_DECAY = 2.5475947521348294e-06 #L2 regularization to prevent overfitting
-    EPOCHS = 7
+    EPOCHS = 1
     BATCH_SIZE = 16384 #power of two so easy to progress and batch size can be large since the tabular data is not super information dense (like a 4K image for example)
     
     model = NN(input_size = input_size).to(device)
