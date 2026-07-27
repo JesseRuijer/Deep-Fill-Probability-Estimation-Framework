@@ -150,7 +150,7 @@ def prepdata_and_train(train_files):
     input_size = len(config.FNN_MODEL_FEATURES)
     LEARNING_RATE = 0.001    #0.003143153725649377
     WEIGHT_DECAY = 2.5475947521348294e-06 #L2 regularization to prevent overfitting
-    EPOCHS = 1
+    EPOCHS = 2
     BATCH_SIZE = 16384 #power of two so easy to progress and batch size can be large since the tabular data is not super information dense (like a 4K image for example)
     
     model = NN(input_size = input_size).to(device)

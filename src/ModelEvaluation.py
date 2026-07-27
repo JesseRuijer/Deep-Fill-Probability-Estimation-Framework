@@ -200,8 +200,8 @@ def test_model(test_data, base_model, calibrated_model, scalar, model_name, feat
     axes[0,0].set_title('Calibration Curve')
     axes[0,0].set_xlim(0, 0.5)
     axes[0,0].set_ylim(0, 0.5)
-    axes.xaxis.set_major_formatter(PercentFormatter(1.0))
-    axes.yaxis.set_major_formatter(PercentFormatter(1.0))
+    axes[0,0].xaxis.set_major_formatter(PercentFormatter(1.0))
+    axes[0,0].yaxis.set_major_formatter(PercentFormatter(1.0))
     axes[0,0].grid(True, alpha = 0.3)
     axes[0,0].set_xlabel('Average Predicted Probability of Fill')
     axes[0,0].set_ylabel('Average Actual Fill Rate')
@@ -237,7 +237,7 @@ def test_model(test_data, base_model, calibrated_model, scalar, model_name, feat
     axes[0,1].plot(avg_time, temp_pred, color = 'r', label = f'{model_name} prediction')
     axes[0,1].set_title('Fill Probability During Lifetime')
     axes[0,1].set_xlabel('Time since placement (ms)') 
-    axes.yaxis.set_major_formatter(PercentFormatter(1.0))
+    axes[0,1].yaxis.set_major_formatter(PercentFormatter(1.0))
     axes[0,1].set_ylabel('P(fill)')
     axes[0,1].grid(True, alpha = 0.3)
     axes[0,1].legend()
@@ -264,8 +264,8 @@ def test_model(test_data, base_model, calibrated_model, scalar, model_name, feat
     axes[1,0].set_ylabel('Precision')
     axes[1,0].plot([0,1], [dummy_fill_prob, dummy_fill_prob], color = 'red', label = 'Dummy') #the dummy PR is just the baseline fill rate i.e here just a horizontal line
     axes[1,0].set_title('Precision-Recall curve')
-    axes.xaxis.set_major_formatter(PercentFormatter(1.0))
-    axes.yaxis.set_major_formatter(PercentFormatter(1.0))
+    axes[1,0].xaxis.set_major_formatter(PercentFormatter(1.0))
+    axes[1,0].yaxis.set_major_formatter(PercentFormatter(1.0))
     axes[1,0].grid(True, alpha = 0.3)
     axes[1,0].set_ylabel('Fills Correctly Identified / All Orders Predicted To Fill')   #Precision = TP/(TP + FP)
     axes[1,0].set_xlabel('Fills correctly identified as Fills / All Actual Fills')  #Recall = TP /(TP + FN) = Sensitivity = True Positive Rate
@@ -287,7 +287,7 @@ def test_model(test_data, base_model, calibrated_model, scalar, model_name, feat
     axes[1, 1].hist(fills_df['y_pred'], bins=50, alpha=0.3, color='green', label='Actual Fills (1)', log = True, weights = fills_df['weights'])
     axes[1, 1].set_title(f'Distribution of Predicted Probabilities (Log Scale) for {model_name}')
     axes[1,1].grid(True, alpha = 0.3)
-    axes.xaxis.set_major_formatter(PercentFormatter(1.0))
+    axes[1,1].xaxis.set_major_formatter(PercentFormatter(1.0))
     axes[1, 1].set_xlabel('Predicted Probability of Fill')
     axes[1, 1].set_ylabel('Vol of Orders (Log Scale)')
     axes[1, 1].legend()
@@ -380,7 +380,7 @@ def test_model(test_data, base_model, calibrated_model, scalar, model_name, feat
         plt.xlabel('Normalized order lifetime (0=placement, 1=death)')
         plt.ylabel('Average Fill Probability')
         plt.grid(True, alpha = 0.3)
-        plt.title(f'Predicted Probability over lifetime by eventual outcome {model_name}')
+        plt.title(f'Predicted Fill Probability over lifetime by eventual outcome {model_name}')
         plt.legend()
     
         # Brier over normalized lifetime with naive baseline for reference
@@ -635,13 +635,92 @@ def compute_daily_divergence(merged):
     
     # Calculate the proportion of buys in each bin
  
-    reg_curve = merged.groupby('Reg_Fine_Bin', observed=False)['is_buy'].mean().dropna()
-    prob_curve = merged.groupby('Prob_Fine_Bin', observed=False)['is_buy'].mean().dropna()
+    reg_curve = merged.groupby('Reg_Fine_Bin', observed=False)['is_buy'].mean()
+    prob_curve = merged.groupby('Prob_Fine_Bin', observed=False)['is_buy'].mean()
     
     return reg_curve.values, prob_curve.values
+
+
+def compute_daily_alligator(y_true, y_pred_prob, weights, time_since_placement, order_ids):
+
+    # Notice we added order_ids to the function arguments
+    eval_df = pd.DataFrame({
+        'y_true': y_true.values,
+        'y_pred': y_pred_prob,
+        'weight': weights.values,
+        'tsp':    time_since_placement.values,
+        'ID':     order_ids.values 
+    })
     
+    eval_df['EventualOutcome'] = eval_df['y_true']
     
+    # Normalize each order's time axis to [0, 1]
+    eval_df['NormTime'] = eval_df.groupby('ID')['tsp'].transform(
+        lambda x: x / x.max() if x.max() > 0 else 0.0
+    )
     
+    # Create exactly 20 bins from 0 to 1
+    bins = np.linspace(0, 1, 21) 
+    eval_df['TimeBucket'] = pd.cut(eval_df['NormTime'], bins=bins, include_lowest=True)
+    
+    # Safe weight calculator to prevent ZeroDivisionError on empty bins
+    def safe_alligator_weights(x):
+        if x['weight'].sum() == 0:
+            return np.nan
+        return np.average(x['y_pred'], weights=x['weight'])
+    
+    # observed=False ensures all 20 bins are kept even if some are empty for a specific day
+    trajectory = (
+        eval_df.groupby(['TimeBucket', 'EventualOutcome'], observed=False)
+        .apply(safe_alligator_weights)
+        .unstack() 
+    )
+    
+    # Extract columns safely, defaulting to NaNs if a day magically had zero fills or zero cancels
+    fills = trajectory[1].values if 1 in trajectory.columns else np.full(20, np.nan)
+    cancels = trajectory[0].values if 0 in trajectory.columns else np.full(20, np.nan)
+    
+    return fills, cancels
+    
+def compute_daily_PR(y_true, y_pred_prob, weights):
+    
+    precision, recall, _ = precision_recall_curve(y_true, y_pred_prob, sample_weight = weights)
+    return precision, recall
+
+def compute_daily_scores(y_true, y_pred_prob, weights):
+    #compute brier logloss and skill scores daily to be used in walk forward in userscript to get average model results
+    dummy_fill_prob = np.average(y_true, weights = weights)
+    brier_score = brier_score_loss(y_true, y_pred_prob, sample_weight = weights)
+    brier_skill_score = 1 - ((brier_score)/(dummy_fill_prob*(1-dummy_fill_prob)))
+    logloss_score = log_loss(y_true, y_pred_prob, sample_weight = weights)
+    
+    dummy_y_pred_prob = np.full(len(y_true), dummy_fill_prob) 
+    dummy_logloss = log_loss(y_true, dummy_y_pred_prob, sample_weight = weights)
+    
+    avg_precision = average_precision_score(y_true, y_pred_prob, sample_weight = weights)
+    
+    logloss_skill_score = 1 - ((logloss_score)/(dummy_logloss))
+    
+    dummy_brierscore = brier_score_loss(y_true, dummy_y_pred_prob, sample_weight = weights)
+    
+    avgprecision_dummy = average_precision_score(y_true, dummy_y_pred_prob, sample_weight = weights)
+    
+    scores = {
+        
+        'brier': brier_score,
+        'brier_skill': brier_skill_score,
+        'logloss': logloss_score,
+        'logloss_skill': logloss_skill_score,
+        'pr': avg_precision,
+        
+        'dummy_fill_prob': dummy_fill_prob,
+        'dummy_brier': dummy_brierscore,
+        'dummy_logloss': dummy_logloss,
+        'dummy_pr': avgprecision_dummy
+        
+        }
+    
+    return scores
     
     
     

@@ -13,6 +13,7 @@ import numpy as np
 import os
 import joblib
 import matplotlib.pyplot as plt
+from matplotlib.ticker import PercentFormatter
 import gc
 import random
 
@@ -1137,10 +1138,16 @@ def walk_forward(all_data_paths, selected_model, train_window_days):
     
     from ModelEvaluation import compute_daily_performance_curve
     from ModelEvaluation import compute_daily_divergence
+    from ModelEvaluation import compute_daily_alligator
+    from ModelEvaluation import compute_daily_PR
+    from ModelEvaluation import compute_daily_scores
     
     monthly_dataframes = []
     daily_curves = []
     divergence_curves = []
+    alligator_curves = []
+    PR_curves = []
+    model_scores = []
     
     total_test_days = len(all_data_paths) - train_window_days
    
@@ -1173,8 +1180,21 @@ def walk_forward(all_data_paths, selected_model, train_window_days):
         
         #you can add the at_touch_mask to mask here if you want the monthly plots to be for orders only placed at best price
         day_pred, day_actual = compute_daily_performance_curve(y_true, y_pred_prob, weights, mask = None)
+        
+        
          
         daily_curves.append((day_pred, day_actual))
+        
+        tsp = test_matrix['TimeSincePlacement']
+        order_ids = test_matrix['ID']
+        day_fills, day_cancels = compute_daily_alligator(y_true, y_pred_prob, weights, tsp, order_ids)
+        alligator_curves.append((day_fills, day_cancels))
+        
+        day_precision, day_recall = compute_daily_PR(y_true, y_pred_prob, weights)
+        PR_curves.append((day_precision, day_recall))
+        
+        daily_scores = compute_daily_scores(y_true, y_pred_prob, weights)
+        model_scores.append(daily_scores)
         
         raw_data_path, raw_mo_path = get_raw_paths_from_parquet(test_file)
         
@@ -1190,15 +1210,20 @@ def walk_forward(all_data_paths, selected_model, train_window_days):
         
     #monthly_merged = pd.concat(monthly_dataframes, ignore_index = True)
     
-   # plot_monthly_sum(monthly_merged,selected_model)
+    
     plot_walk_forward_curves(daily_curves, selected_model)
     plot_walk_forward_div(divergence_curves, selected_model)
+    plot_walk_forward_alligator(alligator_curves, selected_model) 
+    plot_walk_forward_PR(PR_curves, selected_model)
+    prnt_daily_scores(daily_scores, selected_model)
+    
     
 def plot_walk_forward_curves(daily_curves, model_name):
     #want the regular one and the one up till 30%
     plt.figure(figsize = (20,10))
     all_preds = []
     all_actuals = []
+
     
     for day_pred, day_actual in daily_curves:
         all_preds.append(day_pred)
@@ -1222,6 +1247,8 @@ def plot_walk_forward_curves(daily_curves, model_name):
     plt.plot([0,1], [0,1], color = 'black', label = 'Perfect', linestyle = '--')
     plt.xlim(0,1)
     plt.ylim(0,1)
+    plt.gca().xaxis.set_major_formatter(PercentFormatter(1.0))
+    plt.gca().yaxis.set_major_formatter(PercentFormatter(1.0))
     plt.xlabel('Predicted Fill Prob')
     plt.ylabel('Actual Fill Prob')
     plt.grid(True, alpha = 0.3)
@@ -1245,6 +1272,8 @@ def plot_walk_forward_curves(daily_curves, model_name):
     plt.plot([0,1], [0,1], color = 'black', label = 'Perfect', linestyle = '--')
     plt.xlim(0,.4)
     plt.ylim(0,.4)
+    plt.gca().xaxis.set_major_formatter(PercentFormatter(1.0))
+    plt.gca().yaxis.set_major_formatter(PercentFormatter(1.0))
     plt.xlabel('Predicted Fill Prob')
     plt.ylabel('Actual Fill Prob')
     plt.grid(True, alpha = 0.3)
@@ -1259,8 +1288,8 @@ def plot_walk_forward_div(divergence_curves, model_name):
     
     plt.figure(figsize=(9, 6))
 
-    all_reg = [day[0] for day in divergence_curves]
-    all_prob = [day[1] for day in divergence_curves]
+    all_reg = pd.DataFrame([day[0] for day in divergence_curves]).values.astype(float)
+    all_prob = pd.DataFrame([day[1] for day in divergence_curves]).values.astype(float)
     
     
     #Restrict domain to -0.1, 0.1 for qimbal since there the regular qimbal is weakest predictor and our model improves it the most
@@ -1334,6 +1363,97 @@ def plot_walk_forward_div(divergence_curves, model_name):
     print(f"Raw QImbal Mean Deviation:  {dev_reg:.4f}")
     print(f"Prob QImbal Mean Deviation: {dev_prob:.4f}")
     print(f"Signal Strength Gain:       {improvement:+.1f}%\n")
+    
+    
+def plot_walk_forward_alligator(alligator_curves, model_name):
+    plt.figure(figsize=(16, 9))
+
+    # Force 2D float alignment using the ragged-array fix
+    all_fills = pd.DataFrame([day[0] for day in alligator_curves]).values.astype(float)
+    all_cancels = pd.DataFrame([day[1] for day in alligator_curves]).values.astype(float)
+    
+    x_axis = np.linspace(0, 1, 20)
+    
+    for i, fill in enumerate(all_fills):
+        valid = ~np.isnan(fill)
+        if valid.sum() > 1:
+            label = 'Daily Filled' if i == 0 else None
+            plt.plot(x_axis[valid], fill[valid], color='green', alpha=0.15, linewidth=1, label=label)
+            
+    for i, cancel in enumerate(all_cancels):
+        valid = ~np.isnan(cancel)
+        if valid.sum() > 1:
+            label = 'Daily Canceled' if i == 0 else None
+            plt.plot(x_axis[valid], cancel[valid], color='red', alpha=0.15, linewidth=1, label=label)
+    
+    # Calculate the mathematical average across the walk-forward days per bin
+    mean_fills = np.nanmean(all_fills, axis=0)
+    mean_cancels = np.nanmean(all_cancels, axis=0)
+
+    plt.plot(x_axis, mean_fills, 'o-', color='green', label='Eventually filled')
+    plt.plot(x_axis, mean_cancels, 'o-', color='red', label='Eventually canceled')
+    
+    plt.plot(x_axis, mean_cancels, color='darkred', linewidth=5, label='Average Cancel')
+    plt.plot(x_axis, mean_fills, color='darkgreen', linewidth=5, label='Average Fill')
+    plt.gca().yaxis.set_major_formatter(PercentFormatter(1.0))
+    plt.title(f'Predicted Fill Probability over lifetime by eventual outcome {model_name} - {config.TICK}')
+    plt.xlabel('Normalized order lifetime (0=placement, 1=death)')
+    plt.ylabel('Average Fill Probability')
+    plt.legend()
+    plt.grid(True, alpha=0.3)
+    plt.show()
+    
+def plot_walk_forward_PR(PR_curves, model_name):
+
+    #Sklearn spits out arrays of PR of different sizes, so cant directly compare them like above where we had the fixed bins
+    #Use fixed points where we evaluate the PR
+    
+    plt.figure(figsize=(16, 9))
+
+    common_recall = np.linspace(0, 1, 101)
+    all_interp_precisions = []
+    
+    for day_precision, day_recall in PR_curves:
+        #The following is from SKlearn documentation
+        # Sklearn returns recall in decreasing order (1 to 0). 
+        # np.interp requires the x-axis to be strictly increasing.
+        # use [::-1] slicing to reverse order in which we read array.
+        rev_recall = day_recall[::-1]
+        rev_precision = day_precision[::-1]
+        # use np.interp to interpolate this days precision onto our common grid
+        interp_prec = np.interp(common_recall, rev_recall, rev_precision)
+        all_interp_precisions.append(interp_prec)
+        
+        # Plot the daily transparent ghost line (using original arrays)
+        plt.plot(day_recall, day_precision, color='blue', alpha=0.15, linewidth=1)
+
+    mean_precision = np.mean(all_interp_precisions, axis=0)
+    plt.plot(common_recall, mean_precision, color='darkblue', linewidth=5, label=f'Avg {model_name} PR')
+
+    plt.xlabel('Recall (Fills correctly identified as Fills / All Actual Fills)')
+    plt.ylabel('Precision (Fills Correctly Identified / All Orders Predicted To Fill)')
+    plt.title(f'Walk-Forward Precision-Recall Curve - {model_name} - {config.TICK}')
+    plt.gca().xaxis.set_major_formatter(PercentFormatter(1.0))
+    plt.gca().yaxis.set_major_formatter(PercentFormatter(1.0))
+    plt.legend()
+    plt.grid(True, alpha=0.3)
+    plt.show()
+    
+def prnt_daily_scores(daily_scores, model_name):
+    
+    print(f'Dailiy Scores for {model_name} -{config.TICK}')
+    
+    for i, daily_score in enumerate(daily_scores):
+
+        for metric_name, value in daily_score.items(): #.items() immediatley gets key string from dic and value attached to it
+            print(f'{metric_name}: {value:.4f}')
+            
+    df_scores = pd.DataFrame(daily_scores)
+
+    mean_scores = df_scores.mean() 
+    
+    for metric_name, mean_val in mean_scores.items():
+        print(f'Mean {metric_name}: {mean_val:.4f}')
 
 def run_is_backtest(test_matrix, use_model, scalar, features):
     print("\nStarting Implementation Shortfall (IS) Backtest...")
@@ -1469,7 +1589,7 @@ if __name__ == "__main__":
         selected_model = 'FNN'
 
     print(f"\n[System] You selected: {selected_model}")
-    print('TRAINING IS REQUIRED BEFORE TESTING (whenever you select new data obviously otherwise not required)')
+    print('WARNING: TRAINING IS REQUIRED BEFORE TESTING (whenever you select new data)')
     action_choice = input("Do you want to 'train' or 'test' or 'qimbal' or 'use' or 'eval' or 'is_test' this model? ").strip().lower()
     
     if action_choice in ['test', 'qimbal', 'use', 'is_test']:
@@ -1494,7 +1614,7 @@ if __name__ == "__main__":
     elif action_choice == 'eval':
         #just manually force a list on the one item in tesst files so we can concatenate in sorted below 
         chronological_data = sorted(train_files + test_files)
-        walk_forward(chronological_data, selected_model, train_window_days = 15)
+        walk_forward(chronological_data, selected_model, train_window_days = 5)
         
    
     elif action_choice == 'use':
