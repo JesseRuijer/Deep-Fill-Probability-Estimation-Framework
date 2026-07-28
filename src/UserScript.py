@@ -16,6 +16,7 @@ import matplotlib.pyplot as plt
 from matplotlib.ticker import PercentFormatter
 import gc
 import random
+import matplotlib.gridspec as gridspec
 
 
 
@@ -130,7 +131,7 @@ def train(train_files, train_matrix, model):
         
         LEARNING_RATE = 0.001    #0.003143153725649377
         WEIGHT_DECAY = 2.5475947521348294e-06
-        EPOCHS = 1
+        EPOCHS = 10
         BATCH_SIZE = 16384 
         
         idx = int(len(train_files) * .8)
@@ -1179,11 +1180,11 @@ def walk_forward(all_data_paths, selected_model, train_window_days):
         at_touch_mask = test_matrix['DistanceToTouch'] == 0
         
         #you can add the at_touch_mask to mask here if you want the monthly plots to be for orders only placed at best price
-        day_pred, day_actual = compute_daily_performance_curve(y_true, y_pred_prob, weights, mask = None)
+        day_pred, day_actual, day_vol = compute_daily_performance_curve(y_true, y_pred_prob, weights, mask = None)
         
         
          
-        daily_curves.append((day_pred, day_actual))
+        daily_curves.append((day_pred, day_actual, day_vol))
         
         tsp = test_matrix['TimeSincePlacement']
         order_ids = test_matrix['ID']
@@ -1204,8 +1205,11 @@ def walk_forward(all_data_paths, selected_model, train_window_days):
         
         daily_merged = calc_daily_qimbal(test_matrix, use_model, scalar, features, mo_data, cleandata)
         monthly_dataframes.append(daily_merged)
-        reg_vals, prob_vals = compute_daily_divergence(daily_merged)
-        divergence_curves.append((reg_vals, prob_vals))
+        
+        reg_buy, reg_tot, prob_buy, prob_tot = compute_daily_divergence(daily_merged)
+        divergence_curves.append((reg_buy, reg_tot, prob_buy, prob_tot))
+        
+        
         del test_matrix, rawdata, cleandata, mo_data
         
     #monthly_merged = pd.concat(monthly_dataframes, ignore_index = True)
@@ -1215,71 +1219,93 @@ def walk_forward(all_data_paths, selected_model, train_window_days):
     plot_walk_forward_div(divergence_curves, selected_model)
     plot_walk_forward_alligator(alligator_curves, selected_model) 
     plot_walk_forward_PR(PR_curves, selected_model)
-    prnt_daily_scores(daily_scores, selected_model)
+    prnt_daily_scores(model_scores, selected_model)
     
     
 def plot_walk_forward_curves(daily_curves, model_name):
-    #want the regular one and the one up till 30%
-    plt.figure(figsize = (20,10))
+
     all_preds = []
     all_actuals = []
+    all_vols = []
 
     
-    for day_pred, day_actual in daily_curves:
+    for day_pred, day_actual, day_vol in daily_curves:
         all_preds.append(day_pred)
         all_actuals.append(day_actual)
-        
-        #Filter nans i.e empty bins out, ~ is numpy NOT operator and we need more thatn one point to draw a line bewteen points, thats the following logic
-        valid_mask = ~np.isnan(day_pred) & ~np.isnan(day_actual)
-        if valid_mask.sum() > 1:
-            plt.plot(day_pred[valid_mask], day_actual[valid_mask], color = 'blue', alpha = 0.5, linewidth = 1)
-    
+        all_vols.append(day_vol)
+       
     #compute mean of bins ignoring nan bins
     
     mean_pred = np.nanmean(all_preds, axis = 0)
     mean_acc = np.nanmean(all_actuals, axis = 0)
+    total_vol = np.sum(all_vols, axis = 0)
     
-    #plot thick avg line
-    valid_mean = ~np.isnan(mean_acc) & ~np.isnan(mean_pred)
-    plt.plot(mean_pred[valid_mean], mean_acc[valid_mean], color = 'darkblue', linewidth = 5, label = f'Avg of {model_name}')
+    deltap = 0.01
+    bins_low = np.arange(0, 0.401, deltap)
+    bins_high = np.arange(0.43, 1, 3 * deltap)
+    bins_custom = np.concatenate((bins_low, bins_high))
     
-    #regular plot
-    plt.plot([0,1], [0,1], color = 'black', label = 'Perfect', linestyle = '--')
-    plt.xlim(0,1)
-    plt.ylim(0,1)
-    plt.gca().xaxis.set_major_formatter(PercentFormatter(1.0))
-    plt.gca().yaxis.set_major_formatter(PercentFormatter(1.0))
-    plt.xlabel('Predicted Fill Prob')
-    plt.ylabel('Actual Fill Prob')
-    plt.grid(True, alpha = 0.3)
-    plt.title(f'Performance of {model_name} on {config.TICK}')
-    plt.legend()
-    plt.show()
+    middle = [(bins_custom[i] + bins_custom[i+1])/2 for i in range(len(bins_custom)-1)]
     
+    fig1 = plt.figure(figsize=(20, 10))
+    gs1 = gridspec.GridSpec(2, 1, height_ratios=[3, 1]) 
     
-    #40% plot, wehre most of the data is at 
-    for day_pred, day_actual in daily_curves:
-        all_preds.append(day_pred)
-        all_actuals.append(day_actual)
-        
+    ax1 = plt.subplot(gs1[0])
+
+    for day_pred, day_actual, _ in daily_curves:
         #Filter nans i.e empty bins out, ~ is numpy NOT operator and we need more thatn one point to draw a line bewteen points, thats the following logic
         valid_mask = ~np.isnan(day_pred) & ~np.isnan(day_actual)
         if valid_mask.sum() > 1:
-            plt.plot(day_pred[valid_mask], day_actual[valid_mask], color = 'blue', alpha = 0.5, linewidth = 1)
-    #plot thick avg line
+            ax1.plot(day_pred[valid_mask], day_actual[valid_mask], color='blue', alpha=0.15, linewidth=1)
+
     valid_mean = ~np.isnan(mean_acc) & ~np.isnan(mean_pred)
-    plt.plot(mean_pred[valid_mean], mean_acc[valid_mean], color = 'darkblue', linewidth = 5, label = f'Avg of {model_name}')
-    plt.plot([0,1], [0,1], color = 'black', label = 'Perfect', linestyle = '--')
-    plt.xlim(0,.4)
-    plt.ylim(0,.4)
-    plt.gca().xaxis.set_major_formatter(PercentFormatter(1.0))
-    plt.gca().yaxis.set_major_formatter(PercentFormatter(1.0))
-    plt.xlabel('Predicted Fill Prob')
-    plt.ylabel('Actual Fill Prob')
-    plt.grid(True, alpha = 0.3)
-    plt.title(f'Performance of {model_name} on {config.TICK}')
-    plt.legend()
+    ax1.plot(mean_pred[valid_mean], mean_acc[valid_mean], color='darkblue', linewidth=5, label=f'Avg of {model_name}')
+    ax1.plot([0,1], [0,1], color='black', label='Perfect', linestyle='--')
+    
+    ax1.set_xlim(0, 1)
+    ax1.set_ylim(0, 1)
+    ax1.xaxis.set_major_formatter(PercentFormatter(1.0))
+    ax1.yaxis.set_major_formatter(PercentFormatter(1.0))
+    ax1.grid(True, alpha=0.3)
+    ax1.set_ylabel('Actual Fill Prob')
+    ax1.set_title(f'Performance of {model_name} on {config.TICK} ')
+    ax1.legend()
+
+    ax2 = plt.subplot(gs1[1], sharex=ax1)
+    ax2.bar(middle, total_vol, width=deltap*0.8, color='black', alpha=0.8, label='Aggregated Volume')
+    ax2.set_ylabel('Total Vol (Log)')
+    ax2.set_xlabel('Predicted Fill Probability')
+    ax2.set_yscale('log')
+    ax2.grid(True, alpha=0.3)
+    ax2.legend()
+    
+    plt.subplots_adjust(hspace=0.1)
     plt.show()
+    
+    
+    # #40% plot, wehre most of the data is at 
+    # for day_pred, day_actual in daily_curves:
+    #     all_preds.append(day_pred)
+    #     all_actuals.append(day_actual)
+        
+    #     #Filter nans i.e empty bins out, ~ is numpy NOT operator and we need more thatn one point to draw a line bewteen points, thats the following logic
+    #     valid_mask = ~np.isnan(day_pred) & ~np.isnan(day_actual)
+    #     if valid_mask.sum() > 1:
+    #         plt.plot(day_pred[valid_mask], day_actual[valid_mask], color = 'blue', alpha = 0.5, linewidth = 1)
+    # #plot thick avg line
+    # valid_mean = ~np.isnan(mean_acc) & ~np.isnan(mean_pred)
+    # plt.plot(mean_pred[valid_mean], mean_acc[valid_mean], color = 'darkblue', linewidth = 5, label = f'Avg of {model_name}')
+    # plt.plot([0,1], [0,1], color = 'black', label = 'Perfect', linestyle = '--')
+    # plt.xlim(0,.4)
+    # plt.ylim(0,.4)
+    # plt.gca().xaxis.set_major_formatter(PercentFormatter(1.0))
+    # plt.gca().yaxis.set_major_formatter(PercentFormatter(1.0))
+    # plt.xlabel('Predicted Fill Prob')
+    # plt.ylabel('Actual Fill Prob')
+    # plt.grid(True, alpha = 0.3)
+    # plt.title(f'Performance of {model_name} on {config.TICK}')
+    # plt.legend()
+    # plt.show()
  
     
     return None   
@@ -1288,8 +1314,10 @@ def plot_walk_forward_div(divergence_curves, model_name):
     
     plt.figure(figsize=(9, 6))
 
-    all_reg = pd.DataFrame([day[0] for day in divergence_curves]).values.astype(float)
-    all_prob = pd.DataFrame([day[1] for day in divergence_curves]).values.astype(float)
+    all_reg_buy = np.array([day[0] for day in divergence_curves], dtype=float)
+    all_reg_tot = np.array([day[1] for day in divergence_curves], dtype=float)
+    all_prob_buy = np.array([day[2] for day in divergence_curves], dtype=float)
+    all_prob_tot = np.array([day[3] for day in divergence_curves], dtype=float)
     
     
     #Restrict domain to -0.1, 0.1 for qimbal since there the regular qimbal is weakest predictor and our model improves it the most
@@ -1297,42 +1325,81 @@ def plot_walk_forward_div(divergence_curves, model_name):
     x_mids = (bins[:-1] + bins[1:]) / 2 #slicing, [:-1] means slice everything from start but exlude last entry 
     
     # Calculate the mathematical average across the month per bin
-    mean_reg = np.nanmean(all_reg, axis=0)
-    mean_prob = np.nanmean(all_prob, axis=0)
 
-    for i, reg_day in enumerate(all_reg):
-        valid = ~np.isnan(reg_day)
+    daily_reg_curve = np.divide(all_reg_buy, all_reg_tot, 
+                                out=np.full_like(all_reg_buy, np.nan), 
+                                where=all_reg_tot!=0)
+    
+    daily_prob_curve = np.divide(all_prob_buy, all_prob_tot, 
+                                 out=np.full_like(all_prob_buy, np.nan), 
+                                 where=all_prob_tot!=0)
+
+    global_reg_tot = np.sum(all_reg_tot, axis=0)
+    global_prob_tot = np.sum(all_prob_tot, axis=0)
+    
+    sum_reg_buy = np.sum(all_reg_buy, axis=0)
+    sum_prob_buy = np.sum(all_prob_buy, axis=0)
+    
+    mean_reg = np.divide(sum_reg_buy, global_reg_tot, 
+                         out=np.full_like(global_reg_tot, np.nan), 
+                         where=global_reg_tot!=0)
+                         
+    mean_prob = np.divide(sum_prob_buy, global_prob_tot, 
+                          out=np.full_like(global_prob_tot, np.nan), 
+                          where=global_prob_tot!=0)
+
+    bins = np.linspace(-1.0, 1.0, 21)
+    x_mids = (bins[:-1] + bins[1:]) / 2 
+    
+    fig = plt.figure(figsize=(20, 10))
+    gs = gridspec.GridSpec(2, 1, height_ratios=[3, 1])
+
+    ax1 = plt.subplot(gs[0])
+
+    for i in range(len(daily_reg_curve)):
+        valid = ~np.isnan(daily_reg_curve[i])
         if valid.sum() > 1:
             label = 'Daily Regular' if i == 0 else None
-            plt.plot(x_mids[valid], reg_day[valid], color='red', alpha=0.15, linewidth=1, label=label)
+            ax1.plot(x_mids[valid], daily_reg_curve[i][valid], color='red', alpha=0.15, linewidth=1, label=label)
             
-    for i, prob_day in enumerate(all_prob):
-        valid = ~np.isnan(prob_day)
+    for i in range(len(daily_prob_curve)):
+        valid = ~np.isnan(daily_prob_curve[i])
         if valid.sum() > 1:
             label = 'Daily Improved' if i == 0 else None
-            plt.plot(x_mids[valid], prob_day[valid], color='blue', alpha=0.15, linewidth=1, label=label)
+            ax1.plot(x_mids[valid], daily_prob_curve[i][valid], color='blue', alpha=0.15, linewidth=1, label=label)
 
     valid_mean_reg = ~np.isnan(mean_reg)
-    plt.plot(x_mids[valid_mean_reg], mean_reg[valid_mean_reg], color='darkred', linewidth=5, label='Average Regular QImbal')
+    ax1.plot(x_mids[valid_mean_reg], mean_reg[valid_mean_reg], color='darkred', linewidth=5, label='Weighted Avg Regular')
     
     valid_mean_prob = ~np.isnan(mean_prob)
-    plt.plot(x_mids[valid_mean_prob], mean_prob[valid_mean_prob], color='darkblue', linewidth=5, label=f'Average Prob QImbal ({model_name})')
+    ax1.plot(x_mids[valid_mean_prob], mean_prob[valid_mean_prob], color='darkblue', linewidth=5, label=f'Weighted Avg Prob ({model_name})')
 
-    plt.axvline(x=0.0, color='gray', linestyle='--', label='Neutral Book (0.0)')
-    plt.axhline(y=0.5, color='gray', linestyle=':', label='50/50 Split')
+    ax1.axvline(x=0.0, color='gray', linestyle='--', label='Neutral Book (0.0)')
+    ax1.axhline(y=0.5, color='gray', linestyle=':', label='50/50 Split')
     
-    plt.title(f'Improved vs Reg Qimbal using {model_name} on {config.TICK}')
-    plt.xlabel('Imbalance (-1.0 to 1.0)')
-    plt.ylabel('Proportion of Market Orders that are Buys')
+    ax1.set_title(f'Improved vs Reg Qimbal using {model_name} on {config.TICK}')
+    ax1.set_ylabel('Proportion of MOs that are Buys')
+    ax1.set_xlim(-1.0, 1.0)
+    ax1.set_ylim(0, 1)
+    ax1.yaxis.set_major_formatter(PercentFormatter(1.0))
+    ax1.grid(True, alpha=0.3)
+    ax1.legend()
+
+    ax2 = plt.subplot(gs[1], sharex=ax1)
     
-    # Zoomed in to see the divergence around zero
-    plt.xlim(-1.0, 1.0)
-    plt.ylim(0, 1)
     
-    plt.legend()
-    plt.grid(True, alpha=0.3)
+    #width to seperate bins a bit but dont wanna shift logic so check this in plot 
+    width = (x_mids[1] - x_mids[0]) * 0.4
+    ax2.bar(x_mids - width/2, global_reg_tot, width=width, color='darkred', alpha=0.5, label='Reg Vol')
+    ax2.bar(x_mids + width/2, global_prob_tot, width=width, color='darkblue', alpha=0.5, label='Prob Vol')
     
-    plt.tight_layout()
+    ax2.set_ylabel('Total MO Vol (Log)')
+    ax2.set_xlabel('Imbalance (-1.0 to 1.0)')
+    ax2.set_yscale('log')
+    ax2.grid(True, alpha=0.3)
+    ax2.legend()
+    
+    plt.subplots_adjust(hspace=0.05)
     plt.show()
     
     #For bins above and below qimbal 0 how far are we from the 0.5 line, i.e how good of an indicator are we
@@ -1451,104 +1518,12 @@ def prnt_daily_scores(daily_scores, model_name):
     df_scores = pd.DataFrame(daily_scores)
 
     mean_scores = df_scores.mean() 
+    std_scores = df_scores.std()
     
-    for metric_name, mean_val in mean_scores.items():
-        print(f'Mean {metric_name}: {mean_val:.4f}')
+    for metric_name in mean_scores.index:
+        print(f'Mean {metric_name}: {mean_scores[metric_name]:.3f} +- STD {std_scores[metric_name]}')
 
-def run_is_backtest(test_matrix, use_model, scalar, features):
-    print("\nStarting Implementation Shortfall (IS) Backtest...")
-    
-    # 1. Vectorize probability predictions for the entire day (Fast)
-    X_raw = test_matrix[features].astype(np.float32, copy=False)
-    X = scalar.transform(X_raw) if scalar else X_raw
-    test_matrix['fillprob'] = use_model.predict_proba(X)[:, 1]
-    
-    # We need the Mid Price to calculate IS
-    test_matrix['MidPrice'] = (test_matrix['BestBid'] + test_matrix['BestAsk']) / 2.0
-    
-    # 2. Isolate passive BUY orders placed exactly at the Best Bid
-    # SideOfBook == 1 is Bid based on your framework. 
-    # DistanceToTouch == 0 ensures we only evaluate aggressive queue capture.
-    placements = test_matrix[(test_matrix['TimeSincePlacement'] == 0) & 
-                             (test_matrix['SideOfBook'] == 1.0) & 
-                             (test_matrix['DistanceToTouch'] == 0)].copy()
-    
-    valid_ids = set(placements['ID'].unique())
-    print(f"Tracking {len(valid_ids)} passive touch orders...")
-    
-    # Filter matrix to only include these IDs, sorted chronologically
-    sim_data = test_matrix[test_matrix['ID'].isin(valid_ids)].sort_values(['ID', 'TOD'])
-    
-    taus = [0.05, 0.1, 0.15, 0.2, 0.25, 0.3, 0.35, 0.4, 0.5]
-    results = {tau: [] for tau in taus}
-    baseline_results = []
-    
-    # 3. Simulate chronological execution for each order
-    for order_id, order_ticks in sim_data.groupby('ID'):
-        arrival_mid = order_ticks.iloc[0]['MidPrice']
-        arrival_bid = order_ticks.iloc[0]['BestBid']
-        
-        # --- BASELINE LOGIC ---
-        # Assuming a passive fill occurs if the market BestBid drops below our placement price
-        traded_through = order_ticks[order_ticks['BestBid'] < arrival_bid]
-        
-        if not traded_through.empty:
-            baseline_is = ((arrival_bid - arrival_mid) / arrival_mid) * 10000
-        else:
-            # End of window forced cross
-            last_ask = order_ticks.iloc[-1]['BestAsk']
-            baseline_is = ((last_ask - arrival_mid) / arrival_mid) * 10000
-            
-        baseline_results.append(baseline_is)
-        
-        # --- MODEL LOGIC ---
-        for tau in taus:
-            breach = order_ticks[order_ticks['fillprob'] < tau]
-            
-            if breach.empty:
-                # Model never triggered. Did it fill passively?
-                if not traded_through.empty:
-                    results[tau].append(((arrival_bid - arrival_mid) / arrival_mid) * 10000)
-                else:
-                    results[tau].append(((order_ticks.iloc[-1]['BestAsk'] - arrival_mid) / arrival_mid) * 10000)
-            else:
-                # Trigger activated. Did it fill passively BEFORE the trigger?
-                first_breach_time = breach.iloc[0]['TOD']
-                
-                if not traded_through.empty and traded_through.iloc[0]['TOD'] < first_breach_time:
-                    results[tau].append(((arrival_bid - arrival_mid) / arrival_mid) * 10000)
-                else:
-                    # Cancel and cross spread at exact moment of probability breach
-                    execution_ask = breach.iloc[0]['BestAsk']
-                    results[tau].append(((execution_ask - arrival_mid) / arrival_mid) * 10000)
-                    
-    # 4. Results & Plotting
-    mean_baseline = np.mean(baseline_results)
-    mean_model = [np.mean(results[tau]) for tau in taus]
-    
-    plt.figure(figsize=(9, 6))
-    plt.plot(taus, mean_model, marker='o', color='darkblue', linewidth=2, label=f'Model Dynamic Trigger')
-    plt.axhline(y=mean_baseline, color='darkred', linestyle='--', linewidth=2, label='Baseline (Naive Wait)')
-    
-    plt.title(f'Implementation Shortfall vs. Probability Threshold (τ) - {config.TICK}')
-    plt.xlabel('Urgency Threshold τ (Cross spread if prob < τ)')
-    plt.ylabel('Implementation Shortfall (bps) - Lower is Better')
-    plt.legend()
-    plt.grid(True, alpha=0.3)
-    plt.tight_layout()
-    plt.show()
-    
-    # Print numerical summary for the console
-    best_tau_idx = np.argmin(mean_model)
-    best_tau = taus[best_tau_idx]
-    best_is = mean_model[best_tau_idx]
-    
-    print("\n" + "="*50)
-    print("BACKTEST RESULTS (Cost in Basis Points)")
-    print(f"Baseline (Naive Wait): {mean_baseline:.2f} bps")
-    print(f"Optimal Strategy (τ = {best_tau}): {best_is:.2f} bps")
-    print(f"Total Savings: {mean_baseline - best_is:.2f} bps per trade")
-    print("="*50 + "\n")      
+
     
 if __name__ == "__main__":
     
@@ -1590,9 +1565,9 @@ if __name__ == "__main__":
 
     print(f"\n[System] You selected: {selected_model}")
     print('WARNING: TRAINING IS REQUIRED BEFORE TESTING (whenever you select new data)')
-    action_choice = input("Do you want to 'train' or 'test' or 'qimbal' or 'use' or 'eval' or 'is_test' this model? ").strip().lower()
+    action_choice = input("Do you want to 'train' or 'test' or 'qimbal' or 'use' or 'eval' this model? ").strip().lower()
     
-    if action_choice in ['test', 'qimbal', 'use', 'is_test']:
+    if action_choice in ['test', 'qimbal', 'use']:
         test_matrix = pd.read_parquet(test_files) 
         data_path, mo_path = get_raw_paths_from_parquet(test_files)
         rawdata = import_data(data_path, mo_path)
@@ -1705,8 +1680,7 @@ if __name__ == "__main__":
         print(f"Time Since Placement: {highest_tsp} ms")
         print(f"Fill Probability: {highest_prob * 100:.2f}%")
         print("="*50 + "\n")
-        
-        run_is_backtest(test_matrix, use_model, scalar, features)
+
         
         while True:
             

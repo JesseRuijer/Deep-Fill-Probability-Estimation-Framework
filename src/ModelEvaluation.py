@@ -608,7 +608,7 @@ def compute_daily_performance_curve(y_true, y_pred_prob, weights, mask = None):
     bins_low = np.arange(0, 0.401, deltap)
     bins_high = np.arange(0.43, 1, 3 * deltap)
     bins_custom = np.concatenate((bins_low, bins_high))
-    
+
     df['bins'] = pd.cut(df['y_pred'], bins=bins_custom)
     grouped = df.groupby('bins', observed=False)
     
@@ -621,24 +621,33 @@ def compute_daily_performance_curve(y_true, y_pred_prob, weights, mask = None):
     weighted_actual = grouped.apply(lambda x: safe_weights(x, 'y_true'))
     weighted_pred = grouped.apply(lambda x: safe_weights(x, 'y_pred')) 
     
-    return weighted_pred.values, weighted_actual.values
+    vol_per_bin = grouped['weights'].sum()
+    
+    return weighted_pred.values, weighted_actual.values, vol_per_bin.values
 
 def compute_daily_divergence(merged):
     
     #Similar to above function but for different plot, also only used in userscript file 
-    merged['is_buy'] = (merged['BorS'] == -1).astype(int)
-    
-    #same logic as in userscript, restrict qimbal domain
-    bins = np.linspace(-1.0, 1.0,101)
+    merged['buy_vol'] = np.where(merged['BorS'] == -1, merged['Vol'],0)
+    merged['vol'] = merged['Vol']
+
+    #lower amount of bins for Faro
+
+    bins = np.linspace(-1.0, 1.0,21)
     merged['Reg_Fine_Bin'] = pd.cut(merged['QImbalance'], bins=bins)
     merged['Prob_Fine_Bin'] = pd.cut(merged['ProbQImbal'], bins=bins)
     
     # Calculate the proportion of buys in each bin
- 
-    reg_curve = merged.groupby('Reg_Fine_Bin', observed=False)['is_buy'].mean()
-    prob_curve = merged.groupby('Prob_Fine_Bin', observed=False)['is_buy'].mean()
     
-    return reg_curve.values, prob_curve.values
+ 
+    reg_buy_vol = merged.groupby('Reg_Fine_Bin', observed=False)['buy_vol'].sum()
+    reg_total_vol = merged.groupby('Reg_Fine_Bin', observed=False)['vol'].sum()
+    
+    prob_buy_vol = merged.groupby('Prob_Fine_Bin', observed=False)['buy_vol'].sum()
+    prob_total_vol = merged.groupby('Prob_Fine_Bin', observed=False)['vol'].sum()
+    
+    return reg_buy_vol.values, reg_total_vol.values, prob_buy_vol.values, prob_total_vol.values
+
 
 
 def compute_daily_alligator(y_true, y_pred_prob, weights, time_since_placement, order_ids):
@@ -687,6 +696,34 @@ def compute_daily_PR(y_true, y_pred_prob, weights):
     precision, recall, _ = precision_recall_curve(y_true, y_pred_prob, sample_weight = weights)
     return precision, recall
 
+def calc_weighted_ece(y_true, y_pred, weights):
+    #calcualtes the volumeweighted expected calibration error 
+    df = pd.DataFrame({'y_true': y_true, 'y_pred': y_pred, 'weight': weights})
+    
+    deltap = 0.01
+    bins_low = np.arange(0, 0.401, deltap)
+    bins_high = np.arange(0.43, 1, 3 * deltap)
+    bins = np.concatenate((bins_low, bins_high))
+    n_bins = len(bins)
+    df = df.sort_values('y_pred')
+    df['bin'] = pd.qcut(df['y_pred'], q=n_bins, duplicates='drop')
+    
+    grouped = df.groupby('bin', observed=False)
+    
+    ece = 0.0
+    total_weight = df['weight'].sum()
+    
+    for _, group in grouped:
+        bin_weight = group['weight'].sum()
+        if bin_weight > 0:
+
+            actual_rate = np.average(group['y_true'], weights=group['weight'])
+            pred_rate = np.average(group['y_pred'], weights=group['weight'])
+
+            ece += (bin_weight / total_weight) * np.abs(actual_rate - pred_rate)
+            
+    return ece
+
 def compute_daily_scores(y_true, y_pred_prob, weights):
     #compute brier logloss and skill scores daily to be used in walk forward in userscript to get average model results
     dummy_fill_prob = np.average(y_true, weights = weights)
@@ -705,6 +742,8 @@ def compute_daily_scores(y_true, y_pred_prob, weights):
     
     avgprecision_dummy = average_precision_score(y_true, dummy_y_pred_prob, sample_weight = weights)
     
+    ece_score = calc_weighted_ece(y_true, y_pred_prob, weights)
+    
     scores = {
         
         'brier': brier_score,
@@ -712,6 +751,7 @@ def compute_daily_scores(y_true, y_pred_prob, weights):
         'logloss': logloss_score,
         'logloss_skill': logloss_skill_score,
         'pr': avg_precision,
+        'ece': ece_score,
         
         'dummy_fill_prob': dummy_fill_prob,
         'dummy_brier': dummy_brierscore,
