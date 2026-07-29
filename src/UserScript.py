@@ -19,7 +19,7 @@ import random
 import matplotlib.gridspec as gridspec
 
 
-
+from sklearn.isotonic import IsotonicRegression
 from pathlib import Path
 from sklearn.preprocessing import StandardScaler
 import config
@@ -131,7 +131,7 @@ def train(train_files, train_matrix, model):
         
         LEARNING_RATE = 0.001    #0.003143153725649377
         WEIGHT_DECAY = 2.5475947521348294e-06
-        EPOCHS = 10
+        EPOCHS = 3
         BATCH_SIZE = 16384 
         
         idx = int(len(train_files) * .8)
@@ -242,7 +242,46 @@ def train(train_files, train_matrix, model):
              print(f' Weighted Train Logloss: {avg_train_loss:.3f}')
              print(f' Weighted Test Logloss:  {avg_val_logloss:.3f}\n')
         print('Pass2')
-        wrapped_fnn = PyTorchSklearnWrapper(model, device)
+        
+        print('Adding Calibrator')
+        
+        model.eval()
+        val_raw_probs = []
+        val_targets = []
+        val_weights = []
+
+        with torch.no_grad():
+            for f in active_val_files_df:
+                df = pd.read_parquet(f)
+                df.replace([np.inf, -np.inf], 0, inplace=True)
+                
+                X_val_scaled = scalar.transform(df[config.FNN_MODEL_FEATURES].values)
+                y_val = df[config.TARGET].values
+                w_val = df['UnitWeight'].values
+                
+                val_dataset = DataSet(X_val_scaled, y_val, w_val)
+                val_loader = DataLoader(dataset=val_dataset, batch_size=BATCH_SIZE, shuffle=False)
+                
+                for features, labels, batch_weights in val_loader:
+                    features = features.to(device)
+                    logits = model(features)
+                    probs = torch.sigmoid(logits).cpu().numpy().flatten()
+                    
+                    val_raw_probs.append(probs)
+                    val_targets.append(labels.numpy().flatten())
+                    val_weights.append(batch_weights.numpy().flatten())
+                    
+                del df, X_val_scaled, y_val, w_val, val_dataset, val_loader
+                gc.collect()
+
+        val_raw_probs = np.concatenate(val_raw_probs)
+        val_targets = np.concatenate(val_targets)
+        val_weights = np.concatenate(val_weights)
+
+        fnn_calibrator = IsotonicRegression(out_of_bounds='clip')
+        fnn_calibrator.fit(val_raw_probs, val_targets, sample_weight=val_weights)
+        
+        wrapped_fnn = PyTorchSklearnWrapper(model, device, fnn_calibrator)
        
         
     
@@ -257,7 +296,8 @@ def train(train_files, train_matrix, model):
         metadata_filepath = models_dir / config.USER_FNN_MODEL_METADATA
         metadata_package = {
             'features': config.FNN_MODEL_FEATURES,
-            'scalar': scalar
+            'scalar': scalar,
+            'calibrator': fnn_calibrator
             }
         print('Pass3')
         joblib.dump(metadata_package, metadata_filepath)
@@ -430,6 +470,7 @@ def improve_qimbal(test_matrix, model, mo_data, cleandata):
         #Extracting the contents from the dictionary
         features = metadata_package['features']
         scalar = metadata_package['scalar']
+        fnn_calibrator = metadata_package['calibrator']
         
         #re initiaze the 'empty' model blue print
         input_size = len(config.FNN_MODEL_FEATURES)
@@ -444,7 +485,7 @@ def improve_qimbal(test_matrix, model, mo_data, cleandata):
         loaded_model.eval()
         
         #Wrap so can use test_model function 
-        use_model = PyTorchSklearnWrapper(loaded_model, device)
+        use_model = PyTorchSklearnWrapper(loaded_model, device, fnn_calibrator)
         
     elif model == 'LGBM':
         model_filepath = models_dir / config.USER_LGBM_MODEL
@@ -822,6 +863,7 @@ def test_model_wrap(test_matrix, model):
         #Extracting the contents from the dictionary
         features = metadata_package['features']
         scalar = metadata_package['scalar']
+        fnn_calibrator = metadata_package['calibrator']
         
         #re initiaze the 'empty' model blue print
         input_size = len(config.FNN_MODEL_FEATURES)
@@ -836,7 +878,7 @@ def test_model_wrap(test_matrix, model):
         loaded_model.eval()
         
         #Wrap so can use test_model function 
-        fnn_wrapped = PyTorchSklearnWrapper(loaded_model, device)
+        fnn_wrapped = PyTorchSklearnWrapper(loaded_model, device, fnn_calibrator)
               
         print(f'Features used: {features}')
         fnn_test = test_model(
@@ -1320,8 +1362,8 @@ def plot_walk_forward_div(divergence_curves, model_name):
     all_prob_tot = np.array([day[3] for day in divergence_curves], dtype=float)
     
     
-    #Restrict domain to -0.1, 0.1 for qimbal since there the regular qimbal is weakest predictor and our model improves it the most
-    bins = np.linspace(-1.0, 1.0, 101)
+    
+    bins = np.linspace(-1.0, 1.0, 41)
     x_mids = (bins[:-1] + bins[1:]) / 2 #slicing, [:-1] means slice everything from start but exlude last entry 
     
     # Calculate the mathematical average across the month per bin
@@ -1348,7 +1390,7 @@ def plot_walk_forward_div(divergence_curves, model_name):
                           out=np.full_like(global_prob_tot, np.nan), 
                           where=global_prob_tot!=0)
 
-    bins = np.linspace(-1.0, 1.0, 21)
+    bins = np.linspace(-1.0, 1.0, 41)
     x_mids = (bins[:-1] + bins[1:]) / 2 
     
     fig = plt.figure(figsize=(20, 10))
@@ -1403,33 +1445,22 @@ def plot_walk_forward_div(divergence_curves, model_name):
     plt.show()
     
     #For bins above and below qimbal 0 how far are we from the 0.5 line, i.e how good of an indicator are we
-    valid_mask = ~np.isnan(mean_reg) & ~np.isnan(mean_prob)
-    # Filter x_mids using that mask to create valid_x
-    valid_x = x_mids[valid_mask]
+
+    sign_mask = np.where(x_mids >= 0, 1.0, -1.0)
+
+    daily_dev_reg  = np.nanmean((daily_reg_curve  - 0.5) * sign_mask, axis=1) #take average across bins for the 40 bins
+    daily_dev_prob = np.nanmean((daily_prob_curve - 0.5) * sign_mask, axis=1)
     
-    dev_array_reg = np.where(
-        valid_x >= 0, 
-        mean_reg[valid_mask] - 0.5, 
-        0.5 - mean_reg[valid_mask]   
-        )
+    #Calculate the daily percentage improvement for each of the 15 test days
+    with np.errstate(divide='ignore', invalid='ignore'): #silences warnings since we take care of nans later anyway 
+        daily_improvement = (daily_dev_prob - daily_dev_reg) * 100
     
-    dev_array_prob = np.where(
-        valid_x >= 0, 
-        mean_prob[valid_mask] - 0.5, 
-        0.5 - mean_prob[valid_mask]
-    )
-    
-    dev_reg = np.mean(dev_array_reg)
-    dev_prob = np.mean(dev_array_prob)
-    
-    # Calculate improvement percentage
-    
-    improvement = ((dev_prob - dev_reg) / dev_reg) * 100 if dev_reg > 0 else 0.0
-    
-    print(f"\n--- Signal Strength (Deviation from 50/50 Baseline) ---")
-    print(f"Raw QImbal Mean Deviation:  {dev_reg:.4f}")
-    print(f"Prob QImbal Mean Deviation: {dev_prob:.4f}")
-    print(f"Signal Strength Gain:       {improvement:+.1f}%\n")
+    daily_improvement = np.where(np.isfinite(daily_improvement), daily_improvement, np.nan)
+
+    print(f"\n--- Signal Strength (Walk-Forward Mean +-Daily STD across Days) ---")
+    print(f"Raw QImbal Mean Deviation:  {np.nanmean(daily_dev_reg):.4f} +- {np.nanstd(daily_dev_reg, ddof=1):.4f}") #ddof =1 is to get the 1/N-1 for std which we need since we work with a sample
+    print(f"Prob QImbal Mean Deviation: {np.nanmean(daily_dev_prob):.4f} +- {np.nanstd(daily_dev_prob, ddof=1):.4f}")
+    print(f"Signal Strength Gain:       {np.nanmean(daily_improvement):+.1f}% +- {np.nanstd(daily_improvement, ddof=1):.1f}%\n")
     
     
 def plot_walk_forward_alligator(alligator_curves, model_name):
@@ -1622,6 +1653,7 @@ if __name__ == "__main__":
             #Extracting the contents from the dictionary
             features = metadata_package['features']
             scalar = metadata_package['scalar']
+            fnn_calibrator = metadata_package['calibrator']
             
             #re initiaze the 'empty' model blue print
             input_size = len(config.FNN_MODEL_FEATURES)
@@ -1630,7 +1662,7 @@ if __name__ == "__main__":
             #fill the empty model with my loaded weights from training before
             loaded_model.load_state_dict(torch.load(model_filepath, map_location = device))
             loaded_model.eval()
-            use_model = PyTorchSklearnWrapper(loaded_model, device)
+            use_model = PyTorchSklearnWrapper(loaded_model, device, fnn_calibrator)
         
         elif selected_model == 'LR':
             model_filepath = models_dir / config.USER_LR_MODEL

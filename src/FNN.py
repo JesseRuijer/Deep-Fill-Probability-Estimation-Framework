@@ -11,6 +11,7 @@ import torch.nn as nn
 import pandas as pd
 import numpy as np
 from sklearn.preprocessing import StandardScaler
+from sklearn.isotonic import IsotonicRegression
 import config
 from torch.utils.data import DataLoader, Dataset
 import random
@@ -37,9 +38,10 @@ class PyTorchSklearnWrapper:
     
     #My test model function in ModelEvaluation expects a 2d array but the outputs of the FNN are in tensors, so have to wrap
     
-    def __init__(self, model, device):
+    def __init__(self, model, device, calibrator = None):
         self.model = model
         self.device = device
+        self.calibrator = calibrator
         
     def predict_proba(self, X):
         self.model.eval()
@@ -51,13 +53,15 @@ class PyTorchSklearnWrapper:
         with torch.no_grad():   #Forward pass but no need to track gradients, model already trainend, only interested in the probabilitstic output number
             logits = self.model(X_tensor)
             
-            probs = torch.sigmoid(logits).cpu().numpy()
-
-
-        class_0_probs = 1.0 - probs
-        class_1_probs = probs
+            probs = torch.sigmoid(logits).cpu().numpy().flatten()
         
-        return np.hstack((class_0_probs, class_1_probs))    #Horizontal stack to return a 2d array
+        if self.calibrator is not None:
+            probs = self.calibrator.predict(probs)
+            
+        cancel_probs = 1.0 - probs
+        fill_probs = probs
+    
+        return np.vstack((cancel_probs, fill_probs)).T    #vertical stack safer for 1d arrays to stay in N,2 shape
 
 
 class DataSet(Dataset):  
@@ -246,10 +250,45 @@ def prepdata_and_train(train_files):
         print(f'Weighted Train Logloss: {avg_train_loss:.3f} \n')
         print(f'Weighted Test Logloss: {avg_val_logloss:.3f}')
 
+    print('Adding Calibrator')
+    
+    model.eval()
+    val_raw_probs = []
+    val_targets = []
+    val_weights = []
 
+    with torch.no_grad():
+        for f in active_val_files_df:
+            df = pd.read_parquet(f)
+            df.replace([np.inf, -np.inf], 0, inplace=True)
+            
+            X_val_scaled = scalar.transform(df[config.FNN_MODEL_FEATURES].values)
+            y_val = df[config.TARGET].values
+            w_val = df['UnitWeight'].values
+            
+            val_dataset = DataSet(X_val_scaled, y_val, w_val)
+            val_loader = DataLoader(dataset=val_dataset, batch_size=BATCH_SIZE, shuffle=False)
+            
+            for features, labels, batch_weights in val_loader:
+                features = features.to(device)
+                logits = model(features)
+                probs = torch.sigmoid(logits).cpu().numpy().flatten()
+                
+                val_raw_probs.append(probs)
+                val_targets.append(labels.numpy().flatten())
+                val_weights.append(batch_weights.numpy().flatten())
+                
+            del df, X_val_scaled, y_val, w_val, val_dataset, val_loader
+            gc.collect()
+
+    val_raw_probs = np.concatenate(val_raw_probs)
+    val_targets = np.concatenate(val_targets)
+    val_weights = np.concatenate(val_weights)
+
+    fnn_calibrator = IsotonicRegression(out_of_bounds='clip') #clip just makes sure out of bounds probabilities dont throw an error, call isotonicregression class and fit model to it
+    fnn_calibrator.fit(val_raw_probs, val_targets, sample_weight=val_weights)
     
-    
-    wrapped_fnn = PyTorchSklearnWrapper(model, device)
+    wrapped_fnn = PyTorchSklearnWrapper(model, device, calibrator = fnn_calibrator)
     
     return wrapped_fnn, scalar
 

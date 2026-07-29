@@ -348,6 +348,8 @@ def run_project(model_choice, job):
               
             fnn_model, scalar = prepdata_and_train(train_files)
             
+            fnn_calibrator = fnn_model.calibrator
+            
               # Save final model to harddrive, comment after saving 
             
               # Pathing logic, uses pathlib library so on different devices it still saves correctly, maybe i need to install the os create folder etc stuff for all teh oter things as well
@@ -364,7 +366,8 @@ def run_project(model_choice, job):
             metadata_filepath = models_dir / config.CURRENT_FNN_MODEL_METADATA
             metadata_package = {
                 'features': config.FNN_MODEL_FEATURES,
-                'scalar': scalar
+                'scalar': scalar,
+                'calibrator': fnn_calibrator
                  }
             
             joblib.dump(metadata_package, metadata_filepath)
@@ -372,6 +375,7 @@ def run_project(model_choice, job):
             gc.collect()
             
             print(f'Succesfully saved FNN weights to  {model_filepath}')
+      
         if job == 'test':
              test_matrix = pd.read_parquet(test_file, columns = cols_to_load)
                # Extracting the model from hard drive 
@@ -399,6 +403,7 @@ def run_project(model_choice, job):
                #Extracting the contents from the dictionary
              features = metadata_package['features']
              scalar = metadata_package['scalar']
+             fnn_calibrator = metadata_package['calibrator']
             
                #re initiaze the 'empty' model blue print
              input_size = len(config.FNN_MODEL_FEATURES)
@@ -413,7 +418,7 @@ def run_project(model_choice, job):
              loaded_model.eval()
             
                #Wrap so can use test_model function 
-             fnn_wrapped = PyTorchSklearnWrapper(loaded_model, device)
+             fnn_wrapped = PyTorchSklearnWrapper(loaded_model, device, fnn_calibrator)
                   
              print(f'Features used: {features}')
              test_model(

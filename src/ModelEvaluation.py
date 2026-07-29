@@ -631,9 +631,8 @@ def compute_daily_divergence(merged):
     merged['buy_vol'] = np.where(merged['BorS'] == -1, merged['Vol'],0)
     merged['vol'] = merged['Vol']
 
-    #lower amount of bins for Faro
 
-    bins = np.linspace(-1.0, 1.0,21)
+    bins = np.linspace(-1.0, 1.0,41)
     merged['Reg_Fine_Bin'] = pd.cut(merged['QImbalance'], bins=bins)
     merged['Prob_Fine_Bin'] = pd.cut(merged['ProbQImbal'], bins=bins)
     
@@ -743,6 +742,7 @@ def compute_daily_scores(y_true, y_pred_prob, weights):
     avgprecision_dummy = average_precision_score(y_true, dummy_y_pred_prob, sample_weight = weights)
     
     ece_score = calc_weighted_ece(y_true, y_pred_prob, weights)
+    pr_ratio = avg_precision / avgprecision_dummy
     
     scores = {
         
@@ -752,6 +752,7 @@ def compute_daily_scores(y_true, y_pred_prob, weights):
         'logloss_skill': logloss_skill_score,
         'pr': avg_precision,
         'ece': ece_score,
+        'pr_ratio': pr_ratio,
         
         'dummy_fill_prob': dummy_fill_prob,
         'dummy_brier': dummy_brierscore,
