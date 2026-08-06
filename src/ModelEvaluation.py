@@ -632,7 +632,7 @@ def compute_daily_divergence(merged):
     merged['vol'] = merged['Vol']
 
 
-    bins = np.linspace(-1.0, 1.0,41)
+    bins = np.linspace(-1.0, 1.0,101)
     merged['Reg_Fine_Bin'] = pd.cut(merged['QImbalance'], bins=bins)
     merged['Prob_Fine_Bin'] = pd.cut(merged['ProbQImbal'], bins=bins)
     

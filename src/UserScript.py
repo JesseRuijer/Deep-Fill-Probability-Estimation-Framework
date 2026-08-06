@@ -1363,7 +1363,7 @@ def plot_walk_forward_div(divergence_curves, model_name):
     
     
     
-    bins = np.linspace(-1.0, 1.0, 41)
+    bins = np.linspace(-1.0, 1.0, 101)
     x_mids = (bins[:-1] + bins[1:]) / 2 #slicing, [:-1] means slice everything from start but exlude last entry 
     
     # Calculate the mathematical average across the month per bin
@@ -1390,7 +1390,7 @@ def plot_walk_forward_div(divergence_curves, model_name):
                           out=np.full_like(global_prob_tot, np.nan), 
                           where=global_prob_tot!=0)
 
-    bins = np.linspace(-1.0, 1.0, 41)
+    bins = np.linspace(-1.0, 1.0, 101)
     x_mids = (bins[:-1] + bins[1:]) / 2 
     
     fig = plt.figure(figsize=(20, 10))
@@ -1620,7 +1620,7 @@ if __name__ == "__main__":
     elif action_choice == 'eval':
         #just manually force a list on the one item in tesst files so we can concatenate in sorted below 
         chronological_data = sorted(train_files + test_files)
-        walk_forward(chronological_data, selected_model, train_window_days = 5)
+        walk_forward(chronological_data, selected_model, train_window_days = config.TRAINDAYSWF)
         
    
     elif action_choice == 'use':

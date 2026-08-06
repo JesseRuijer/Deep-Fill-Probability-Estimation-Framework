@@ -8,7 +8,8 @@ Created on Thu Jun 11 10:04:48 2026
 
 #This below is for use in Main
 
-TICK = 'AAPL'
+TICK = 'INTC'
+TRAINDAYSWF = 10
 
 CURRENT_LR_MODEL = 'Logistic_Regression_Models_V1.joblib'
 CURRENT_LGBM_MODEL = 'LGBM_Models_V1.joblib'
