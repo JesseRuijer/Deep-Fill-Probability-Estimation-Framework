@@ -6,7 +6,7 @@ Created on Thu Jun 11 10:45:38 2026
 @author: jesseruijer
 """
 
-#Importing libraries,classes, functions from other scripts
+#Importing libraries,classes and functions from other scripts
 
 import scipy.io
 import pandas as pd
