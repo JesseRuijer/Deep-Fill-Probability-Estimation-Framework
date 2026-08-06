@@ -10,6 +10,7 @@ import lightgbm as lgb
 import gc
 from lightgbm import early_stopping
 from sklearn.calibration import CalibratedClassifierCV
+import config
 
 
 def train_lgbm_model(X_train, y_train, weights, X_calib, y_calib, weights_calib , X_val = None, y_val = None, val_weights = None,  params = None, for_tuning = False):
@@ -25,7 +26,7 @@ def train_lgbm_model(X_train, y_train, weights, X_calib, y_calib, weights_calib 
         'boosting_type' : 'gbdt', #The default gradient boosting 
         'metric' : 'binary_logloss', #Metric to ensure lgbm knows its goal is binary classification, and then the binary logloss is just for it to measrue performance
         'n_jobs' : -1, #Using all available threads in cpu 
-        'random_state' : 67 , #just set random seed for reproducability
+        'random_state' : config.RANDOM_SEED , #just set random seed for reproducability
         
         #Overall Tuning
         'n_estimators' : 885, # number of sequential trees, i.e number of boosting rounds, set very high on purpose since early stopping below will catch it. as each step you test on the validation set its not allowed to train on and then if the model hasnt improved for 50 rounds then stop 

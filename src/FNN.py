@@ -18,7 +18,7 @@ import random
 import gc
 
 #Set seed to ensure reproducability
-SEED = 67
+SEED = config.RANDOM_SEED
 random.seed(SEED)
 np.random.seed(SEED)
 torch.manual_seed(SEED)

@@ -6,20 +6,28 @@ Created on Thu Jun 11 12:48:23 2026
 @author: jesseruijer
 """
 
-#Just some quick stuff on when importing new data or creating some graphs
+"""
+Exploratory analysis for when importing new asset or trading day file
 
+Returns plots, tables and general information regarding that day, also has a function to plot where in the LOB a specific order is and visualizes that
+
+"""
 
 import matplotlib.pyplot as plt
 import seaborn as sns
-from Functions import time_in_hours, time_to_hours
+from Functions import time_in_hours, time_to_ms
 from DataAndFeatureEngineering import import_data, clean_data, data_regressors
 import config
 import os
-import numpy as np        
+import numpy as np   
+import pandas as pd    
 
-def run_exploratory_analysis(rawdata, cleandata, regressormatrix,feature, target_time):
-        
-    #Gives basic data info and plots
+def run_exploratory_analysis(rawdata: dict, cleandata: dict, regressormatrix: pd.DataFrame, feature: str, target_time: float) -> None:
+    
+    """    
+    Gives basic data info and plots regarding the analyzed day
+
+    """
 
     row_index_event = (cleandata["Event"]["TOD"] - target_time).abs().idxmin()#this finds the row index closest to the time
     buy_prices = cleandata["BuyPrice"].loc[row_index_event] / 10000
@@ -49,8 +57,8 @@ def run_exploratory_analysis(rawdata, cleandata, regressormatrix,feature, target
     
     plt.xlabel("Price ($)")
     plt.ylabel("Volume")
-    #plt.yscale('log')
-    #plt.title(f"Vol of Best Bid Vol and Best Ask Vol at {time_in_hours(target_time)}")
+    plt.yscale('log')
+    plt.title(f"Vol of Best Bid Vol and Best Ask Vol at {time_in_hours(target_time)}")
     plt.grid(True, alpha = 0.3)
     plt.legend()
     plt.show()
@@ -63,10 +71,7 @@ def run_exploratory_analysis(rawdata, cleandata, regressormatrix,feature, target
     plt.legend()
     plt.show()
     
-
-    
     #Plots boxplot and density plot of a given feature in regressormatrix
-    
     plt.figure(figsize = (9,5))
     
     sns.boxplot(
@@ -180,9 +185,6 @@ def run_exploratory_analysis(rawdata, cleandata, regressormatrix,feature, target
     plt.legend()
 
     plt.show()
-
-
-    
         
     plt.figure(figsize = (20,10))
     counts, bin_edges = np.histogram(mo_tods, bins = 200)  # np.hist gives back the counts and the edges i.e begin and end point of each bin
@@ -223,9 +225,6 @@ def run_exploratory_analysis(rawdata, cleandata, regressormatrix,feature, target
 
     plt.show()
 
-
-    
-        
     plt.figure(figsize = (20,10))
     counts, bin_edges = np.histogram(mo_tods, bins = 200)  # np.hist gives back the counts and the edges i.e begin and end point of each bin
     
@@ -301,12 +300,14 @@ def run_exploratory_analysis(rawdata, cleandata, regressormatrix,feature, target
     
     print(f'The percentage of limit orders canceled/deleted at best price and first level out in the book out of all limit orders placed is {result2*100:.2f}%')
     
-def plot_order_queue_position(ID, cleandata, TSP):
+def plot_order_queue_position(ID: int, cleandata: dict, TSP: int) -> None:
     
-    #This function reads from cleandata hence its still unshifted
-    #i.e read order book before order was placed is -1 and immediately after placement = just regular idx 
+    """
+    This function reads from cleandata hence its still unshifted
+    i.e read order book before order was placed is -1 and immediately after placement = just regular idx 
+    plots a similar histogram to as above, but includes the specific order as a slice in its bin
     
-    #plots a similar histogram to as above, but includes the specific order as a slice in its bin
+    """
     
     #Isolate the target order
     order_events = cleandata['Event'][cleandata['Event']['ID'] == ID]
@@ -423,7 +424,7 @@ def plot_order_queue_position(ID, cleandata, TSP):
     
 if __name__ == "__main__":  
     
-    TARGET_TIME = time_to_hours(11)
+    TARGET_TIME = time_to_ms(11)
     FEATURE_ANALYSE = 'LogVolAhead'
       
     from FileManager import get_data_paths
@@ -433,22 +434,7 @@ if __name__ == "__main__":
     if main_path and mo_path:
         rawdata = import_data(main_path, mo_path)
         cleandata = clean_data(rawdata)
+        regressormatrix = data_regressors(rawdata, cleandata, clear_RAM= False, dont_include_full_trading_day=False)['Binary Matrix']
     
-    print(f'Starting Exploratory Data Analysis on {os.path.basename(main_path)} and {os.path.basename(mo_path)} \n')
-   
-    
-   #Below is for checking performance of the hist plot where you can see an exact order and compare it to the models predicted prob
-    regressormatrix = data_regressors(rawdata, cleandata, clear_RAM=False, dont_include_full_trading_day = True)['Binary Matrix']
-    print(regressormatrix['ID'].iloc[10000:10100])
-    print(regressormatrix[regressormatrix['ID'] == 40143290]['UnitWeight'])
-    run_exploratory_analysis(rawdata, cleandata, regressormatrix, feature = FEATURE_ANALYSE, target_time = TARGET_TIME)
-    plot_order_queue_position(33090271, cleandata, TSP = 97754)
-    from Functions import order_life
-    print(order_life(33090271, rawdata))
-    print(rawdata['Event']['TOD'].tail())
-    
-    print(time_in_hours(72000071))
-    
-    
-    
-    
+        print(f'Starting Exploratory Data Analysis on {os.path.basename(main_path)} and {os.path.basename(mo_path)} \n')    
+        run_exploratory_analysis(rawdata, cleandata, regressormatrix, FEATURE_ANALYSE, TARGET_TIME)

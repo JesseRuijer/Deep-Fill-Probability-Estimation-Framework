@@ -38,7 +38,7 @@ train_matrix = pd.concat(train_frames, ignore_index = True)
 del train_frames
 gc.collect()
 
-train_matrix = train_matrix.sample(frac = 0.15, random_state = 67)
+train_matrix = train_matrix.sample(frac = 0.15, random_state = config.RANDOM_SEED)
 val_matrix = pd.read_parquet(val_file) #Validation data different from training and testing data ofc
 
 
@@ -62,7 +62,7 @@ def objective(trial):
     'boosting_type' : 'gbdt', #The default gradient boosting
     'metric' : 'binary_logloss', #Metric to measure perforance
     'n_jobs' : -1, #Using all available threads in cpu 
-    'random_state' : 69 , #just set random seed for reproducability
+    'random_state' : config.RANDOM_OPTUNA_SEED , #just set random seed for reproducability
     'n_estimators' : 5000, # number of sequential trees, i.e number of boosting rounds 
     
     #Fine tune these below, note that for example learning rate and n_estimators both influence number of sequential trees, so thats why im changingin only one at a time

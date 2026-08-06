@@ -6,6 +6,11 @@ Created on Thu Jun 11 11:17:44 2026
 @author: jesseruijer
 """
 
+"""
+Creates all model evaluation plots as well as calculation of evaluation metrics
+
+"""
+
 import pandas as pd
 import torch.nn as nn
 import numpy as np
@@ -17,20 +22,23 @@ from matplotlib.ticker import PercentFormatter
 from sklearn.metrics import (
     brier_score_loss, 
     log_loss, 
-    roc_auc_score, 
     average_precision_score, 
-    roc_curve, 
     precision_recall_curve
 )
-from sklearn.calibration import calibration_curve
-
 import config 
 
-#For Shap and importance plots you have to use the base model 
 
-def plot_lgbm_importances(base_model, features):
-    
-    #Visualising the important features in LGBM
+# =============================================================================
+# 1. LGBM & FNN EXPLAINABILITY (SHAP / GAIN)
+# =============================================================================
+
+
+def plot_lgbm_importances(base_model, features: list) -> pd.DataFrame:
+
+    """
+    Visualising the important features in LGBM
+    For Shap and importance plots you have to use the base model 
+    """
     
     print("\n--- Extracting LightGBM Feature Importances ---")
     
@@ -39,7 +47,6 @@ def plot_lgbm_importances(base_model, features):
     
     #Double check the basic model initialized with the importance type gain 
         
-    
     importance_df = pd.DataFrame({
         'Feature': features,
         'Importance (Gain)': importances
@@ -54,19 +61,103 @@ def plot_lgbm_importances(base_model, features):
     plt.show()
     
     return importance_df
-    
 
-def test_model(test_data, base_model, calibrated_model, scalar, model_name, features, is_multi):
+ 
+def plot_fnn_importances(model, features: list, test_data: pd.DataFrame, scalar) -> None:
+    """
+    Use SHAP to visualise FNN 'decisions'
+    """
     
-    #Tests model performance
+    if torch.backends.mps.is_available():
+        device = torch.device('mps')
+    elif torch.cuda.is_available():
+        device = torch.device('cuda')
+    else:
+        device = torch.device('cpu')
+        
+    raw_data = test_data[features].values
+    scaled_data = scalar.transform(raw_data)
+    
+    # Take a small, random sample for the background distribution
+    # SHAP needs this to understand what "average" looks like
+    background_idx = np.random.choice(len(scaled_data), 500, replace=False)
+    X_background = torch.tensor(scaled_data[background_idx], dtype=torch.float32).to(device)
+    
+    # take a small, random sample of the data we actually want to explain
+    test_idx = np.random.choice(len(scaled_data), 1000, replace=False)
+    X_sample = torch.tensor(scaled_data[test_idx], dtype=torch.float32).to(device)
+    
+    # create a Custom Wrapper just for SHAP
+    class PropWrapper(nn.Module):
+        def __init__(self, base_model):
+            super(PropWrapper, self).__init__()
+            self.base_model = base_model
+            
+        def forward(self, x):
+            
+            logits = self.base_model(x)
+           
+            probs = torch.sigmoid(logits)
+            return probs
+            
+    # Wrap the base PyTorch model
+    raw_model = model.model.to(device)
+    raw_model.eval()
+    
+    # Initialize Explainer with the background dataset
+    explainer = shap.GradientExplainer(raw_model, X_background) 
+    
+    print("Calculating SHAP values")
+    # Calculate SHAP values for the test sample
+    shap_values = explainer.shap_values(X_sample)
+    
+    # DeepExplainer sometimes returns a list of arrays (one for each class). 
+    # If it's a list, we grab the array for class 1 (Fills)
+    if isinstance(shap_values, list):
+        shap_values = shap_values[0]
+    shap_values = np.asarray(shap_values)
+    if shap_values.ndim == 3:
+        shap_values = shap_values[..., 0] 
+    # Also ensure our sample data is back on the CPU as a numpy array for the plot
+    X_sample_np = X_sample.cpu().numpy()
+    
+    # Plot the results
+    plt.figure(figsize=(14, 10))
+    shap.summary_plot(shap_values, X_sample_np, feature_names=features, show=False)
+    plt.title('FNN SHAP Feature Importances (Limit Order Fill Probability)')
+    plt.tight_layout()
+    plt.show() 
+
+
+def test_model(test_data: pd.DataFrame, base_model, calibrated_model, scalar, model_name: str, features: list, is_multi: bool) -> None:
+    
+    """Evaluate model performance via volume-weighted metrics and diagnostic plots.
+
+    Generates the following plots:
+        4-Panel Overview (fig, axes = plt.subplots(2, 2)):
+            - Top-Left (Calibration Curve)
+            - Top-Right (Temporal Probability): Tracks average fill probability as a function
+              of clock time elapsed since initial placement (TimeSincePlacement).
+            - Bottom-Left (Precision-Recall Curve)
+            - Bottom-Right (Log-Scale Probability Distribution): Histograms predicted probability
+              density separated by actual outcomes (Fills vs. Cancels/Expires).
+         Heartbeat Diagnostics:
+            - BSS per Heartbeat: Measures whether predictive skill degrades over time
+              across 1,000ms heartbeat snapshots.
+            - Alligator Plot (Normalized Lifetime): Traces predicted fill probability over
+              an order's normalized life (0=placement, 1=death), separated by eventual fill/cancel.
+            - Brier Score over Normalized Lifetime: Plots Brier score drift against naive baseline.
+         Binned Probability Diagnostics:
+            - Model vs. Actual Fill Probability across custom probability buckets for all orders
+              and touch-only orders (DistanceToTouch == 0).
+            - Volume per Bin: Log-scale distribution of LOB volume across prediction bins.
+    """
     
     print(f'Evaluating {model_name}')
-    
         
     X_test = test_data[features]
     y_raw = test_data[config.TARGET]
     weights = test_data['UnitWeight']
-    
     
     #Check if the model needs scaling
     if scalar is not None:
@@ -74,22 +165,18 @@ def test_model(test_data, base_model, calibrated_model, scalar, model_name, feat
     else:
         X_test_final = X_test.values
         
-        
     active_model = calibrated_model if calibrated_model is not None else base_model
     y_pred_prob_vis = active_model.predict_proba(X_test_final)[:,1]
     
     
     #Predict Probabilities
+    y_pred_prob = y_pred_prob_vis
+    y_true = y_raw
     
-    if is_multi:
-        #Since primary objective is Fill it squashes the expired and canceled down both being 0 and fill being 1
-        y_pred_prob = y_pred_prob_vis
-        y_true = np.where(y_raw == 1, 1, 0)
     
-    else:
-        y_pred_prob = y_pred_prob_vis
-        y_true = y_raw
-    
+# =============================================================================
+# 2. Metrics Evaluation & Performance plots
+# =============================================================================
     #Evaluate performance metrics 
     
     dummy_fill_prob = np.average(y_true, weights = weights)
@@ -111,20 +198,13 @@ def test_model(test_data, base_model, calibrated_model, scalar, model_name, feat
     
     dummy_logloss = log_loss(y_true, dummy_y_pred_prob, sample_weight = weights)
     
-    
     loglosskillscore = 1 - ((logloss)/(dummy_logloss))
     print(f'Logloss Skill Score is {loglosskillscore}')
-     
-    #However i think AUC is only reliable on balanced data which this totally isnt, so the AUC is artificially inflated, why because we rarely ever have a fill and AUC is area under ROC, ROC formula is 
-     
-    #aucscore_lgbm = roc_auc_score(y_true, y_pred_prob_lgbm)
-    #print(f'AUC score is {aucscore_lgbm:.3f}')
      
     avgprecision = average_precision_score(y_true, y_pred_prob, sample_weight = weights)
     print(f'Avg precision score is {avgprecision:.3f}')
     
     #Odds ratios if model is logistic regression
-    
     if model_name == "Logistic Regression":
         model_coef_df = pd.DataFrame(
                 {
@@ -139,18 +219,7 @@ def test_model(test_data, base_model, calibrated_model, scalar, model_name, feat
     ################## Dummy Model #################################
     
     print("Dummy metrics")
-    
-    #Baseline fill percentage which i defined as the number of ones divided by number of ones and zeros in fill_map, which guarantees uniqueness by the fact i used .last in code before it
    
-    
-   
-    #because were making a probability engine using logistic regression we must look at brier score and log loss to evaulte it
-    #Confusion matrices and precisions for ex dont make too much sense here since then you need to define a treshold for when a probability gets put in the category
-    #0 or 1 where for us that doesnt matter we're just interested in the pure probability of an order beig filled
-    
-    #Visualisiton of performance and comparison to baseline dummy model which just guesses a baseline percentage on each order for it being filled 
-    #Dummy y fill prob is just an array of length y true with all entries equal to dummy fill prob
-    
     dummy_brierscore = brier_score_loss(y_true, dummy_y_pred_prob, sample_weight = weights)
     print(f'Dummy Brier score is {dummy_brierscore:.3f}')
     
@@ -164,15 +233,9 @@ def test_model(test_data, base_model, calibrated_model, scalar, model_name, feat
     
     #Visualisation of performance vs dummy
     fig, axes = plt.subplots(2,2, figsize = (24,14))
-    #calibration curve
     
     
-    
-    #manually writing a weighted calibration curve since weights isnt a supported parameter in sklearn calibration_curve
-    
-    def weighted_calibration_curve(y_true, y_pred, weights, n_bins=10):
-        
-        #So for this curve it groups into 10 bins the predict probability, but thats regardless of whether the option was alive for 1ms or for 10000ms so it doesnt say too much yet
+    def weighted_calibration_curve(y_true: np.ndarray, y_pred: np.ndarray, weights: np.ndarray, n_bins: int = 10) -> tuple[np.ndarray, np.ndarray]:
         
         """
         Manually calculates a volume-weighted calibration curve using quantiles.
@@ -208,7 +271,12 @@ def test_model(test_data, base_model, calibrated_model, scalar, model_name, feat
     axes[0,0].legend()
     
     
-    def temporal_prob_curve(y_true, y_pred, weights, n_bins = 10):
+    def temporal_prob_curve(y_true: np.ndarray, y_pred: np.ndarray, weights: np.ndarray, n_bins:int = 10) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
+        
+        """
+        Function to 
+        Create and plot fill probability true vs predicted over clock time
+        """
         
         time_since_placement = test_data['TimeSincePlacement'].values
         
@@ -241,23 +309,9 @@ def test_model(test_data, base_model, calibrated_model, scalar, model_name, feat
     axes[0,1].set_ylabel('P(fill)')
     axes[0,1].grid(True, alpha = 0.3)
     axes[0,1].legend()
-  
     
-    # #Roc curve
     
-    # engine_fpr, engine_tpr, tresholds = roc_curve(y_true, y_pred_prob_vis) #returns false postive rates and true positive rates, treshold which i think is the number or prob above or below it gives a certain classification
-    # dummy_fpr, dummy_tpr, tresholds = roc_curve(y_true, dummy_y_pred_prob)
-    # axes[0,1].plot(engine_fpr, engine_tpr, color = 'b', label = f'{model_name}')
-    # axes[0,1].plot(dummy_fpr, dummy_tpr, color = 'r', label = 'Dummy')
-    # axes[0,1].set_title('ROC curve (not useful for this type of data)')
-    # axes[0,1].set_xlabel('Cancels or Expirations identified Falsely as Fills / All Actual Cancels') # False Postive rate = 1 - specificity = 1 - 
-    # axes[0,1].set_ylabel('Fills correctly identified as Fills / All Actual Fills')  #Recall = TP /(TP + FN) = Sensitivity = True Positive Rate
-    # axes[0,1].legend()
-    
-    #Precision recall curve 
-    # a point of x = 0.16, y = 0.4 means the following: if we set our treshold to 16% so out of all the true fills
-    # we only capture 16% then out of all the  orders our model flagged as a fill, 40% were actual fills , so when we captured only 16 % our treshold for selecting a fill was high, but you cant see that directly from the graph i think, look into a way of doing that 
-    
+    #precision-recall curve, weighted properly
     engine_precision, engine_recall, engine_treshold = precision_recall_curve(y_true, y_pred_prob_vis, sample_weight = weights)
     axes[1,0].plot(engine_recall, engine_precision, color = 'b', label = f'{model_name} PR')
     axes[1,0].set_xlabel('Recall')
@@ -272,8 +326,7 @@ def test_model(test_data, base_model, calibrated_model, scalar, model_name, feat
     axes[1,0].legend()
         
     
-    #Plot predicted probability distriubiton, use log scale on y axis since many more cancels then fills
-    
+    #Plot histogram of predicted fill probs versus volume of orders
     plot_df = pd.DataFrame({
         'y_true': y_true,
         'y_pred': y_pred_prob,
@@ -291,21 +344,26 @@ def test_model(test_data, base_model, calibrated_model, scalar, model_name, feat
     axes[1, 1].set_xlabel('Predicted Probability of Fill')
     axes[1, 1].set_ylabel('Vol of Orders (Log Scale)')
     axes[1, 1].legend()
-    
     plt.show()
     
     #Plots Correlation heat plot of all features and of features that appear in model
-    
     corr_matrix = X_test[features].corr()
-    
     sns.heatmap(corr_matrix, annot=True, cmap='coolwarm', vmin=-1, vmax=1)
     plt.title(f"All Feature Correlation Matrix of {model_name}")
     plt.show()
     
+# =============================================================================
+# 3. Heartbeat performance plots
+# =============================================================================
 
-
-
-    def eval_at_heartbeat(test_data, y_true, y_pred_prob, weights, dummy_fill_prob):
+    def eval_at_heartbeat(test_data, y_true: np.ndarray, y_pred_prob: np.ndarray, weights: np.ndarray, dummy_fill_prob: float) -> pd.DataFrame:
+        
+        """
+        Creates performance plots to show how model performs depending on how many heartbeats were evaluated
+        The heartbeat metrics list gives the three metrics for all orders that survived the row number amount of heartbeats
+        For example the first row is the performance of the model across every single order the moment it was placed
+        The 10th row is the performance of the model evaluated after 10 heartbeats on the orders that still remain in the LOB after 10 heartbeats 
+        """
 
         eval_df = pd.DataFrame({
             'y_true': y_true.values,
@@ -393,12 +451,7 @@ def test_model(test_data, base_model, calibrated_model, scalar, model_name, feat
         plt.ylabel('Brier score')
         plt.title(f'Brier score over order lifetime {model_name}')
         plt.legend()
-
         plt.show()
-        
-        #The heartbeat metrics list gives the three metrics for all orders that survived the row number amount of heartbeats
-        #For example the first row is the performance of the model across every single order the moment it was placed
-        #The 10th row is the performance of the model evaluated after 10 heartbeats on the orders that still remain in the LOB after 10 heartbeats 
     
         print(heartbeat_metrics.to_string())
         return heartbeat_metrics
@@ -406,8 +459,10 @@ def test_model(test_data, base_model, calibrated_model, scalar, model_name, feat
     eval_at_heartbeat(test_data, y_true, y_pred_prob, weights, dummy_fill_prob)
 
     
+# =============================================================================
+# 4. Performance Plot
+# =============================================================================
 
-#Making performance plots
     df = pd.DataFrame({
         'y_true': y_true,
         'y_pred': y_pred_prob,
@@ -426,7 +481,7 @@ def test_model(test_data, base_model, calibrated_model, scalar, model_name, feat
     
     grouped = df.groupby('bins', observed = False)
     
-    def safe_weigths(x, y):
+    def safe_weigths(x:pd.DataFrame, y:str) -> float:
         if x['weights'].sum() == 0:
             return np.nan
         return np.average(x[y], weights = x['weights'])
@@ -462,7 +517,6 @@ def test_model(test_data, base_model, calibrated_model, scalar, model_name, feat
     plt.show()
 
     #Similar plot to above but now for orders only placed at best bid and best ask
-    
     mask = test_data['DistanceToTouch'] == 0
     
     y_true_filter = y_true[mask]
@@ -500,13 +554,10 @@ def test_model(test_data, base_model, calibrated_model, scalar, model_name, feat
     plt.show()
     
         
-    #Make a linegraph with on x axis the bins and on y axis the vol of orders landed in that bin 
-    
+    #Linegraph with on x axis the bins and on y axis the vol of orders landed in that bin 
     plt.figure(figsize = (20,10))
     vol_per_bin = df.groupby('bins', observed = False)['weights'].sum()
-    
     middle = [b.mid for b in vol_per_bin.index]
-    
     plt.plot(middle, vol_per_bin, color = 'b', label = 'LO Vol')
     plt.xlabel('Probability Bins')
     plt.xlim(0, 1)
@@ -516,71 +567,6 @@ def test_model(test_data, base_model, calibrated_model, scalar, model_name, feat
     plt.title(f'Amount Of LO Vol appearing in each predictive probability bin {model_name}')
     plt.legend()
     plt.show()
- 
-    def plot_fnn_importances(model, features, test_data, scalar):
-        
-        #Use Shap to visualise FNN 'decisions'
-        
-        if torch.backends.mps.is_available():
-            device = torch.device('mps')
-        elif torch.cuda.is_available():
-            device = torch.device('cuda')
-        else:
-            device = torch.device('cpu')
-            
-        raw_data = test_data[features].values
-        scaled_data = scalar.transform(raw_data)
-        
-        # 1. Take a small, random sample for the background distribution
-        # SHAP needs this to understand what "average" looks like
-        background_idx = np.random.choice(len(scaled_data), 500, replace=False)
-        X_background = torch.tensor(scaled_data[background_idx], dtype=torch.float32).to(device)
-        
-        # 2. Take a small, random sample of the data we actually want to explain
-        test_idx = np.random.choice(len(scaled_data), 1000, replace=False)
-        X_sample = torch.tensor(scaled_data[test_idx], dtype=torch.float32).to(device)
-        
-        # 3. Create a Custom Wrapper just for SHAP
-        class PropWrapper(nn.Module):
-            def __init__(self, base_model):
-                super(PropWrapper, self).__init__()
-                self.base_model = base_model
-                
-            def forward(self, x):
-                
-                logits = self.base_model(x)
-               
-                probs = torch.sigmoid(logits)
-                return probs
-                
-        # Wrap the base PyTorch model
-        raw_model = model.model.to(device)
-        raw_model.eval()
-        
-        # 4. Initialize Explainer with the background dataset
-        explainer = shap.GradientExplainer(raw_model, X_background) 
-        
-        print("Calculating SHAP values (this may take a minute)...")
-        # 5. Calculate SHAP values for the test sample
-        shap_values = explainer.shap_values(X_sample)
-        
-        # DeepExplainer sometimes returns a list of arrays (one for each class). 
-        # If it's a list, we grab the array for class 1 (Fills)
-        if isinstance(shap_values, list):
-            shap_values = shap_values[0]
-        shap_values = np.asarray(shap_values)
-        if shap_values.ndim == 3:
-            shap_values = shap_values[..., 0] 
-        # Also ensure our sample data is back on the CPU as a numpy array for the plot
-        X_sample_np = X_sample.cpu().numpy()
-        
-        # 6. Plot the results!
-        plt.figure(figsize=(14, 10))
-        shap.summary_plot(shap_values, X_sample_np, feature_names=features, show=False)
-        plt.title('FNN SHAP Feature Importances (Limit Order Fill Probability)')
-        plt.tight_layout()
-        plt.show() 
-        
 
         
     if model_name == "Light Gradient Boosted Model":
@@ -588,10 +574,16 @@ def test_model(test_data, base_model, calibrated_model, scalar, model_name, feat
 
     if model_name == 'FNN':
         plot_fnn_importances(calibrated_model, features, test_data, scalar)
+        
+# =============================================================================
+# 5. Functions used in UserScript that return daily plots and metrics
+# =============================================================================
 
 def compute_daily_performance_curve(y_true, y_pred_prob, weights, mask = None):
     
-    #this function is only used by userscript for the monthly eval process
+    """
+    Calculates the performance curve for one single day, only used in userscript
+    """
     
     if mask is not None:
         y_true = y_true[mask]
@@ -612,7 +604,7 @@ def compute_daily_performance_curve(y_true, y_pred_prob, weights, mask = None):
     df['bins'] = pd.cut(df['y_pred'], bins=bins_custom)
     grouped = df.groupby('bins', observed=False)
     
-    def safe_weights(x, col):
+    def safe_weights(x:pd.DataFrame, col:str) -> float:
         if x['weights'].sum() == 0:
             return np.nan
         return np.average(x[col], weights=x['weights'])
@@ -625,9 +617,12 @@ def compute_daily_performance_curve(y_true, y_pred_prob, weights, mask = None):
     
     return weighted_pred.values, weighted_actual.values, vol_per_bin.values
 
-def compute_daily_divergence(merged):
+def compute_daily_divergence(merged: pd.DataFrame) -> tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray]:
     
-    #Similar to above function but for different plot, also only used in userscript file 
+    """
+    Function to calculate volume in bins based on regular and probq imbalance features, only used in userscript
+    """
+
     merged['buy_vol'] = np.where(merged['BorS'] == -1, merged['Vol'],0)
     merged['vol'] = merged['Vol']
 
@@ -637,7 +632,6 @@ def compute_daily_divergence(merged):
     merged['Prob_Fine_Bin'] = pd.cut(merged['ProbQImbal'], bins=bins)
     
     # Calculate the proportion of buys in each bin
-    
  
     reg_buy_vol = merged.groupby('Reg_Fine_Bin', observed=False)['buy_vol'].sum()
     reg_total_vol = merged.groupby('Reg_Fine_Bin', observed=False)['vol'].sum()
@@ -649,9 +643,13 @@ def compute_daily_divergence(merged):
 
 
 
-def compute_daily_alligator(y_true, y_pred_prob, weights, time_since_placement, order_ids):
+def compute_daily_alligator(y_true: np.ndarray, y_pred_prob: np.ndarray, weights: np.ndarray, time_since_placement: np.ndarray, order_ids: np.ndarray) -> tuple[np.ndarray, np.ndarray]:
+    
+    """
+    Construct daily plot which shows normalized lifetime on x-axis and predicted fill prob on y-axis with orders split analyzed based on whether they end up filling or not
+    """
 
-    # Notice we added order_ids to the function arguments
+
     eval_df = pd.DataFrame({
         'y_true': y_true.values,
         'y_pred': y_pred_prob,
@@ -672,7 +670,7 @@ def compute_daily_alligator(y_true, y_pred_prob, weights, time_since_placement, 
     eval_df['TimeBucket'] = pd.cut(eval_df['NormTime'], bins=bins, include_lowest=True)
     
     # Safe weight calculator to prevent ZeroDivisionError on empty bins
-    def safe_alligator_weights(x):
+    def safe_alligator_weights(x: pd.DataFrame) -> float:
         if x['weight'].sum() == 0:
             return np.nan
         return np.average(x['y_pred'], weights=x['weight'])
@@ -690,13 +688,21 @@ def compute_daily_alligator(y_true, y_pred_prob, weights, time_since_placement, 
     
     return fills, cancels
     
-def compute_daily_PR(y_true, y_pred_prob, weights):
+def compute_daily_PR(y_true: np.ndarray, y_pred_prob: np.ndarray, weights: np.ndarray) -> tuple[np.ndarray, np.ndarray]:
+    
+    """
+    Computes precision, recall for data of a given trading day
+    """
     
     precision, recall, _ = precision_recall_curve(y_true, y_pred_prob, sample_weight = weights)
     return precision, recall
 
-def calc_weighted_ece(y_true, y_pred, weights):
-    #calcualtes the volumeweighted expected calibration error 
+def calc_weighted_ece(y_true: np.ndarray, y_pred: np.ndarray, weights: np.ndarray) -> float:
+    
+    """
+    calcualtes the volumeweighted expected calibration error 
+    """
+    
     df = pd.DataFrame({'y_true': y_true, 'y_pred': y_pred, 'weight': weights})
     
     deltap = 0.01
@@ -723,8 +729,11 @@ def calc_weighted_ece(y_true, y_pred, weights):
             
     return ece
 
-def compute_daily_scores(y_true, y_pred_prob, weights):
+def compute_daily_scores(y_true: np.ndarray, y_pred_prob: np.ndarray, weights: np.ndarray) -> dict[str, float]:
+    """
     #compute brier logloss and skill scores daily to be used in walk forward in userscript to get average model results
+    """
+    
     dummy_fill_prob = np.average(y_true, weights = weights)
     brier_score = brier_score_loss(y_true, y_pred_prob, sample_weight = weights)
     brier_skill_score = 1 - ((brier_score)/(dummy_fill_prob*(1-dummy_fill_prob)))
@@ -762,8 +771,3 @@ def compute_daily_scores(y_true, y_pred_prob, weights):
         }
     
     return scores
-    
-    
-    
-    
-    

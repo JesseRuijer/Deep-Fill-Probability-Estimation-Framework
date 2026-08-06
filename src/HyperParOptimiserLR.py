@@ -36,7 +36,7 @@ train_matrix = pd.concat(train_frames, ignore_index = True)
 del train_frames
 gc.collect()
 
-train_matrix = train_matrix.sample(frac = 0.1, random_state = 67)
+train_matrix = train_matrix.sample(frac = 0.1, random_state = config.RANDOM_SEED)
 val_matrix = pd.read_parquet(val_file) #Validation data different from training and testing data ofc
 
 X_train = train_matrix[config.LOGISTIC_MODEL_FEATURES]
@@ -58,7 +58,7 @@ def objective(trial):
     params = {
         #Basic 
         'max_iter': 5000, #Set very high for same reason as lgbm hyperpar, now we do early stopping using the tol parameter
-        'random_state': 69,
+        'random_state': config.RANDOM_OPTUNA_SEED,
         'n_jobs': 1,
         'tol': 0.001, #Force solver to stop early if it hits a plateau 
         

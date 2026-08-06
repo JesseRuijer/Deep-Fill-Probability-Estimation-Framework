@@ -11,6 +11,7 @@ import numpy as np
 from sklearn.calibration import CalibratedClassifierCV
 from sklearn.linear_model import LogisticRegression
 from sklearn.preprocessing import StandardScaler
+import config
 
 ###################Starting logistic regression###########################
 
@@ -25,7 +26,7 @@ def train_logistic_model(X_train, y_train, weights, X_calib, y_calib, weights_ca
             
             'max_iter' : 172,
             'n_jobs' : 1, #Used to be -1 which i believe is multicore, but not sure which one is better atm
-            'random_state' : 69,
+            'random_state' : config.RANDOM_SEED,
             
             'penalty' : 'l2', #Used to be l1 from optuna but after introducing heartbeats it was just too slow
             'solver': 'lbfgs', #Used to be saga from optuna but after introducing heartbeats it was just too slow

@@ -6,15 +6,22 @@ Created on Mon Jun  1 14:27:25 2026
 @author: jesseruijer
 """
 
-#Importing libraries,classes, functions from other scripts
+"""
+
+Contains helper functions that are used throughout the code, such as converting time from MS to standard time and vice versa etc.
+
+"""
 
 import numpy as np
 import config 
+import pandas as pd
 
 
-def time_in_hours(ms_past_midnight):
+def time_in_hours(ms_past_midnight: int) -> str:
     
-    #Translates time in ms after midnight to regular time
+    """
+    Translates time in ms after midnight to regular time
+    """
     
     hours = ms_past_midnight // 3600000
     remaining_ms = ms_past_midnight % 3600000
@@ -29,23 +36,27 @@ def time_in_hours(ms_past_midnight):
     
     return f"{int(hours):02d}:{int(minutes):02d}:{int(seconds):02d}.{int(ms):03d}"
 
-def time_to_hours(time):
+def time_to_ms(time: float) -> float:
     
-    #Input time as follows: 9:15 am = 9.25
+    """
+    converts time in hours to time in ms, both after midnight 
+    Input time as follows: 9:15 am = 9.25
+    """
     
     return time*3600000
 
-def order_life(order_ID, df):
+def order_life(order_ID: int, df: dict) -> pd.DataFrame:
     
     #Give this function order ID it will return the life of this order ID
     
     return df["Event"][df["Event"]["ID"] == order_ID ].sort_values(by = "TOD")
 
-def find_order_pattern(df, start_type, middle_type, middle_count, end_type):
+def find_order_pattern(df: dict, start_type: int, middle_type: int, middle_count: int, end_type: int) -> pd.DataFrame:
+    """
+    Pass it some type of TYPE pattern you want a specific order ID to satisfy and it returns those, note it can only have a beginning, middle and end type not more, although you can specify how often the middle type occurs
+    """
     
-    #Pass it some type of TYPE pattern you want a specific order ID to satisfy and it returns those
-    
-    def check_rules(history):
+    def check_rules(history: pd.Series) -> bool:
         history_list = list(history)
         
         if history_list[0] != start_type:
@@ -57,7 +68,7 @@ def find_order_pattern(df, start_type, middle_type, middle_count, end_type):
         if history_list.count(middle_type) != middle_count:
             return False
             
-        # If it survives all the checks above, it's a match!
+        # If it survives all the checks above it's a match
         return True
 
     #Group the data by ID, and run the rulebook on every order
@@ -71,12 +82,13 @@ def find_order_pattern(df, start_type, middle_type, middle_count, end_type):
     
     return orders
     
-def speedmetric(df, feature_list):
+def speedmetric(df: pd.DataFrame, feature_list: list) -> dict:
     
-    
-    # Calculates the absolute magnitude of speed (Event Delta / Clock Delta).
-    # Returns strictly positive values. Relies on the raw Event/Clock deltas 
-    # in the main dataframe to provide the directional sign to the models.
+    """
+     Calculates the absolute magnitude of speed (Event Delta / Clock Delta).
+     Returns strictly positive values. Relies on the raw Event/Clock deltas 
+     in the main dataframe to provide the directional sign to the models.
+     """
     
     
     result = {}
@@ -100,20 +112,24 @@ def speedmetric(df, feature_list):
 
 
 
-def trailing_calc(tod_targets, tod_source, vol_source, lookback):
+def trailing_calc(tod_targets: np.ndarray, tod_source: np.ndarray, vol_source: np.ndarray, lookback: int) -> tuple[np.ndarray, np.ndarray]:
     
-    #Calculates vol and index related information for trailing features
+    """
+    Calculates vol and index related information for trailing features
+    """
     
-    cum_vol = np.pad(np.cumsum(vol_source), (1,0), constant_values = 0)      #pads to add a zero at thes start and then cumsum calculates the running total so to know the order arrival rate between two different times you just calculate the difference in their total running values
+    cum_vol = np.pad(np.cumsum(vol_source), (1,0), constant_values = 0)      #pads to add a zero at the start and then cumsum calculates the running total so to know the order arrival rate between two different times you just calculate the difference in their total running values
     start_indices = np.searchsorted(tod_source, tod_targets - lookback, side = 'left')   #Finds the row indices where the lookback window starts and below where it finishes
     end_indices = np.searchsorted(tod_source, tod_targets , side = 'right') 
     return (cum_vol[end_indices] - cum_vol[start_indices]), (end_indices - start_indices)
 
 
 
-def calculate_rolling_moments(df, feature_list, window=config.EVENT_TIME_DELTA, calc_std=False, calc_skew=False, calc_kurt=False, calc_extremes = False):
+def calculate_rolling_moments(df: pd.DataFrame, feature_list: list, window: int = config.EVENT_TIME_DELTA, calc_std: bool = False, calc_skew: bool = False, calc_kurt: bool = False, calc_extremes: bool = False) -> dict:
     
-    #Calculates moments for features
+    """
+    Calculates moments for features
+    """
     
     new_features = {}
     

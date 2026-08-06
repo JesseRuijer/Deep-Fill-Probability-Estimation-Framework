@@ -17,8 +17,6 @@ from matplotlib.ticker import PercentFormatter
 import gc
 import random
 import matplotlib.gridspec as gridspec
-
-
 from sklearn.isotonic import IsotonicRegression
 from pathlib import Path
 from sklearn.preprocessing import StandardScaler
@@ -101,7 +99,7 @@ def train(train_files, train_matrix, model):
         from torch.utils.data import DataLoader
         from FNN import PyTorchSklearnWrapper, DataSet, UserFNN
         #Set seed to ensure reproducability for FNN
-        SEED = 67
+        SEED = config.RANDOM_SEED
         random.seed(SEED)
         np.random.seed(SEED)
         torch.manual_seed(SEED)
