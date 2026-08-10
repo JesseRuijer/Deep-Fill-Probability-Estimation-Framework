@@ -5,10 +5,13 @@ Created on Mon Jun 15 14:05:38 2026
 
 @author: jesseruijer
 """
+"""
 
-#This script just handles the data entries into the programme via finder instead of having to manually do this (avoids typos and reduces time)
-#Also codes a cache_file so if wanting to rerun the same data multiple times the finder doesnt keep on opening
-#Note majority of this code was AI generated and changed by me to fit as I have no expertise in software engineering related to File managing on pc etc
+This script just handles the data entries into the programme via finder instead of having to manually do this (avoids typos and reduces time)
+Also codes a cache_file so if wanting to rerun the same data multiple times the finder doesnt keep on opening
+Note majority of this code was AI generated and changed by me to fit as I have no expertise in software engineering related to File managing on pc etc
+
+"""
 
 import tkinter as tk
 from tkinter import filedialog
@@ -21,9 +24,11 @@ from pathlib import Path
 SCRIPT_DIR = Path(__file__).resolve().parent
 CACHE_FILE = SCRIPT_DIR / ".last_paths.json"
 
-def select_files_via_finder():
+def select_files_via_finder() -> tuple[str | None, str | None]:
     
-    #GUI for selecting the files via finder
+    """
+    GUI for selecting the files via finder
+    """
     
     root = tk.Tk()
     root.withdraw() 
@@ -37,9 +42,11 @@ def select_files_via_finder():
     
     return main_file, mo_file
 
-def get_data_paths():
+def get_data_paths() -> tuple[str, str]:
     
-    #If you want to use new data or remain with the old data
+    """
+    If you want to use new data or remain with the old data, i.e retrieves paths from cache or user can put in new paths via Finder
+    """
     
     if os.path.exists(CACHE_FILE):
         with open(CACHE_FILE, 'r') as f:
@@ -68,9 +75,11 @@ def get_data_paths():
             
     return main_path, mo_path
 
-def generate_dynamic_paths(main_file_path):
+def generate_dynamic_paths(main_file_path: str) -> Path:
     
-    #Splitting the main file into the train and testing for bin and multi class output var
+    """
+    Obtaining path from parquet files
+    """
     
     filename = os.path.basename(main_file_path)
     parts = filename.split('_')
@@ -89,15 +98,15 @@ def generate_dynamic_paths(main_file_path):
     #failsafe, create folders if they dont exist
     processed_dir.mkdir(parents = True, exist_ok = True)
     
-    
     binary_out = processed_dir / f"{ticker}_BINARY_{formatted_date}.parquet"
-    #multi_out = processed_dir / f"{ticker}_MULTI_{formatted_date}.parquet"
 
     return binary_out
 
-def get_ml_training_paths():
+def get_ml_training_paths() -> dict[str, list[str]]:
     
-    #Gives paths to the training and testing files
+    """
+    Gives paths to the training and testing files
+    """
     
     ML_CACHE_FILE = SCRIPT_DIR / ".ml_cache.json"
 
@@ -122,18 +131,11 @@ def get_ml_training_paths():
                 files = saved_paths['train_bin']
                 for f in (files if isinstance(files, list) else [files]):
                     print(f"TRAIN (Bin):   {os.path.basename(f)}")
-            if saved_paths.get('train_multi'): 
-                files = saved_paths['train_multi']
-                for f in (files if isinstance(files, list) else [files]):
-                    print(f"TRAIN (Multi):   {os.path.basename(f)}")
+           
             if saved_paths.get('test_bin'): 
                 files = saved_paths['test_bin']
                 for f in (files if isinstance(files, list) else [files]):
                     print(f"TEST (Bin):   {os.path.basename(f)}")
-            if saved_paths.get('test_multi'):
-                files = saved_paths['test_multi']
-                for f in (files if isinstance(files, list) else [files]):
-                    print(f"TEST (Multi):   {os.path.basename(f)}")
             
             print("---------------------------")
             
@@ -172,26 +174,29 @@ def get_ml_training_paths():
     # Set up empty slots
     paths = {
         'train_bin': [], 'test_bin': [], 
-        'train_multi': [], 'test_multi': []
     }
 
     # Automatically sort the files you highlighted into the right slots
     for f in train_files:
         if "BINARY" in f.upper(): paths['train_bin'].append(f)
-        if "MULTI" in f.upper(): paths['train_multi'].append(f)
 
     for f in test_files:
         if "BINARY" in f.upper(): paths['test_bin'].append(f)
-        if "MULTI" in f.upper(): paths['test_multi'].append(f)
+        
+    #Sort the files in order, which works by our file labelling, so first entry in the list will be the first training day, second second trading day etc
+    paths['train_bin'].sort()
+    paths['test_bin'].sort()
 
     with open(ML_CACHE_FILE, 'w') as f:
         json.dump(paths, f)
 
     return paths
 
-def get_batch_data_paths():
+def get_batch_data_paths() -> list[tuple[str, str]]:
     
-    #Gets strings of files to save from finder, also automatically finds the corresponding MO files to the event files 
+    """
+    Gets strings of files to save from finder, also automatically finds the corresponding MO files to the event files 
+    """
     
     batch_jobs = []
     script_dir = Path(__file__).resolve().parent

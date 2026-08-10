@@ -6,7 +6,13 @@ Created on Wed Jul  8 14:22:54 2026
 @author: jesseruijer
 """
 
-#Standalone script that runs by itself and has all the functionality of the code base 
+"""
+
+UserScript that allows for the majority of the functionality of the framework to be easily accessed by the user
+
+Contains for all models: training, testing, using, evaluation using walkforward window
+
+"""
 
 import pandas as pd
 import numpy as np
@@ -31,13 +37,13 @@ from DataAndFeatureEngineering import import_data, clean_data, data_regressors
 #Below is a fix to be able to run lgbm and torch in one script 
 os.environ["KMP_DUPLICATE_LIB_OK"] = "TRUE"
 
-
-
-
-def prep_data_daily(file_path, file_path_mo):
+def prep_data_daily(file_path:str, file_path_mo:str) -> dict[str, pd.DataFrame]:
     
-    #copy of function in main but didnt want to import it from there since thats ugly habit
-    
+    """
+    prep data, i.e run dataandfeaturengineering script on it
+    copy of function in main but didnt want to import it since UserScript is standalone
+    """
+
     print(f'Runs full pipeline for {os.path.basename(file_path)}')
     rawdata = import_data(file_path, file_path_mo)
     cleandata = clean_data(rawdata)
@@ -51,10 +57,12 @@ def prep_data_daily(file_path, file_path_mo):
         'Binary Matrix': matrices['Binary Matrix']
         }
 
-def save_data():
+def save_data() -> None:
     
-    #copy of function in main but didnt want to import it from there since thats ugly habit
-    
+    """
+    Save feature data for ML training in parquet format
+    copy of function in main but didnt want to import it since UserScript is standalone
+    """
     print('Builds parquet files for easy storage and optimisation')
     
     batches_to_save = get_batch_data_paths()
@@ -74,10 +82,8 @@ def save_data():
         matrices = prep_data_daily(main_path, mo_path)
 
         matrices['Binary Matrix'].to_parquet(binary_file_dest)
-        #matrices['Multi Matrix'].to_parquet(multi_file_dest)
         
         print(f'Saved -> {os.path.basename(binary_file_dest)}')
-        #print(f'Saved -> {os.path.basename(multi_file_dest)}')
         
         #Once processed delete the giant matrices like cleandata etc from RAM and flush the memory 
         del matrices
@@ -86,12 +92,16 @@ def save_data():
     print('\nBatch processing complete!')
 
 
-def train(train_files, train_matrix, model):
+def train(train_files:list, train_matrix:pd.DataFrame, model:str) -> tuple[calibratedmodel | wrapped model, StandardScaler]:
+    
+    """
+    Training for all 3 models
+    Saving of trained model
+    """
     
     print('Starting Training')
     
     if model == 'FNN':
-        
         
         #import FNN required pytorch stuff only when using FNN
         import torch
@@ -105,7 +115,6 @@ def train(train_files, train_matrix, model):
         torch.manual_seed(SEED)
         
         #additional seeding for GPU and if user uses CUDA
-        
         if torch.backends.mps.is_available():
             torch.mps.manual_seed(SEED)
             
@@ -127,7 +136,7 @@ def train(train_files, train_matrix, model):
         
         input_size = len(config.FNN_MODEL_FEATURES)
         
-        LEARNING_RATE = 0.001    #0.003143153725649377
+        LEARNING_RATE = 0.001    #0.003143153725649377 was the initial LR Optuna gave
         WEIGHT_DECAY = 2.5475947521348294e-06
         EPOCHS = 3
         BATCH_SIZE = 16384 
@@ -280,13 +289,10 @@ def train(train_files, train_matrix, model):
         fnn_calibrator.fit(val_raw_probs, val_targets, sample_weight=val_weights)
         
         wrapped_fnn = PyTorchSklearnWrapper(model, device, fnn_calibrator)
-       
-        
     
         script_dir = Path(__file__).resolve().parent # file is built in variable holder, resolve and parent to get a string that just contains the directory that contains the script
         models_dir = script_dir.parent / 'models' # /  works as a path joiner
         models_dir.mkdir(parents = True, exist_ok = True) #failsafe to create folder if it doesnt exist or does nothing if it already exists
-      
       
         model_filepath = models_dir / config.USER_FNN_MODEL_WEIGHTS
         torch.save(model.state_dict(), model_filepath)  #The dict contains the model weights, since prepdata function alrady returns a wrapped FNN, add .model to the object to have the pure model 
@@ -332,7 +338,6 @@ def train(train_files, train_matrix, model):
         lgbm_X.replace([np.inf, -np.inf], 0, inplace=True)
         lgbm_X = lgbm_X.astype(np.float32, copy = False)
         print('Pass3')
-
         
         #use 80% for training and 20% to calibrate on, in chronological order since we have timeseries data 
         split_idx = int(len(lgbm_X) * .8)
@@ -435,6 +440,11 @@ def train(train_files, train_matrix, model):
         return calibrated_lr, scalar_lr
  
 def improve_qimbal(test_matrix, model, mo_data, cleandata):
+    
+    """
+    Attempts to improve qimbal by plotting the histogram with 3 seperate classes like in the presentation of ryan on slide 42
+    """
+    
     # Rebuild the absolute path using pathlib
     script_dir = Path(__file__).resolve().parent 
     models_dir = script_dir.parent / 'models'
@@ -826,7 +836,11 @@ def improve_qimbal(test_matrix, model, mo_data, cleandata):
     
     return print((test_matrix['ProbQImbal'].describe()), test_matrix['QImbalance'].describe())
 
-def test_model_wrap(test_matrix, model):
+def test_model_wrap(test_matrix:pd.DataFrame, model:str) -> None:
+    
+    """
+    Testing Models using ModelEvaluation Script
+    """
     
     # Rebuild the absolute path using pathlib
     script_dir = Path(__file__).resolve().parent 
@@ -941,7 +955,11 @@ def test_model_wrap(test_matrix, model):
         )
        
  
-def single_order_eval(ID, TSP, test_data, selected_model, features, scalar):
+def single_order_eval(ID:int, TSP:float, test_data, selected_model, features, scalar):
+    
+    """
+    Use Model to Return fill probability for a given order ID at a certain time since placement TSP
+    """
     
     order_data = test_data[test_data['ID'] == ID].copy()
     if len(order_data) == 0:
@@ -1564,7 +1582,7 @@ if __name__ == "__main__":
     else:
         print('Moving on to preprocessed data')
     
-    print('Please select TRAINING Data (atleast one day)')
+    print('Please select TRAINING Data (atleast two days)')
     print('Please select Test Data (One day only and no overlap with test data (obviously))')
 
     print('Here just select again the training day from above, its for plotting ProbQImbal we need the MO data')  

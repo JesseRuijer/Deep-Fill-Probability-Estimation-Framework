@@ -5,23 +5,38 @@ Created on Tue Jun 23 10:21:54 2026
 
 @author: jesseruijer
 """
+
+"""
+Script to find relevant features for model, give this script all features, and it returns important ones
+
+"""
+
+
 import shap
 import numpy as np
 import pandas as pd
 from sklearn.linear_model import LogisticRegression
 from sklearn.preprocessing import StandardScaler
 
-#Script to find relevant features for model, give this script all features, and it returns important ones
-
-#For Shap use testdata, as its the same features as trained on
-#For l1 finder for logistic, you have to use traindata
 
 
-def feature_finder(model, model_name, data, features, y_train, weights):
+
+def feature_finder(model, model_name: str, data, features:list, y_train:pd.Series, weights:pd.Series) -> None:
     
-    #Find features, uses shap for lgbm or l1 for logistic
+    """
+    Find features, uses shap for lgbm or l1 for logistic    
+    For Shap use testdata, as its the same features as trained on
+    For l1 finder for logistic, you have to use traindata
+    """
+    
 
-    def shap_feature_finder(model, data, features):
+
+    def shap_feature_finder(model, data:pd.DataFrame, features:list) -> None:
+        
+        """
+        Finding Relevant features for LGBM using SHAP TreeExplainer
+        """
+        
         print("\n--- Calculating SHAP Values ---")
         
         # TreeExplainer is hyper-optimized for LightGBM/XGBoost
@@ -35,8 +50,7 @@ def feature_finder(model, model_name, data, features, y_train, weights):
         # Generate the standard SHAP summary plot
         shap.summary_plot(shap_values, X_test, feature_names=features)
         
-        #Write a script to obtain the top features
-        
+        # obtain the top features
         mean_abs_shap = np.abs(shap_values).mean(axis = 0)
         
         shap_importance = pd.DataFrame({
@@ -48,8 +62,12 @@ def feature_finder(model, model_name, data, features, y_train, weights):
         print(f'Final features {top_features}')
         
         
-    def logistic_best_feature_finder(model, data, features, y_train, weights):
-        #Think liblinear optimised for binary large data
+    def logistic_best_feature_finder(data: pd.DataFrame, features:list, y_train:pd.Series, weights:pd.Series) -> None:
+        
+        
+        """
+        Using Lasso Regression to find best features for LR
+        """
         
         X_train = data[features]
         scalar = StandardScaler()
@@ -58,11 +76,10 @@ def feature_finder(model, model_name, data, features, y_train, weights):
         l1_model = LogisticRegression(
             penalty = 'l1',
             solver = 'liblinear',
-            n_jobs = -1,
             C = 0.0001, #Strictness of allowing features, 1 is not strict, 0.1 is strict
             max_iter = 1000,
-            random_state = 68,
-            tol = 0.01, #just another tuning parameter i could remove later, but it was nexessary to get l1 to work on the correlated features
+            random_state = 67,
+            tol = 0.01, #just another tuning parameter i could remove later, but it was nexessary to get l1 to work on the initially correlated features
             verbose = 1
             )
     
@@ -87,7 +104,7 @@ def feature_finder(model, model_name, data, features, y_train, weights):
     if model_name == "Light Gradient Boosted Model":
          shap_feature_finder(model, data, features)
          
-    if model_name == "Logistic Regression":
-         logistic_best_feature_finder(model, data, features, y_train, weights)
+    elif model_name == "Logistic Regression":
+         logistic_best_feature_finder(data, features, y_train, weights)
          
          

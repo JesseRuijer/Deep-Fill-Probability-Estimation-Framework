@@ -6,23 +6,34 @@ Created on Thu Jun 11 10:42:59 2026
 @author: jesseruijer
 """
 
+"""
+LGBM Engine
+
+Trains & Calibrates
+"""
+
 import lightgbm as lgb 
 import gc
 from lightgbm import early_stopping
 from sklearn.calibration import CalibratedClassifierCV
 import config
+import pandas as pd
 
 
-def train_lgbm_model(X_train, y_train, weights, X_calib, y_calib, weights_calib , X_val = None, y_val = None, val_weights = None,  params = None, for_tuning = False):
+def train_lgbm_model(X_train:pd.DataFrame, y_train:pd.Series, weights:pd.Series, X_calib:pd.DataFrame, y_calib:pd.Series, weights_calib:pd.Series , X_val:pd.DataFrame | None = None, y_val:pd.Series|None = None, val_weights:pd.Series|None = None,  params: dict|None = None, for_tuning: bool = False) -> lgb.LGBMClassifier | tuple[lgb.LGBMClassifier, CalibratedClassifierCV]:
+    
+    
+    """
+    Training LGBM
+    """
 
-    # light GBM 
+    # lightGBM 
     
     if params is None:
         params = {
         
         #Structural
-        'objective' : 'binary', # Our Output var is multiclass for lgbm
-        #'num_class' : 3, # How many diff classes (0,1,2 are the classes in our case)
+        'objective' : 'binary',
         'boosting_type' : 'gbdt', #The default gradient boosting 
         'metric' : 'binary_logloss', #Metric to ensure lgbm knows its goal is binary classification, and then the binary logloss is just for it to measrue performance
         'n_jobs' : -1, #Using all available threads in cpu 
@@ -34,19 +45,15 @@ def train_lgbm_model(X_train, y_train, weights, X_calib, y_calib, weights_calib 
         'num_leaves' : 147, #max num of leaves, i.e terminal nodes, allowed in each tree 
         'min_child_samples': 2912, #Minimum number of data points required to create a new split in a leaf node
         'verbose': 1
-        #Fine Tuning only use this after completion of tuning above and maybe not even at all, look at https://www.geeksforgeeks.org/machine-learning/lightgbm-regularization-parameters/
-        
             }
     
     
     base_lgbm = lgb.LGBMClassifier(**params) #** is for unpacking the library from above  
-    
-    #kwargs is just a name for keyword arguments which is somthing like sample_weight = weight inside the parameters of a function
+
     
     fit_kwargs = {'sample_weight': weights}
     
     #Only need the below when running optuna 
-    
     if X_val is not None and y_val is not None:
         fit_kwargs['eval_set'] = [(X_val, y_val)]
         fit_kwargs['callbacks'] = [early_stopping(stopping_rounds = 50)]
@@ -61,10 +68,7 @@ def train_lgbm_model(X_train, y_train, weights, X_calib, y_calib, weights_calib 
     del X_train, y_train, weights
     gc.collect()
     
-    #calibrating the model, trees use stepfunctions, so use isotonic to match that or smooth it out??, do more research on this
-    # im pretty sure trees dont require scalar and only care about relative ordering 
-    
-    
+    #calibrating base model to match event likelihood
     calibrated_lgbm = CalibratedClassifierCV(
         estimator = base_lgbm_model,
         method = 'isotonic',        #To calibrate raw lgbm output to LOB 
@@ -77,4 +81,3 @@ def train_lgbm_model(X_train, y_train, weights, X_calib, y_calib, weights_calib 
     gc.collect()
     
     return base_lgbm_model, calibrated_lgbm_model
-

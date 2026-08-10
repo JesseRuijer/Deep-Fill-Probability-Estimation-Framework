@@ -6,6 +6,14 @@ Created on Mon Jul  6 15:18:19 2026
 @author: jesseruijer
 """
 
+"""
+
+Feedforward Neural Net Training for Main and UserScript
+
+Wrapper class to convert outputs to comply with ModelEvaluation function input requirements
+
+"""
+
 import torch
 import torch.nn as nn
 import pandas as pd
@@ -36,14 +44,17 @@ torch.backends.cudnn.benchmark = False
 
 class PyTorchSklearnWrapper:   
     
-    #My test model function in ModelEvaluation expects a 2d array but the outputs of the FNN are in tensors, so have to wrap
+    """
+    Wrapper Class for converting tensors to arrays
+    My test model function in ModelEvaluation expects a 2d array but the outputs of the FNN are in tensors, so have to wrap
+    """
     
-    def __init__(self, model, device, calibrator = None):
+    def __init__(self, model:nn.Module, device:torch.device, calibrator:IsotonicRegression | None = None):
         self.model = model
         self.device = device
         self.calibrator = calibrator
         
-    def predict_proba(self, X):
+    def predict_proba(self, X:pd.DataFrame | np.ndarray) -> np.ndarray:
         self.model.eval()
         
         if isinstance(X, pd.DataFrame):
@@ -66,34 +77,38 @@ class PyTorchSklearnWrapper:
 
 class DataSet(Dataset):  
    
-    #class for putting the LOB data in the right tensorformat so tensor flow can use it 
+    """
+    class for putting the LOB data in the right tensorformat so tensor flow can use it 
+    """
     
-    def __init__(self, features, labels, weights):
+    def __init__(self, features:np.ndarray, labels:np.ndarray, weights:np.ndarray):
         self.X = torch.tensor(features, dtype = torch.float32)
         self.y = torch.tensor(labels, dtype = torch.float32).reshape(-1,1)      #outputs are just 1d array, and this puts them into a fixed 1 column and for the amount of rows it just sorts it out itself, this reshaping is necessary to later compare it to the outputs of the NN
         self.w = torch.tensor(weights, dtype = torch.float32).reshape(-1,1)
 
-    def __len__(self):
+    def __len__(self) -> int:
         return len(self.X)
         
-    def __getitem__(self, idx):
+    def __getitem__(self, idx:int) -> tuple[torch.Tensor, torch.Tensor,torch.Tensor]:
         return self.X[idx], self.y[idx], self.w[idx]
 
 
-class NN(nn.Module):  #you need a class because classes function as blueprints that keep track of its internal state which is necessary bcecause it needs to remeber what it did before everytime you pass a new batch into it, then pass nn>module giving it all the pytorch capabilities
+class NN(nn.Module):  #pass nn>module giving it all the pytorch capabilities
     
-#Neural net architecture
+    """
+    Neural net architecture
+    """
 
-    def __init__(self, input_size, dropout_rate = 0.16669353086758615): #Dropout rate ensures during every single training step 20% of neurons get turned off to prevent overfitting, can be increased later
+    def __init__(self, input_size: int, dropout_rate :float= 0.16669353086758615): #Dropout rate ensures during every single training step x% of neurons get turned off to prevent overfitting
         super(NN, self).__init__() #to unlock the power of nn.Module
         
-        self.network = nn.Sequential(       #Sequential does all the chaining together i manually did in playground
+        self.network = nn.Sequential(       #Sequential does all the chaining together 
             nn.Linear(input_size, 70),     #First layer amount of neurons 
-            nn.BatchNorm1d(70),    #Normalize the data in batch after each layer (to prevent gradient destabilisation during loss calcuation in backward prop i think)
+            nn.BatchNorm1d(70),    #Normalize the data in batch after each layer (to prevent gradient destabilisation during loss calcuation in backward prop )
             nn.ReLU(),  #apply nonlinearity
             nn.Dropout(dropout_rate),   #dropout, NOTE: pytorch automatically turns dropout off during testing so all neurons remain active when making real predictions, so dont have to manually turn dropout off later
             
-            nn.Linear(70, 105), #I believe a funnel shape in terms of hiddenlayer dimensions is usually the best approach, but can look over this more later
+            nn.Linear(70, 105), 
             nn.BatchNorm1d(105),
             nn.ReLU(),
             nn.Dropout(dropout_rate),
@@ -110,10 +125,15 @@ class NN(nn.Module):  #you need a class because classes function as blueprints t
             
             nn.Linear(53, 1)        #Final output is just 1 neuron ofc, NOTE: no sigmoid activation here, since thats already done by ptyorch inside the loss function later, so the outputs here are just raw logits
             )
-    def forward(self, x):       #because we used the sequential above, the forward 
+    def forward(self, x:torch.Tensor) -> torch.Tensor:       #because we used the sequential above, the forward 
         return self.network(x)
     
-def prepdata_and_train(train_files):
+def prepdata_and_train(train_files:list) ->tuple[PyTorchSklearnWrapper, StandardScaler ]:
+    
+    """
+    Prep data and training of NN
+    
+    """
     
     ##Device configuration
     #Training is much faster on gpu, but apple silicon has MPS and if its on a different deivce you have to use NVIDIA CUDA if available (like on the cluster probs)
@@ -152,7 +172,7 @@ def prepdata_and_train(train_files):
     
     #Initialize model 
     input_size = len(config.FNN_MODEL_FEATURES)
-    LEARNING_RATE = 0.001    #0.003143153725649377
+    LEARNING_RATE = 0.001    #0.003143153725649377 was the initial LR Optuna gave
     WEIGHT_DECAY = 2.5475947521348294e-06 #L2 regularization to prevent overfitting
     EPOCHS = 2
     BATCH_SIZE = 16384 #power of two so easy to progress and batch size can be large since the tabular data is not super information dense (like a 4K image for example)
@@ -295,9 +315,10 @@ def prepdata_and_train(train_files):
 
 class UserFNN(nn.Module):
     
-    #Similar neural net class as above but now for use in userscript 
+    #I am aware this is a 1:1 copy of the code above, but it was easier to save and use different neural nets by just seperating them by name for use in Main and use in UserScript
+    #Similar neural net class as above but now for use in UserScript 
     
-    def __init__(self, input_size):
+    def __init__(self, input_size:int):
         super(UserFNN, self).__init__()
         
         dropout_rate = 0.16669353086758615
@@ -326,16 +347,5 @@ class UserFNN(nn.Module):
             
             nn.Linear(53, 1)  
             )
-    def forward(self, x):
+    def forward(self, x:torch.Tensor) -> torch.Tensor:
         return self.network(x)
-
-
-
-
-
-
-
-
-
-
-

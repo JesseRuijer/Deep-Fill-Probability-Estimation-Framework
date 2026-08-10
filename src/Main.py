@@ -193,7 +193,7 @@ def run_project(model_choice: str, job: str) -> None:
             calibrated_lr = loaded_model_package['calibrated_model']
 
             #comment this after best features have been found
-            #feature_finder(base_lr, 'Logistic Regression', train_matrix_bin , config.LOGISTIC_MODEL_FEATURES, logistic_regY , fill_weights)
+            #feature_finder(base_lr, 'Logistic Regression', train_matrix , config.LOGISTIC_MODEL_FEATURES, logistic_regY , fill_weights)
             print(f'Features used: {features}')
             
             test_model(
@@ -290,6 +290,7 @@ def run_project(model_choice: str, job: str) -> None:
               calibrated_lgbm = loaded_model_package['calibrated_model']
             
               # #comment this after best features have been found
+              #Create val_data small to be a small section of the data to be used as validation
               # feature_finder(base_lgbm,'Light Gradient Boosted Model', val_data_small , config.LGBM_MODEL_FEATURES, None, None)
 
               print(f'Features used: {features}')

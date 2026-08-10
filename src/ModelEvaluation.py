@@ -235,7 +235,7 @@ def test_model(test_data: pd.DataFrame, base_model, calibrated_model, scalar, mo
     fig, axes = plt.subplots(2,2, figsize = (24,14))
     
     
-    def weighted_calibration_curve(y_true: np.ndarray, y_pred: np.ndarray, weights: np.ndarray, n_bins: int = 10) -> tuple[np.ndarray, np.ndarray]:
+    def weighted_calibration_curve(y_true: pd.Series, y_pred: np.ndarray, weights: pd.Series, n_bins: int = 10) -> tuple[np.ndarray, np.ndarray]:
         
         """
         Manually calculates a volume-weighted calibration curve using quantiles.
@@ -271,7 +271,7 @@ def test_model(test_data: pd.DataFrame, base_model, calibrated_model, scalar, mo
     axes[0,0].legend()
     
     
-    def temporal_prob_curve(y_true: np.ndarray, y_pred: np.ndarray, weights: np.ndarray, n_bins:int = 10) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
+    def temporal_prob_curve(y_true: pd.Series, y_pred: np.ndarray, weights: pd.Series, n_bins:int = 10) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
         
         """
         Function to 
@@ -356,7 +356,7 @@ def test_model(test_data: pd.DataFrame, base_model, calibrated_model, scalar, mo
 # 3. Heartbeat performance plots
 # =============================================================================
 
-    def eval_at_heartbeat(test_data, y_true: np.ndarray, y_pred_prob: np.ndarray, weights: np.ndarray, dummy_fill_prob: float) -> pd.DataFrame:
+    def eval_at_heartbeat(test_data:pd.DataFrame, y_true: pd.Series, y_pred_prob: np.ndarray, weights: pd.Series, dummy_fill_prob: float) -> pd.DataFrame:
         
         """
         Creates performance plots to show how model performs depending on how many heartbeats were evaluated
@@ -579,7 +579,7 @@ def test_model(test_data: pd.DataFrame, base_model, calibrated_model, scalar, mo
 # 5. Functions used in UserScript that return daily plots and metrics
 # =============================================================================
 
-def compute_daily_performance_curve(y_true, y_pred_prob, weights, mask = None):
+def compute_daily_performance_curve(y_true:pd.Series, y_pred_prob:np.ndarray, weights:pd.Series, mask = None):
     
     """
     Calculates the performance curve for one single day, only used in userscript
@@ -643,7 +643,7 @@ def compute_daily_divergence(merged: pd.DataFrame) -> tuple[np.ndarray, np.ndarr
 
 
 
-def compute_daily_alligator(y_true: np.ndarray, y_pred_prob: np.ndarray, weights: np.ndarray, time_since_placement: np.ndarray, order_ids: np.ndarray) -> tuple[np.ndarray, np.ndarray]:
+def compute_daily_alligator(y_true: pd.Series, y_pred_prob: np.ndarray, weights: pd.Series, time_since_placement: pd.Series, order_ids: pd.Series) -> tuple[np.ndarray, np.ndarray]:
     
     """
     Construct daily plot which shows normalized lifetime on x-axis and predicted fill prob on y-axis with orders split analyzed based on whether they end up filling or not
@@ -688,7 +688,7 @@ def compute_daily_alligator(y_true: np.ndarray, y_pred_prob: np.ndarray, weights
     
     return fills, cancels
     
-def compute_daily_PR(y_true: np.ndarray, y_pred_prob: np.ndarray, weights: np.ndarray) -> tuple[np.ndarray, np.ndarray]:
+def compute_daily_PR(y_true: pd.Series, y_pred_prob: np.ndarray, weights: pd.Series) -> tuple[np.ndarray, np.ndarray]:
     
     """
     Computes precision, recall for data of a given trading day
@@ -697,7 +697,7 @@ def compute_daily_PR(y_true: np.ndarray, y_pred_prob: np.ndarray, weights: np.nd
     precision, recall, _ = precision_recall_curve(y_true, y_pred_prob, sample_weight = weights)
     return precision, recall
 
-def calc_weighted_ece(y_true: np.ndarray, y_pred: np.ndarray, weights: np.ndarray) -> float:
+def calc_weighted_ece(y_true: pd.Series, y_pred: np.ndarray, weights: pd.Series) -> float:
     
     """
     calcualtes the volumeweighted expected calibration error 
@@ -729,7 +729,7 @@ def calc_weighted_ece(y_true: np.ndarray, y_pred: np.ndarray, weights: np.ndarra
             
     return ece
 
-def compute_daily_scores(y_true: np.ndarray, y_pred_prob: np.ndarray, weights: np.ndarray) -> dict[str, float]:
+def compute_daily_scores(y_true: pd.Series, y_pred_prob: np.ndarray, weights: pd.Series) -> dict[str, float]:
     """
     #compute brier logloss and skill scores daily to be used in walk forward in userscript to get average model results
     """
