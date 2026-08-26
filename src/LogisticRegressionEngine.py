@@ -13,13 +13,12 @@ Trains & Calibrates
 """
 
 import numpy as np
-from sklearn.calibration import CalibratedClassifierCV
-from sklearn.linear_model import LogisticRegression
-from sklearn.preprocessing import StandardScaler
 import config
 import pandas as pd
 
-
+from sklearn.calibration import CalibratedClassifierCV
+from sklearn.linear_model import LogisticRegression
+from sklearn.preprocessing import StandardScaler
 
 ## This code below was the original logistic code, which cant do sequential training if the data is too large
 

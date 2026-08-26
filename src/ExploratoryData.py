@@ -15,12 +15,13 @@ Returns plots, tables and general information regarding that day, also has a fun
 
 import matplotlib.pyplot as plt
 import seaborn as sns
-from Functions import time_in_hours, time_to_ms
-from DataAndFeatureEngineering import import_data, clean_data, data_regressors
 import config
 import os
 import numpy as np   
 import pandas as pd    
+
+from Functions import time_in_hours, time_to_ms
+from DataAndFeatureEngineering import import_data, clean_data, data_regressors
 
 def run_exploratory_analysis(rawdata: dict, cleandata: dict, regressormatrix: pd.DataFrame, feature: str, target_time: float) -> None:
     

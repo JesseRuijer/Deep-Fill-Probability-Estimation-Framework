@@ -18,12 +18,13 @@ import torch
 import torch.nn as nn
 import pandas as pd
 import numpy as np
-from sklearn.preprocessing import StandardScaler
-from sklearn.isotonic import IsotonicRegression
 import config
-from torch.utils.data import DataLoader, Dataset
 import random
 import gc
+
+from sklearn.preprocessing import StandardScaler
+from sklearn.isotonic import IsotonicRegression
+from torch.utils.data import DataLoader, Dataset
 
 #Set seed to ensure reproducability
 SEED = config.RANDOM_SEED

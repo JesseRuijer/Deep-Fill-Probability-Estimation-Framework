@@ -14,11 +14,11 @@ Trains & Calibrates
 
 import lightgbm as lgb 
 import gc
-from lightgbm import early_stopping
-from sklearn.calibration import CalibratedClassifierCV
 import config
 import pandas as pd
 
+from lightgbm import early_stopping
+from sklearn.calibration import CalibratedClassifierCV
 
 def train_lgbm_model(X_train:pd.DataFrame, y_train:pd.Series, weights:pd.Series, X_calib:pd.DataFrame, y_calib:pd.Series, weights_calib:pd.Series , X_val:pd.DataFrame | None = None, y_val:pd.Series|None = None, val_weights:pd.Series|None = None,  params: dict|None = None, for_tuning: bool = False) -> lgb.LGBMClassifier | tuple[lgb.LGBMClassifier, CalibratedClassifierCV]:
     

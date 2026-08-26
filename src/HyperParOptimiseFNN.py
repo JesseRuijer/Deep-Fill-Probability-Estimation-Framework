@@ -14,12 +14,13 @@ import torch
 import torch.nn as nn
 import pandas as pd
 import numpy as np
-from sklearn.preprocessing import StandardScaler
 import config
-from torch.utils.data import DataLoader
 import random
 import optuna 
 import gc
+
+from sklearn.preprocessing import StandardScaler
+from torch.utils.data import DataLoader
 from FNN import DataSet
 from FileManager import get_ml_training_paths
 

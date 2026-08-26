@@ -18,6 +18,8 @@ import seaborn as sns
 import shap
 import torch 
 import matplotlib.pyplot as plt
+import config 
+
 from matplotlib.ticker import PercentFormatter
 from sklearn.metrics import (
     brier_score_loss, 
@@ -25,7 +27,7 @@ from sklearn.metrics import (
     average_precision_score, 
     precision_recall_curve
 )
-import config 
+
 
 
 # =============================================================================
@@ -129,7 +131,7 @@ def plot_fnn_importances(model, features: list, test_data: pd.DataFrame, scalar)
     plt.show() 
 
 
-def test_model(test_data: pd.DataFrame, base_model, calibrated_model, scalar, model_name: str, features: list, is_multi: bool) -> None:
+def test_model(test_data: pd.DataFrame, base_model, calibrated_model, scalar, model_name: str, features: list) -> None:
     
     """Evaluate model performance via volume-weighted metrics and diagnostic plots.
 

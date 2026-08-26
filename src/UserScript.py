@@ -19,18 +19,20 @@ import numpy as np
 import os
 import joblib
 import matplotlib.pyplot as plt
-from matplotlib.ticker import PercentFormatter
 import gc
 import random
 import matplotlib.gridspec as gridspec
+import config
+
 from sklearn.isotonic import IsotonicRegression
+from sklearn.calibration import CalibratedClassifierCV
 from pathlib import Path
 from sklearn.preprocessing import StandardScaler
-import config
-from sklearn.metrics import roc_auc_score
+from matplotlib.ticker import PercentFormatter
 from ModelEvaluation import test_model
 from FileManager import get_ml_training_paths, get_batch_data_paths, generate_dynamic_paths
 from DataAndFeatureEngineering import import_data, clean_data, data_regressors
+from FNN import PyTorchSklearnWrapper
 
 
 
@@ -90,9 +92,42 @@ def save_data() -> None:
         gc.collect()
         
     print('\nBatch processing complete!')
+    
+
+def get_raw_paths_from_parquet(file_path:str) -> tuple[str, str]:
+    
+    """
+    Function that can be called to obatin the raw files from the parquet treated files, serves as a reverse lookup, 
+    used in sequential training to immediately find info not in the parquet files
+    
+    """
+    
+    if isinstance(file_path, (list, tuple)):
+        file_path = file_path[0]
+    
+    filename = os.path.basename(file_path)
+    
+    #example filename: "INTC_BINARY_2014_07_08.parquet"
+    name_without_ext = filename.replace('.parquet', '')
+    parts = name_without_ext.split('_')
+    
+    ticker = parts[0]
+    #Reconstruct the original 8-digit date string (YYYYMMDD) from the split formatted date
+    date = parts[2] + parts[3] + parts[4]
+    
+    script_dir = Path(__file__).resolve().parent
+    raw_dir = script_dir.parent / 'data' / 'raw' / f'{ticker}_NASDAQ'
+    
+    main_raw_path = raw_dir / f'{ticker}_{date}_NASDAQ.mat'
+    mo_raw_path = raw_dir / 'MO' / f'{ticker}_{date}.mat'
+    
+    if not main_raw_path.exists() or not mo_raw_path.exists():
+        print(f"WARNING: Could not locate raw files for {filename}")
+        
+    return str(main_raw_path), str(mo_raw_path)
 
 
-def train(train_files:list, train_matrix:pd.DataFrame, model:str) -> tuple[calibratedmodel | wrapped model, StandardScaler]:
+def train(train_files:list, train_matrix:pd.DataFrame, model:str) -> tuple[CalibratedClassifierCV | PyTorchSklearnWrapper , StandardScaler]:
     
     """
     Training for all 3 models
@@ -102,12 +137,12 @@ def train(train_files:list, train_matrix:pd.DataFrame, model:str) -> tuple[calib
     print('Starting Training')
     
     if model == 'FNN':
-        
-        #import FNN required pytorch stuff only when using FNN
+
         import torch
         import torch.nn as nn
         from torch.utils.data import DataLoader
         from FNN import PyTorchSklearnWrapper, DataSet, UserFNN
+        
         #Set seed to ensure reproducability for FNN
         SEED = config.RANDOM_SEED
         random.seed(SEED)
@@ -138,7 +173,7 @@ def train(train_files:list, train_matrix:pd.DataFrame, model:str) -> tuple[calib
         
         LEARNING_RATE = 0.001    #0.003143153725649377 was the initial LR Optuna gave
         WEIGHT_DECAY = 2.5475947521348294e-06
-        EPOCHS = 3
+        EPOCHS = 1
         BATCH_SIZE = 16384 
         
         idx = int(len(train_files) * .8)
@@ -352,14 +387,13 @@ def train(train_files:list, train_matrix:pd.DataFrame, model:str) -> tuple[calib
         
         del lgbm_X, lgbm_Y, lgbm_w
         gc.collect()
-        
-        #Training model, can be commented when saved model    
-        base_lgbm, calibrated_lgbm = train_lgbm_model(train_X, train_Y, train_w, calib_X, calib_y, calib_weights)
+   
+        base_lgbm, calibrated = train_lgbm_model(train_X, train_Y, train_w, calib_X, calib_y, calib_weights)
         print('Pass4')
         model_package = {
          
           'base_model': base_lgbm,
-          'calibrated_model': calibrated_lgbm,
+          'calibrated_model': calibrated,
           'features': config.LGBM_MODEL_FEATURES
           }
      
@@ -375,7 +409,7 @@ def train(train_files:list, train_matrix:pd.DataFrame, model:str) -> tuple[calib
      
         print(f'Succesfully saved LGBM model to  {model_filepath}')
         scalar = None # I know this is ugly code but its just easy if the three models return the same two things from this function 
-        return calibrated_lgbm, scalar
+        return calibrated, scalar
         
     elif model == 'LR':
           
@@ -416,14 +450,14 @@ def train(train_files:list, train_matrix:pd.DataFrame, model:str) -> tuple[calib
         calib_y = lr_Y.iloc[split_idx:]
         calib_weights = lr_w.iloc[split_idx:]
           
-        base_lr, calibrated_lr, scalar_lr = train_logistic_model(train_X, train_Y, train_w, calib_X, calib_y, calib_weights)
+        base_lr, calibrated, scalar = train_logistic_model(train_X, train_Y, train_w, calib_X, calib_y, calib_weights)
         print('Pass4')
         model_package = {
             
             'base_model': base_lr,
-            'calibrated_model': calibrated_lr,
+            'calibrated_model': calibrated,
             'features': config.LOGISTIC_MODEL_FEATURES,
-            'scalar' : scalar_lr
+            'scalar' : scalar
             }
      
       #Pathing logic, uses pathlib library so on different devices it still saves correctly, maybe i need to install the os create folder etc stuff for all teh oter things as well
@@ -437,405 +471,8 @@ def train(train_files:list, train_matrix:pd.DataFrame, model:str) -> tuple[calib
         joblib.dump(model_package, model_filepath)
      
         print(f'Succesfully saved LR model to  {model_filepath}')
-        return calibrated_lr, scalar_lr
+        return calibrated, scalar
  
-def improve_qimbal(test_matrix, model, mo_data, cleandata):
-    
-    """
-    Attempts to improve qimbal by plotting the histogram with 3 seperate classes like in the presentation of ryan on slide 42
-    """
-    
-    # Rebuild the absolute path using pathlib
-    script_dir = Path(__file__).resolve().parent 
-    models_dir = script_dir.parent / 'models'
-    
-    scalar = None
- 
-    if model == 'FNN':
-        
-        import torch
-        from FNN import PyTorchSklearnWrapper, NN
-        
-        if torch.backends.mps.is_available():
-            device = torch.device('mps')
-            print('Training on Apple Silicon MPS')
-        elif torch.cuda.is_available():
-            device = torch.device('cuda')
-            print('Training on NVIDIA GPU (CUDA)')
-        else:
-            device = torch.device('cpu')
-            print('Training on CPU') 
-        
-       
-        model_filepath = models_dir / config.USER_FNN_MODEL_WEIGHTS
-        metadata_filepath = models_dir / config.USER_FNN_MODEL_METADATA
-        
-        print(f'Loading FNN weights from {model_filepath}')
-        
-        # #Load the package using the dynamic path
-        metadata_package = joblib.load(metadata_filepath)
-        
-        #Extracting the contents from the dictionary
-        features = metadata_package['features']
-        scalar = metadata_package['scalar']
-        fnn_calibrator = metadata_package['calibrator']
-        
-        #re initiaze the 'empty' model blue print
-        input_size = len(config.FNN_MODEL_FEATURES)
-        loaded_model = NN(input_size = input_size).to(device)
-        
-        #fill the empty model with my loaded weights from training before
-        loaded_model.load_state_dict(torch.load(model_filepath, map_location = device))
-        
-        
-        #set to eval before testing
-        
-        loaded_model.eval()
-        
-        #Wrap so can use test_model function 
-        use_model = PyTorchSklearnWrapper(loaded_model, device, fnn_calibrator)
-        
-    elif model == 'LGBM':
-        model_filepath = models_dir / config.USER_LGBM_MODEL
-        
-        print(f'Loading LGBM from {model_filepath}')
-        
-        # #Load the package using the dynamic path
-        loaded_model_package = joblib.load(model_filepath)
-        
-        #Extracting the contents from the dictionary
-        features = loaded_model_package['features']
-        use_model = loaded_model_package['calibrated_model']
-            
-    elif model == 'LR':
-
-        model_filepath = models_dir / config.USER_LR_MODEL
-        
-        print(f'Loading LR from {model_filepath}')
-        
-        # #Load the package using the dynamic path
-        loaded_model_package = joblib.load(model_filepath)
-        
-        #Extracting the contents from the dictionary
-        features = loaded_model_package['features']
-        scalar = loaded_model_package['scalar']
-        use_model = loaded_model_package['calibrated_model']
-        
-   
-
-    X_raw = test_matrix[features].astype(np.float32, copy = False)
-    
-    X = scalar.transform(X_raw) if scalar else X_raw 
-             
-    #This code below is now state based and doesnt need type it just looks at the delta change in volume for each step 
-    
-    
-    test_matrix['fillprob'] = use_model.predict_proba(X)[:,1]
-    test_matrix['expvol'] = test_matrix['fillprob'] * test_matrix['Vol']  #Calculate prob weighted vol 
-    
-    all_events = test_matrix[['ID', 'TOD', 'Type', 'SideOfBook', 'expvol', 'Price']].copy()
-    
-    #at_touch = test_matrix[test_matrix['DistanceToTouch'] == 0].copy()
-    
-    # Type 68/70 are dropped upstream in data_regressors, so every order's real final
-    # removal is invisible to test_matrix. Pull those events straight from the raw log --
-    # no prediction needed, a confirmed-dead order's contribution is just 0.
-    
-    #touched_ids = set(at_touch['ID'].unique())
-    full_removals = cleandata['Event'][cleandata['Event']['Type'].isin([68, 70])][['ID', 'TOD', 'Type', 'SideOfBook', 'Price']].copy()
-    full_removals['expvol'] = 0.0
-    
-   # Combine into one big chronological list of events
-    combined = pd.concat([all_events, full_removals], ignore_index=True)
-    combined = combined.sort_values(['ID', 'TOD'])
-    
-    # Using .shift(), we look at the row immediately above to see what this order's volume and price were BEFORE this event
-    combined['prev_vol'] = combined.groupby('ID')['expvol'].shift(1).fillna(0.0)
-    combined['prev_price'] = combined.groupby('ID')['Price'].shift(1)
-    
-    
-    
-   # The Negative Impact: Every event overwrites the old state, so we must subtract the previous volume
-    subs = combined[['TOD', 'SideOfBook', 'prev_price', 'prev_vol']].copy()
-    #just rename the columns from above
-    subs.columns = ['TOD', 'SideOfBook', 'Price', 'Vol_Delta']
-    subs['Vol_Delta'] = -subs['Vol_Delta'] 
-    subs = subs.dropna(subset=['Price']) 
-    
-    # The Positive Impact: Every event applies a new state, so we add the new volume
-    adds = combined[['TOD', 'SideOfBook', 'Price', 'expvol']].copy()
-    adds.columns = ['TOD', 'SideOfBook', 'Price', 'Vol_Delta']
-    
-    # Combine adds and subs to get a master timeline of all volume changes
-    impacts = pd.concat([adds, subs], ignore_index=True)
-   # Group by exact microsecond and price to net out simultaneous adds/subs
-    impacts = impacts.groupby(['TOD', 'SideOfBook', 'Price'])['Vol_Delta'].sum().reset_index()
-
-    # 3. Build the full Limit Order Book history using cumulative sum
-    impacts = impacts.sort_values('TOD')
-    impacts['Resting_Vol'] = impacts.groupby(['SideOfBook', 'Price'])['Vol_Delta'].cumsum()
-
-    # Separate the book by side for cleaner merging
-    bid_book = impacts[impacts['SideOfBook'] == 1].drop(columns=['SideOfBook'])
-    ask_book = impacts[impacts['SideOfBook'] == 0].drop(columns=['SideOfBook'])
-    
-    #match datatypes so pd.merge can continue, as we scaled down data during processing before
-# Force the merge keys to standard 64-bit types so the C-backend doesn't panic
-    bid_book['TOD'] = bid_book['TOD'].astype('int64')
-    ask_book['TOD'] = ask_book['TOD'].astype('int64')
-    test_matrix['TOD'] = test_matrix['TOD'].astype('int64')
-
-    bid_book['Price_Key'] = bid_book['Price'].abs().round().astype('int64')
-    ask_book['Price_Key'] = ask_book['Price'].abs().round().astype('int64')
-
-    test_matrix['BestBid_Key'] = test_matrix['BestBid'].abs().round().astype('int64')
-    test_matrix['BestAsk_Key'] = test_matrix['BestAsk'].abs().round().astype('int64')
-
-    # 4. Map the resting volume back to the main test_matrix BBO
-    test_matrix = test_matrix.sort_values('TOD')
-   # Merge Bid Volume
-    # This magically finds the most recent Resting_Vol where the TOD matches AND the book Price matches the BestBid
-    test_matrix = pd.merge_asof(
-        test_matrix, 
-        bid_book[['TOD', 'Price_Key', 'Resting_Vol']], 
-        on='TOD', 
-        left_by ='BestBid_Key', 
-        right_by ='Price_Key', 
-        direction='backward'
-    )
-    test_matrix.rename(columns={'Resting_Vol': 'Total_Prob_Bid_Vol'}, inplace=True)
-
-    # Merge Ask Volume
-    test_matrix = pd.merge_asof(
-        test_matrix, 
-        ask_book[['TOD', 'Price_Key', 'Resting_Vol']], 
-        on='TOD', 
-        left_by='BestAsk_Key', 
-        right_by='Price_Key', 
-        direction='backward'
-    )
-    test_matrix.rename(columns={'Resting_Vol': 'Total_Prob_Ask_Vol'}, inplace=True)
-    
-
-    # Clean up missing data (if a price level hasn't been established yet) and drop the extra merge columns
-    test_matrix[['Total_Prob_Bid_Vol', 'Total_Prob_Ask_Vol']] = test_matrix[['Total_Prob_Bid_Vol', 'Total_Prob_Ask_Vol']].fillna(0)
-    test_matrix.drop(columns=['Price_x', 'Price_y'], inplace=True, errors='ignore')
-    
-    test_matrix['Total_Prob_Bid_Vol'] = test_matrix['Total_Prob_Bid_Vol'].round(4).clip(lower=0)
-    test_matrix['Total_Prob_Ask_Vol'] = test_matrix['Total_Prob_Ask_Vol'].round(4).clip(lower=0)
-
-   
-    
-    prob_denom = test_matrix['Total_Prob_Bid_Vol'] + test_matrix['Total_Prob_Ask_Vol']
-    
-    
-    
-    # 3. Calculate Imbalance, defaulting to 0 if the touch is completely empty
-    test_matrix['ProbQImbal'] = np.where(
-        prob_denom > 0, 
-        (test_matrix['Total_Prob_Bid_Vol'] - test_matrix['Total_Prob_Ask_Vol']) / prob_denom,
-        0.0
-    )
-  # 1. Map the calculated imbalances onto the actual Market Order timestamps
-  
-  # --- DIAGNOSTIC CHECK ---
-    print("\n" + "="*40)
-    print("1. AVERAGE FILL PROBABILITY BY SIDE (Model Check)")
-    print('THIS IS HIGH SINCE MODEL ONLY EVALUATED AT BEST PRICES')
-    print(test_matrix.groupby('SideOfBook')['fillprob'].mean())
-    
-    print("\n2. AVERAGE MAPPED VOLUME BY SIDE (Matching Check)")
-    print(f"Mean Mapped Bid Vol: {test_matrix['Total_Prob_Bid_Vol'].mean():.2f}")
-    print(f"Mean Mapped Ask Vol: {test_matrix['Total_Prob_Ask_Vol'].mean():.2f}")
-    print("="*40 + "\n")
-    
-    # --- DEFINITIVE DIAGNOSTIC CHECK ---
-    print("\n" + "="*50)
-    print("1. RAW VOLUME IN TEST MATRIX (Input Check)")
-    raw_vols = test_matrix.groupby('SideOfBook')['Vol'].sum()
-    print(f"Total Raw Bid Vol (Side 1): {raw_vols.get(1.0, 0):,.0f}")
-    print(f"Total Raw Ask Vol (Side 0): {raw_vols.get(0.0, 0):,.0f}")
-    
-    print("\n2. VOLUME IN REBUILT BOOK (Rebuilder Check)")
-    print(f"Total Rebuilt Bid Vol: {bid_book['Resting_Vol'].sum():,.0f}")
-    print(f"Total Rebuilt Ask Vol: {ask_book['Resting_Vol'].sum():,.0f}")
-    
-    print("\n3. EXACT MATCH RATE (Merge Check)")
-    # Temporarily merge without fillna(0) to see how many rows actually found a match
-    test_bid_merge = pd.merge_asof(test_matrix, bid_book[['TOD', 'Price_Key', 'Resting_Vol']], on='TOD', left_by='BestBid_Key', right_by='Price_Key', direction='backward')
-    test_ask_merge = pd.merge_asof(test_matrix, ask_book[['TOD', 'Price_Key', 'Resting_Vol']], on='TOD', left_by='BestAsk_Key', right_by='Price_Key', direction='backward')
-    
-    bid_match_rate = (test_bid_merge['Resting_Vol'].notna().sum() / len(test_matrix)) * 100
-    ask_match_rate = (test_ask_merge['Resting_Vol'].notna().sum() / len(test_matrix)) * 100
-    print(f"Bid Price Match Rate: {bid_match_rate:.1f}%")
-    print(f"Ask Price Match Rate: {ask_match_rate:.1f}%")
-    print("="*50 + "\n")
-  
-    mo_data['TOD'] = mo_data['TOD'].astype('int64')
-    test_matrix['TOD'] = test_matrix['TOD'].astype('int64')
-    merged = pd.merge_asof(
-        mo_data.sort_values('TOD'), 
-        test_matrix[['TOD', 'ProbQImbal', 'QImbalance']].sort_values('TOD'), 
-        on='TOD', 
-        direction='backward'
-    )
-    
-    #Drop NaNs for trades that were placed before opening hours
-    merged = merged.dropna(subset=['ProbQImbal', 'QImbalance'])
-    
-    
-    #NOTE: The previous plots where i used the hardcoded bins did show a difference in heightratios in favor of the model
-    #but this was not right as our model is a nonlinear transformation so it could be that probqimbal is just a more squeezed or powered version of regular qimbal
-    #so we must use quantiles to see if then the ratios are still in favor cuz then the model is reranking the data and improving the regular qimbal 
-    bins = [-1.0, -1/3, 1/3, 1.0]
-    labels = ['Sell-Heavy', 'Neutral', 'Buy-Heavy']
-    # --- Plotting ProbQImbal ---
-    merged['Imbalance_Bin'] = pd.cut(merged['ProbQImbal'], bins=bins, labels=labels, include_lowest=True)
-    
-    # For MO: BorS == 1 -> sell, BorS == 0 -> buy
-    summary_prob = merged.groupby(['Imbalance_Bin', 'BorS'])['Vol'].sum().unstack(fill_value=0)
-    summary_prob.columns = ['Market Buys', 'Market Sells']
-        
-    #Plotting ProbQImbal
-    summary_prob.plot(kind='bar', figsize=(9, 6), color=['darkblue', 'darkred'], edgecolor='black')
-
-    
-    plt.title(f"Trade Vol vs. ProbQImbal - {config.TICK} for {model}")
-    plt.xlabel("Imbalance Level")
-    plt.ylabel("Vol of Trades")
-    plt.xticks(rotation=0)
-    plt.legend(["Market Buys", "Market Sells"])
-    plt.tight_layout()
-    plt.show()
-    
-    #Plotting RegularQimbal
-    merged['Imbalance_Bin'] = pd.cut(merged['QImbalance'], bins=bins, labels=labels, include_lowest=True)
-
-    #For MO BorS == 1 -> sell
-    summary_reg = merged.groupby(['Imbalance_Bin', 'BorS'])['Vol'].sum().unstack(fill_value=0)
-    summary_reg.columns = ['Market Buys', 'Market Sells'] 
-      
-    summary_reg.plot(kind='bar', figsize=(9, 6), color=['darkblue', 'darkred'], edgecolor='black')
-    plt.title(f"Trade Vol vs. RegularQImbal - {config.TICK} for {model}")
-    plt.xlabel("Imbalance Level")
-    plt.ylabel("Vol of Trades")
-    plt.xticks(rotation=0)
-    plt.legend(["Market Buys", "Market Sells"])
-    plt.tight_layout()
-    plt.show()
-
-    
-    #plotting with quantiles
-    #rank data to break ties, i.e if there are large blocks of 0 fill prob
-    merged['ProbQImbal_Rank'] = merged['ProbQImbal'].rank(method = 'first')
-    
-    merged['Imbalance_Bin'] = pd.qcut(merged['ProbQImbal_Rank'], q=3, labels=labels)
-    summary_prob = merged.groupby(['Imbalance_Bin', 'BorS'])['Vol'].sum().unstack(fill_value=0)
-    summary_prob.columns = ['Market Buys', 'Market Sells']
-    
-    summary_prob.plot(kind='bar', figsize=(9, 6), color=['darkblue', 'darkred'], edgecolor='black')
-    
-    #Plotting ProbQImbal
-    
-    plt.title(f"Trade Vol vs. ProbQImbal - {config.TICK} for {model}")
-    plt.xlabel("Imbalance Level")
-    plt.ylabel("Vol of Trades")
-    plt.xticks(rotation=0)
-    plt.legend(["Market Buys", "Market Sells"])
-    plt.tight_layout()
-    plt.show()
-    
-    #Plotting RegularQimbal
-    merged['QImbalance_Rank'] = merged['QImbalance'].rank(method = 'first')
-    merged['Imbalance_Bin'] = pd.qcut(merged['QImbalance_Rank'], q=3, labels=labels)
-    summary_reg = merged.groupby(['Imbalance_Bin', 'BorS'])['Vol'].sum().unstack(fill_value=0)
-    summary_reg.columns = ['Market Buys', 'Market Sells']
-    #For MO BorS == 1 -> sell
-      
-    summary_reg.plot(kind='bar', figsize=(9, 6), color=['darkblue', 'darkred'], edgecolor='black')
-    plt.title(f"Trade Vol vs. RegularQImbal - {config.TICK} for {model}")
-    plt.xlabel("Imbalance Level")
-    plt.ylabel("Vol of Trades")
-    plt.xticks(rotation=0)
-    plt.legend(["Market Buys", "Market Sells"])
-    plt.tight_layout()
-    plt.show()
-    
-    #Now lastly here we can use roc auc unlike before, now we just care about does based on probqimbal a buy and a sell order which metric is better at ordering them
-    from sklearn.metrics import roc_auc_score
-    
-    is_buy = (merged['BorS'] == -1).astype(int)
-    
-    auc_regular = roc_auc_score(is_buy, merged['QImbalance'])
-    auc_probq = roc_auc_score(is_buy, merged['ProbQImbal']) 
-    auc_increase = (auc_probq - auc_regular) / auc_regular
-    print(f' Regular AUC is {auc_regular} and Improved AUC is {auc_probq}, this is a {(auc_increase) * 100}% increase')
-
-    #Now just printing the initial ratios and the improved ratios between bins
-    regshmb = summary_reg.loc['Sell-Heavy', 'Market Buys']
-    regshms = summary_reg.loc['Sell-Heavy', 'Market Sells']
-    regshratio = regshms / regshmb
-    print(f'Regular QImbal bin ratio when market sell heavy is {regshratio}')
-    
-    regbhmb = summary_reg.loc['Buy-Heavy', 'Market Buys']
-    regbhms = summary_reg.loc['Buy-Heavy', 'Market Sells']
-    regbhratio = regbhmb / regbhms
-    print(f'Regular QImbal bin ratio when market buy heavy is {regbhratio}')
-    
-    probshmb = summary_prob.loc['Sell-Heavy', 'Market Buys']
-    probshms = summary_prob.loc['Sell-Heavy', 'Market Sells']
-    probshratio = probshms / probshmb
-    print(f'Prob QImbal bin ratio when market sell heavy is {probshratio}')
-    
-    probbhmb = summary_prob.loc['Buy-Heavy', 'Market Buys']
-    probbhms = summary_prob.loc['Buy-Heavy', 'Market Sells']
-    probbhratio = probbhmb / probbhms
-    print(f'Prob QImbal bin ratio when marekt buy heavy is {probbhratio}')
-    
-    shincrease = (probshratio - regshratio)/ regshratio
-    bhincrease = (probbhratio - regbhratio)/ regbhratio
-    
-    print(f'Increase in Sell heavy bin ratio is {(shincrease)*100} %')
-    print(f'Increase in Buy heavy bin ratio is {(bhincrease)*100} %')
-    
-    
-    #Now doing it using more fine bins, maybe our model can capture an edge closer around the neutral parts
-    
-    merged['is_buy'] = (merged['BorS'] == -1).astype(int)
-    bins = np.linspace(-1.0,1.0,61)
-    merged['Reg_Fine_Bin'] = pd.cut(merged['QImbalance'], bins=bins)
-    merged['Prob_Fine_Bin'] = pd.cut(merged['ProbQImbal'], bins=bins)
-    
-    # Calculate the proportion of buys in each bin
- 
-    reg_curve = merged.groupby('Reg_Fine_Bin', observed=False)['is_buy'].mean().dropna()
-    prob_curve = merged.groupby('Prob_Fine_Bin', observed=False)['is_buy'].mean().dropna()
-    
-    # Get the midpoints of the surviving bins for the x-axis
-    reg_x = [b.mid for b in reg_curve.index]
-    prob_x = [b.mid for b in prob_curve.index]
-    
-    # Plotting
-    plt.figure(figsize=(9, 6))
-    
-    plt.plot(reg_x, reg_curve.values, label='Regular QImbal', color='darkred', marker='o', markersize=4, alpha=0.7)
-    plt.plot(prob_x, prob_curve.values, label=f'Prob QImbal ({model})', color='darkblue', marker='x', markersize=4, alpha=0.8)
-
-    plt.axvline(x=0.0, color='gray', linestyle='--', label='Neutral Book (0.0)')
-    plt.axhline(y=0.5, color='gray', linestyle=':', label='50/50 Buy/Sell Split')
-    
-    plt.title(f'Probability of a Market Buy vs. Imbalance (-1 to 1), {config.TICK}')
-    plt.xlabel('Imbalance (-1.0 = Max Sell Pressure, 1.0 = Max Buy Pressure)')
-    plt.ylabel('Proportion of Market Orders that are Buys')
-    plt.xlim(-.5, .5)
-    plt.ylim(0,1)
-    plt.legend()
-    plt.grid(True, alpha=0.3)
-
-    plt.show()
-    
-    return print((test_matrix['ProbQImbal'].describe()), test_matrix['QImbalance'].describe())
-
 def test_model_wrap(test_matrix:pd.DataFrame, model:str) -> None:
     
     """
@@ -846,11 +483,9 @@ def test_model_wrap(test_matrix:pd.DataFrame, model:str) -> None:
     script_dir = Path(__file__).resolve().parent 
     models_dir = script_dir.parent / 'models'
     
- 
     if model == 'FNN':
         
         import torch
-        import torch.nn as nn
         from FNN import PyTorchSklearnWrapper, NN
         
         if torch.backends.mps.is_available():
@@ -884,7 +519,6 @@ def test_model_wrap(test_matrix:pd.DataFrame, model:str) -> None:
         #fill the empty model with my loaded weights from training before
         loaded_model.load_state_dict(torch.load(model_filepath, map_location = device))
         
-        
         #set to eval before testing
         
         loaded_model.eval()
@@ -893,14 +527,13 @@ def test_model_wrap(test_matrix:pd.DataFrame, model:str) -> None:
         fnn_wrapped = PyTorchSklearnWrapper(loaded_model, device, fnn_calibrator)
               
         print(f'Features used: {features}')
-        fnn_test = test_model(
+        test_model(
             test_data = test_matrix, 
             base_model = fnn_wrapped,
             calibrated_model = fnn_wrapped,
             scalar = scalar,
             model_name = 'FNN',
             features = features,
-            is_multi = False
         )
     
     elif model == 'LGBM':
@@ -917,14 +550,13 @@ def test_model_wrap(test_matrix:pd.DataFrame, model:str) -> None:
         calibrated_lgbm = loaded_model_package['calibrated_model']
         
         print(f'Features used: {features}')
-        lgbm_test = test_model(
+        test_model(
             test_data = test_matrix, 
             base_model = base_lgbm,
             calibrated_model = calibrated_lgbm,
             scalar = None,
             model_name = 'Light Gradient Boosted Model',
             features = features,
-            is_multi = False
         )
         
     elif model == 'LR':
@@ -944,18 +576,17 @@ def test_model_wrap(test_matrix:pd.DataFrame, model:str) -> None:
         
         print(f'Features used: {features}')
        
-        logistic_test = test_model(
+        test_model(
             test_data = test_matrix, 
             base_model = base_lr,
             calibrated_model = calibrated_lr,
             scalar = scalar_lr,
             model_name = 'Logistic Regression',
             features = features,
-            is_multi = False
         )
        
  
-def single_order_eval(ID:int, TSP:float, test_data, selected_model, features, scalar):
+def single_order_eval(ID:int, TSP:float, test_data:pd.DataFrame, selected_model:PyTorchSklearnWrapper | CalibratedClassifierCV, features:list[str], scalar: StandardScaler) -> float:
     
     """
     Use Model to Return fill probability for a given order ID at a certain time since placement TSP
@@ -986,31 +617,34 @@ def single_order_eval(ID:int, TSP:float, test_data, selected_model, features, sc
         
     prob = selected_model.predict_proba(X)[0,1]
    
-    
     print(f'At {TSP}ms into this order ID life, the fill probability is {prob*100:.2f}%')
-    
-    #temporarily changed the below to output high prob of fill for other checks
+
     return prob
 
-def calc_daily_qimbal(test_matrix, use_model, scalar, features, mo_data, cleandata):
+def calc_daily_qimbal(test_matrix:pd.DataFrame, use_model: PyTorchSklearnWrapper | CalibratedClassifierCV, scalar: StandardScaler, features:list[str], mo_data:pd.DataFrame, cleandata:pd.DataFrame) -> pd.DataFrame:
+    
+    """
+    
+    Calculates probqimbalance and qimbalance at any moment during trading hours for a trading day at any given price level
+    
+    Uses vectorized code using pandas to keep a running tally of Vol at price
+    
+    """
+    
     X_raw = test_matrix[features].astype(np.float32, copy = False)
     X = scalar.transform(X_raw) if scalar else X_raw 
-             
-    #This code below is now state based and doesnt need type it just looks at the delta change in volume for each step 
-    
     
     test_matrix['fillprob'] = use_model.predict_proba(X)[:,1]
-    test_matrix['expvol'] = test_matrix['fillprob'] * test_matrix['Vol']  #Calculate prob weighted vol 
+    
+    #Calculate prob weighted vol from our model to create probqimbalance
+    test_matrix['expvol'] = test_matrix['fillprob'] * test_matrix['Vol']  
     
     all_events = test_matrix[['ID', 'TOD', 'Type', 'SideOfBook', 'expvol', 'Price']].copy()
-    
-    #at_touch = test_matrix[test_matrix['DistanceToTouch'] == 0].copy()
     
     # Type 68/70 are dropped upstream in data_regressors, so every order's real final
     # removal is invisible to test_matrix. Pull those events straight from the raw log --
     # no prediction needed, a confirmed-dead order's contribution is just 0.
     
-    #touched_ids = set(at_touch['ID'].unique())
     full_removals = cleandata['Event'][cleandata['Event']['Type'].isin([68, 70])][['ID', 'TOD', 'Type', 'SideOfBook', 'Price']].copy()
     full_removals['expvol'] = 0.0
     
@@ -1021,8 +655,6 @@ def calc_daily_qimbal(test_matrix, use_model, scalar, features, mo_data, cleanda
     # Using .shift(), we look at the row immediately above to see what this order's volume and price were BEFORE this event
     combined['prev_vol'] = combined.groupby('ID')['expvol'].shift(1).fillna(0.0)
     combined['prev_price'] = combined.groupby('ID')['Price'].shift(1)
-    
-    
     
    # The Negative Impact: Every event overwrites the old state, so we must subtract the previous volume
     subs = combined[['TOD', 'SideOfBook', 'prev_price', 'prev_vol']].copy()
@@ -1040,7 +672,7 @@ def calc_daily_qimbal(test_matrix, use_model, scalar, features, mo_data, cleanda
    # Group by exact microsecond and price to net out simultaneous adds/subs
     impacts = impacts.groupby(['TOD', 'SideOfBook', 'Price'])['Vol_Delta'].sum().reset_index()
 
-    # 3. Build the full Limit Order Book history using cumulative sum
+    # Build the full Limit Order Book history using cumulative sum
     impacts = impacts.sort_values('TOD')
     impacts['Resting_Vol'] = impacts.groupby(['SideOfBook', 'Price'])['Vol_Delta'].cumsum()
 
@@ -1049,7 +681,6 @@ def calc_daily_qimbal(test_matrix, use_model, scalar, features, mo_data, cleanda
     ask_book = impacts[impacts['SideOfBook'] == 0].drop(columns=['SideOfBook'])
     
     #match datatypes so pd.merge can continue, as we scaled down data during processing before
-# Force the merge keys to standard 64-bit types so the C-backend doesn't panic
     bid_book['TOD'] = bid_book['TOD'].astype('int64')
     ask_book['TOD'] = ask_book['TOD'].astype('int64')
     test_matrix['TOD'] = test_matrix['TOD'].astype('int64')
@@ -1060,10 +691,10 @@ def calc_daily_qimbal(test_matrix, use_model, scalar, features, mo_data, cleanda
     test_matrix['BestBid_Key'] = test_matrix['BestBid'].abs().round().astype('int64')
     test_matrix['BestAsk_Key'] = test_matrix['BestAsk'].abs().round().astype('int64')
 
-    # 4. Map the resting volume back to the main test_matrix BBO
+    # Map the resting volume back to the main test_matrix BBO
     test_matrix = test_matrix.sort_values('TOD')
+    
    # Merge Bid Volume
-    # This magically finds the most recent Resting_Vol where the TOD matches AND the book Price matches the BestBid
     test_matrix = pd.merge_asof(
         test_matrix, 
         bid_book[['TOD', 'Price_Key', 'Resting_Vol']], 
@@ -1095,19 +726,18 @@ def calc_daily_qimbal(test_matrix, use_model, scalar, features, mo_data, cleanda
     
     prob_denom = test_matrix['Total_Prob_Bid_Vol'] + test_matrix['Total_Prob_Ask_Vol']
     
-    # 3. Calculate Imbalance, defaulting to 0 if the touch is completely empty
+    # Calculate Imbalance, defaulting to 0 if the touch is completely empty
     test_matrix['ProbQImbal'] = np.where(
         prob_denom > 0, 
         (test_matrix['Total_Prob_Bid_Vol'] - test_matrix['Total_Prob_Ask_Vol']) / prob_denom,
         0.0
     )
     
-    #add y true cuz maybe need later in monthly eval
-    
     test_matrix['y_true'] = test_matrix[config.TARGET]
-    
     mo_data['TOD'] = mo_data['TOD'].astype('int64')
     test_matrix['TOD'] = test_matrix['TOD'].astype('int64')
+    
+    #Create final df 
     merged = pd.merge_asof(
         mo_data.sort_values('TOD'), 
         test_matrix[['TOD', 'ProbQImbal', 'QImbalance', 'y_true', 'fillprob']].sort_values('TOD'), 
@@ -1118,82 +748,16 @@ def calc_daily_qimbal(test_matrix, use_model, scalar, features, mo_data, cleanda
     #Drop NaNs for trades that were placed before opening hours
     merged = merged.dropna(subset=['ProbQImbal', 'QImbalance', 'fillprob'])
     
-    return merged
-
-def plot_monthly_sum(monthly_merged, selected_model):
+    return merged    
     
-    is_buy = (monthly_merged['BorS'] == -1).astype(int)
+def walk_forward(all_data_paths:list[str], selected_model:str, train_window_days:int) -> None:
     
-    auc_regular = roc_auc_score(is_buy, monthly_merged['QImbalance'])
-    auc_probq = roc_auc_score(is_buy, monthly_merged['ProbQImbal']) 
-    auc_increase = (auc_probq - auc_regular) / auc_regular
-    print(f' Monthly Regular AUC is {auc_regular} and Monthly Improved AUC is {auc_probq}, this is a {(auc_increase) * 100}% increase')
-
-    labels = ['Sell-Heavy', 'Neutral', 'Buy-Heavy']
-    #plotting with quantiles
-    monthly_merged['Imbalance_Bin'] = pd.qcut(monthly_merged['ProbQImbal'], q=3, labels=labels)
-    summary_prob = monthly_merged.groupby(['Imbalance_Bin', 'BorS'])['Vol'].sum().unstack(fill_value=0)
-    summary_prob.columns = ['Market Buys', 'Market Sells']
+    """
+    Walk forward model evaluation function
+    Coordinates daily computation of graphs and metrics and rolls this forward
+    Calls average plotting and metric results across entire walk forward testing set
     
-    summary_prob.plot(kind='bar', figsize=(9, 6), color=['darkblue', 'darkred'], edgecolor='black')
-    
-    #Plotting ProbQImbal
-    
-    plt.title(f"Trade Vol vs. ProbQImbal Month - {config.TICK} for {selected_model}")
-    plt.xlabel("Imbalance Level")
-    plt.ylabel("Vol of Trades")
-    plt.xticks(rotation=0)
-    plt.legend(["Market Buys", "Market Sells"])
-    plt.tight_layout()
-    plt.show()
-    
-    #Plotting RegularQimbal
-    monthly_merged['Imbalance_Bin'] = pd.qcut(monthly_merged['QImbalance'], q=3, labels=labels)
-    summary_reg = monthly_merged.groupby(['Imbalance_Bin', 'BorS'])['Vol'].sum().unstack(fill_value=0)
-    summary_reg.columns = ['Market Buys', 'Market Sells']
-    #For MO BorS == 1 -> sell
-      
-    summary_reg.plot(kind='bar', figsize=(9, 6), color=['darkblue', 'darkred'], edgecolor='black')
-    plt.title(f"Trade Vol vs. RegularQImbal Month - {config.TICK} for {selected_model}")
-    plt.xlabel("Imbalance Level")
-    plt.ylabel("Vol of Trades")
-    plt.xticks(rotation=0)
-    plt.legend(["Market Buys", "Market Sells"])
-    plt.tight_layout()
-    plt.show()
-    
-    return None 
-
-
-def get_raw_paths_from_parquet(file_path):
-    #in filemanager my raw path stuff was for one while which i wanted to keep for all my other stuff, but for the sequential training that needs to be in a function i can call in walkforward below
-    
-    if isinstance(file_path, (list, tuple)):
-        file_path = file_path[0]
-    
-    filename = os.path.basename(file_path)
-    
-    # Example filename: "INTC_BINARY_2014_07_08.parquet"
-    name_without_ext = filename.replace('.parquet', '')
-    parts = name_without_ext.split('_')
-    
-    ticker = parts[0]
-    # Reconstruct the original 8-digit date string (YYYYMMDD) from the split formatted date
-    date = parts[2] + parts[3] + parts[4]
-    
-    script_dir = Path(__file__).resolve().parent
-    raw_dir = script_dir.parent / 'data' / 'raw' / f'{ticker}_NASDAQ'
-    
-    main_raw_path = raw_dir / f'{ticker}_{date}_NASDAQ.mat'
-    mo_raw_path = raw_dir / 'MO' / f'{ticker}_{date}.mat'
-    
-    if not main_raw_path.exists() or not mo_raw_path.exists():
-        print(f"WARNING: Could not locate raw files for {filename}")
-        
-    return str(main_raw_path), str(mo_raw_path)
-    
-    
-def walk_forward(all_data_paths, selected_model, train_window_days):
+    """
     
     from ModelEvaluation import compute_daily_performance_curve
     from ModelEvaluation import compute_daily_divergence
@@ -1201,7 +765,7 @@ def walk_forward(all_data_paths, selected_model, train_window_days):
     from ModelEvaluation import compute_daily_PR
     from ModelEvaluation import compute_daily_scores
     
-    monthly_dataframes = []
+    #initialize performance lists
     daily_curves = []
     divergence_curves = []
     alligator_curves = []
@@ -1212,6 +776,8 @@ def walk_forward(all_data_paths, selected_model, train_window_days):
    
     for i in range(total_test_days):
         
+        #obtain evaluation for each trainingset and corresponding following testday using ModelEvaluation script
+        
         train_files = all_data_paths[i : i + train_window_days]
         test_file = all_data_paths[i + train_window_days]
        
@@ -1221,6 +787,9 @@ def walk_forward(all_data_paths, selected_model, train_window_days):
         
         test_matrix = pd.read_parquet(test_file)
         test_matrix.replace([np.inf, -np.inf], 0, inplace=True)
+        
+        tsp = test_matrix['TimeSincePlacement']
+        order_ids = test_matrix['ID']
         
         if selected_model == 'FNN':
             features = config.FNN_MODEL_FEATURES
@@ -1235,44 +804,35 @@ def walk_forward(all_data_paths, selected_model, train_window_days):
         y_true = test_matrix[config.TARGET]
         weights = test_matrix['UnitWeight']
         
-        at_touch_mask = test_matrix['DistanceToTouch'] == 0
-        
-        #you can add the at_touch_mask to mask here if you want the monthly plots to be for orders only placed at best price
+        #performance curve
         day_pred, day_actual, day_vol = compute_daily_performance_curve(y_true, y_pred_prob, weights, mask = None)
-        
-        
-         
         daily_curves.append((day_pred, day_actual, day_vol))
-        
-        tsp = test_matrix['TimeSincePlacement']
-        order_ids = test_matrix['ID']
+
+        #alligator curve
         day_fills, day_cancels = compute_daily_alligator(y_true, y_pred_prob, weights, tsp, order_ids)
         alligator_curves.append((day_fills, day_cancels))
         
+        #pr curve
         day_precision, day_recall = compute_daily_PR(y_true, y_pred_prob, weights)
         PR_curves.append((day_precision, day_recall))
         
+        #daily performance scores
         daily_scores = compute_daily_scores(y_true, y_pred_prob, weights)
         model_scores.append(daily_scores)
         
+        #prepping and executing probqimbal vs qimbal graphs div graphs
         raw_data_path, raw_mo_path = get_raw_paths_from_parquet(test_file)
-        
         rawdata = import_data(raw_data_path, raw_mo_path)
         cleandata = clean_data(rawdata)
         mo_data = rawdata['MO']
-        
         daily_merged = calc_daily_qimbal(test_matrix, use_model, scalar, features, mo_data, cleandata)
-        monthly_dataframes.append(daily_merged)
-        
         reg_buy, reg_tot, prob_buy, prob_tot = compute_daily_divergence(daily_merged)
         divergence_curves.append((reg_buy, reg_tot, prob_buy, prob_tot))
         
-        
-        del test_matrix, rawdata, cleandata, mo_data
-        
-    #monthly_merged = pd.concat(monthly_dataframes, ignore_index = True)
+        del test_matrix, rawdata, cleandata, mo_data, daily_merged
+        gc.collect()
     
-    
+    #having obtained results on all test days plot averaged results
     plot_walk_forward_curves(daily_curves, selected_model)
     plot_walk_forward_div(divergence_curves, selected_model)
     plot_walk_forward_alligator(alligator_curves, selected_model) 
@@ -1280,34 +840,37 @@ def walk_forward(all_data_paths, selected_model, train_window_days):
     prnt_daily_scores(model_scores, selected_model)
     
     
-def plot_walk_forward_curves(daily_curves, model_name):
+def plot_walk_forward_curves(daily_curves:list[tuple[np.ndarray, np.ndarray, np.ndarray]], model_name:str) -> None:
+    
+    """
+    Plots the average performance curve alongside all individual test day performance curves over the testing set
+    """
 
+    #initialize 
     all_preds = []
     all_actuals = []
     all_vols = []
 
-    
     for day_pred, day_actual, day_vol in daily_curves:
         all_preds.append(day_pred)
         all_actuals.append(day_actual)
         all_vols.append(day_vol)
        
     #compute mean of bins ignoring nan bins
-    
     mean_pred = np.nanmean(all_preds, axis = 0)
     mean_acc = np.nanmean(all_actuals, axis = 0)
     total_vol = np.sum(all_vols, axis = 0)
     
+    #Create bins for plot
     deltap = 0.01
     bins_low = np.arange(0, 0.401, deltap)
     bins_high = np.arange(0.43, 1, 3 * deltap)
     bins_custom = np.concatenate((bins_low, bins_high))
-    
     middle = [(bins_custom[i] + bins_custom[i+1])/2 for i in range(len(bins_custom)-1)]
     
-    fig1 = plt.figure(figsize=(20, 10))
+    #main performance plot
+    plt.figure(figsize=(20, 10))
     gs1 = gridspec.GridSpec(2, 1, height_ratios=[3, 1]) 
-    
     ax1 = plt.subplot(gs1[0])
 
     for day_pred, day_actual, _ in daily_curves:
@@ -1319,7 +882,6 @@ def plot_walk_forward_curves(daily_curves, model_name):
     valid_mean = ~np.isnan(mean_acc) & ~np.isnan(mean_pred)
     ax1.plot(mean_pred[valid_mean], mean_acc[valid_mean], color='darkblue', linewidth=5, label=f'Avg of {model_name}')
     ax1.plot([0,1], [0,1], color='black', label='Perfect', linestyle='--')
-    
     ax1.set_xlim(0, 1)
     ax1.set_ylim(0, 1)
     ax1.xaxis.set_major_formatter(PercentFormatter(1.0))
@@ -1329,6 +891,7 @@ def plot_walk_forward_curves(daily_curves, model_name):
     ax1.set_title(f'Performance of {model_name} on {config.TICK} ')
     ax1.legend()
 
+    #subplot to see vol that appears in each bin used in main graph
     ax2 = plt.subplot(gs1[1], sharex=ax1)
     ax2.bar(middle, total_vol, width=deltap*0.8, color='black', alpha=0.8, label='Aggregated Volume')
     ax2.set_ylabel('Total Vol (Log)')
@@ -1339,36 +902,15 @@ def plot_walk_forward_curves(daily_curves, model_name):
     
     plt.subplots_adjust(hspace=0.1)
     plt.show()
-    
-    
-    # #40% plot, wehre most of the data is at 
-    # for day_pred, day_actual in daily_curves:
-    #     all_preds.append(day_pred)
-    #     all_actuals.append(day_actual)
-        
-    #     #Filter nans i.e empty bins out, ~ is numpy NOT operator and we need more thatn one point to draw a line bewteen points, thats the following logic
-    #     valid_mask = ~np.isnan(day_pred) & ~np.isnan(day_actual)
-    #     if valid_mask.sum() > 1:
-    #         plt.plot(day_pred[valid_mask], day_actual[valid_mask], color = 'blue', alpha = 0.5, linewidth = 1)
-    # #plot thick avg line
-    # valid_mean = ~np.isnan(mean_acc) & ~np.isnan(mean_pred)
-    # plt.plot(mean_pred[valid_mean], mean_acc[valid_mean], color = 'darkblue', linewidth = 5, label = f'Avg of {model_name}')
-    # plt.plot([0,1], [0,1], color = 'black', label = 'Perfect', linestyle = '--')
-    # plt.xlim(0,.4)
-    # plt.ylim(0,.4)
-    # plt.gca().xaxis.set_major_formatter(PercentFormatter(1.0))
-    # plt.gca().yaxis.set_major_formatter(PercentFormatter(1.0))
-    # plt.xlabel('Predicted Fill Prob')
-    # plt.ylabel('Actual Fill Prob')
-    # plt.grid(True, alpha = 0.3)
-    # plt.title(f'Performance of {model_name} on {config.TICK}')
-    # plt.legend()
-    # plt.show()
  
-    
-    return None   
 
-def plot_walk_forward_div(divergence_curves, model_name):
+def plot_walk_forward_div(divergence_curves:list[tuple[np.ndarray,np.ndarray,np.ndarray,np.ndarray]], model_name:str) -> None:
+    
+    """
+    Plots the performance for probqimbal vs qimbal alongside all individual test day performance curves over the testing set
+    
+    Is called div, since I was looking for divergence between the performance lines 
+    """
     
     plt.figure(figsize=(9, 6))
 
@@ -1377,13 +919,10 @@ def plot_walk_forward_div(divergence_curves, model_name):
     all_prob_buy = np.array([day[2] for day in divergence_curves], dtype=float)
     all_prob_tot = np.array([day[3] for day in divergence_curves], dtype=float)
     
-    
-    
     bins = np.linspace(-1.0, 1.0, 101)
-    x_mids = (bins[:-1] + bins[1:]) / 2 #slicing, [:-1] means slice everything from start but exlude last entry 
+    x_mids = (bins[:-1] + bins[1:]) / 2 
     
     # Calculate the mathematical average across the month per bin
-
     daily_reg_curve = np.divide(all_reg_buy, all_reg_tot, 
                                 out=np.full_like(all_reg_buy, np.nan), 
                                 where=all_reg_tot!=0)
@@ -1409,9 +948,8 @@ def plot_walk_forward_div(divergence_curves, model_name):
     bins = np.linspace(-1.0, 1.0, 101)
     x_mids = (bins[:-1] + bins[1:]) / 2 
     
-    fig = plt.figure(figsize=(20, 10))
+    plt.figure(figsize=(20, 10))
     gs = gridspec.GridSpec(2, 1, height_ratios=[3, 1])
-
     ax1 = plt.subplot(gs[0])
 
     for i in range(len(daily_reg_curve)):
@@ -1473,7 +1011,7 @@ def plot_walk_forward_div(divergence_curves, model_name):
     
     daily_improvement = np.where(np.isfinite(daily_improvement), daily_improvement, np.nan)
 
-    print(f"\n--- Signal Strength (Walk-Forward Mean +-Daily STD across Days) ---")
+    print("\n--- Signal Strength (Walk-Forward Mean +-Daily STD across Days) ---")
     print(f"Raw QImbal Mean Deviation:  {np.nanmean(daily_dev_reg):.4f} +- {np.nanstd(daily_dev_reg, ddof=1):.4f}") #ddof =1 is to get the 1/N-1 for std which we need since we work with a sample
     print(f"Prob QImbal Mean Deviation: {np.nanmean(daily_dev_prob):.4f} +- {np.nanstd(daily_dev_prob, ddof=1):.4f}")
     print(f"Signal Strength Gain:       {np.nanmean(daily_improvement):+.1f}% +- {np.nanstd(daily_improvement, ddof=1):.1f}%\n")
@@ -1574,7 +1112,7 @@ def prnt_daily_scores(daily_scores, model_name):
     
 if __name__ == "__main__":
     
-    print('Welcome Boss, Starting Programme')
+    print('Starting Programme')
     
     process_choice = input('Do you want to process Raw files (y/n) ').strip().lower()
     if process_choice == 'y':
@@ -1612,7 +1150,7 @@ if __name__ == "__main__":
 
     print(f"\n[System] You selected: {selected_model}")
     print('WARNING: TRAINING IS REQUIRED BEFORE TESTING (whenever you select new data)')
-    action_choice = input("Do you want to 'train' or 'test' or 'qimbal' or 'use' or 'eval' this model? ").strip().lower()
+    action_choice = input("Do you want to 'train' or 'test' or 'use' or 'eval' this model? ").strip().lower()
     
     if action_choice in ['test', 'qimbal', 'use']:
         test_matrix = pd.read_parquet(test_files) 
@@ -1630,11 +1168,9 @@ if __name__ == "__main__":
         
         test_model_wrap(test_matrix, selected_model)
         
-    elif action_choice == 'qimbal':
-        improve_qimbal(test_matrix, selected_model, mo_data, cleandata)
-        
     elif action_choice == 'eval':
         #just manually force a list on the one item in tesst files so we can concatenate in sorted below 
+        #sorted immediately gives the right order by itself due the naming of our data
         chronological_data = sorted(train_files + test_files)
         walk_forward(chronological_data, selected_model, train_window_days = config.TRAINDAYSWF)
         
@@ -1647,7 +1183,6 @@ if __name__ == "__main__":
         
         if selected_model == 'FNN':
             import torch
-            import torch.nn as nn
             from FNN import PyTorchSklearnWrapper, UserFNN
             
             if torch.backends.mps.is_available():
@@ -1723,17 +1258,13 @@ if __name__ == "__main__":
         highest_prob = fill_probs[idx]
         
         print("\n" + "="*50)
-        print(f"MAX FILL PROBABILITY FOUND:")
+        print("MAX FILL PROBABILITY FOUND")
         print(f"Order ID: {highest_id}")
         print(f"Time Since Placement: {highest_tsp} ms")
         print(f"Fill Probability: {highest_prob * 100:.2f}%")
         print("="*50 + "\n")
 
-        
         while True:
-            
-            # order_events = test_matrix[test_matrix['ID'] == 43663]
-            # placements = order_events[order_events['Type'].isin([66, 83])]
             
             print('Give Order ID from testdata you want to experiment on')
             print(f'Some Example IDs are {test_matrix["ID"].drop_duplicates().sample(5).values}')
@@ -1752,11 +1283,7 @@ if __name__ == "__main__":
                 print('Enter a valid ID or TOD (Integer Form)')
                 continue
             single_order_eval(clean_ID, clean_TSP, test_matrix, use_model, features, scalar)
-            
-    #elif action_choice == 'is_test':
-   
-         
-         
+
     else:
         exit()
     

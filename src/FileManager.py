@@ -9,16 +9,17 @@ Created on Mon Jun 15 14:05:38 2026
 
 This script just handles the data entries into the programme via finder instead of having to manually do this (avoids typos and reduces time)
 Also codes a cache_file so if wanting to rerun the same data multiple times the finder doesnt keep on opening
-Note majority of this code was AI generated and changed by me to fit as I have no expertise in software engineering related to File managing on pc etc
+Note: majority of this code was AI generated and changed by me to fit as I have no expertise in software engineering related to File managing on pc etc
 
 """
 
 import tkinter as tk
-from tkinter import filedialog
 import os
 import json
 import sys
 import glob
+
+from tkinter import filedialog
 from pathlib import Path
 
 SCRIPT_DIR = Path(__file__).resolve().parent

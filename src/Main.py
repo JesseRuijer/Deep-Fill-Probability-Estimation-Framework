@@ -16,6 +16,7 @@ import joblib
 import os
 import gc
 import numpy as np
+
 from pathlib import Path
 from DataAndFeatureEngineering import import_data, clean_data, data_regressors
 from LightGBMEngine import train_lgbm_model
@@ -203,7 +204,6 @@ def run_project(model_choice: str, job: str) -> None:
                 scalar = scalar_lr,
                 model_name = 'Logistic Regression',
                 features = features,
-                is_multi = False
             )
             
 # =========================================================================
@@ -301,7 +301,6 @@ def run_project(model_choice: str, job: str) -> None:
                   scalar = None,
                   model_name = 'Light Gradient Boosted Model',
                   features = features,
-                  is_multi = False
               )
         
 # =========================================================================
@@ -396,7 +395,6 @@ def run_project(model_choice: str, job: str) -> None:
                    scalar = scalar,
                    model_name = 'FNN',
                    features = features,
-                   is_multi = False
                )
 
 if __name__ == "__main__":
