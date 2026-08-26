@@ -142,7 +142,7 @@ def run_project(model_choice: str, job: str) -> None:
             split_idx = int(len(lr_X) * .8)
         
             train_X = lr_X.iloc[:split_idx]
-            train_Y = lr_Y[:split_idx]
+            train_Y = lr_Y.iloc[:split_idx]
             train_w = lr_w.iloc[:split_idx]
             
             calib_X = lr_X.iloc[split_idx:]
@@ -403,7 +403,6 @@ if __name__ == "__main__":
     if 'rawdata' in locals(): del rawdata
     if 'cleandata' in locals(): del cleandata
     if 'Binary_Regression_Matrix' in locals(): del Binary_Regression_Matrix
-    if 'Multi_Class_Regression_Matrix' in locals(): del Multi_Class_Regression_Matrix
     if 'X' in locals(): del X
     
     gc.collect()

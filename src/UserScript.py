@@ -10,7 +10,7 @@ Created on Wed Jul  8 14:22:54 2026
 
 UserScript that allows for the majority of the functionality of the framework to be easily accessed by the user
 
-Contains for all models: training, testing, using, evaluation using walkforward window
+Contains for all models: training, testing, using, evaluation 
 
 """
 
@@ -34,10 +34,12 @@ from FileManager import get_ml_training_paths, get_batch_data_paths, generate_dy
 from DataAndFeatureEngineering import import_data, clean_data, data_regressors
 from FNN import PyTorchSklearnWrapper
 
-
-
 #Below is a fix to be able to run lgbm and torch in one script 
 os.environ["KMP_DUPLICATE_LIB_OK"] = "TRUE"
+
+# =============================================================================
+# 1. Prep/Save/File Data related functions
+# =============================================================================
 
 def prep_data_daily(file_path:str, file_path_mo:str) -> dict[str, pd.DataFrame]:
     
@@ -126,6 +128,9 @@ def get_raw_paths_from_parquet(file_path:str) -> tuple[str, str]:
         
     return str(main_raw_path), str(mo_raw_path)
 
+# =============================================================================
+# 2. Train & Test
+# =============================================================================
 
 def train(train_files:list, train_matrix:pd.DataFrame, model:str) -> tuple[CalibratedClassifierCV | PyTorchSklearnWrapper , StandardScaler]:
     
@@ -585,6 +590,9 @@ def test_model_wrap(test_matrix:pd.DataFrame, model:str) -> None:
             features = features,
         )
        
+# =============================================================================
+# 3. Model Applications 
+# =============================================================================
  
 def single_order_eval(ID:int, TSP:float, test_data:pd.DataFrame, selected_model:PyTorchSklearnWrapper | CalibratedClassifierCV, features:list[str], scalar: StandardScaler) -> float:
     
@@ -748,7 +756,11 @@ def calc_daily_qimbal(test_matrix:pd.DataFrame, use_model: PyTorchSklearnWrapper
     #Drop NaNs for trades that were placed before opening hours
     merged = merged.dropna(subset=['ProbQImbal', 'QImbalance', 'fillprob'])
     
-    return merged    
+    return merged   
+
+# =============================================================================
+# 4. Model Evaluation & Plotting 
+# =============================================================================
     
 def walk_forward(all_data_paths:list[str], selected_model:str, train_window_days:int) -> None:
     
@@ -844,6 +856,7 @@ def plot_walk_forward_curves(daily_curves:list[tuple[np.ndarray, np.ndarray, np.
     
     """
     Plots the average performance curve alongside all individual test day performance curves over the testing set
+    See ModelEvaluation script for extra info on plot construction
     """
 
     #initialize 
@@ -908,19 +921,14 @@ def plot_walk_forward_div(divergence_curves:list[tuple[np.ndarray,np.ndarray,np.
     
     """
     Plots the performance for probqimbal vs qimbal alongside all individual test day performance curves over the testing set
-    
     Is called div, since I was looking for divergence between the performance lines 
+    See ModelEvaluation script for extra info on plot construction
     """
-    
-    plt.figure(figsize=(9, 6))
 
     all_reg_buy = np.array([day[0] for day in divergence_curves], dtype=float)
     all_reg_tot = np.array([day[1] for day in divergence_curves], dtype=float)
     all_prob_buy = np.array([day[2] for day in divergence_curves], dtype=float)
     all_prob_tot = np.array([day[3] for day in divergence_curves], dtype=float)
-    
-    bins = np.linspace(-1.0, 1.0, 101)
-    x_mids = (bins[:-1] + bins[1:]) / 2 
     
     # Calculate the mathematical average across the month per bin
     daily_reg_curve = np.divide(all_reg_buy, all_reg_tot, 
@@ -948,6 +956,7 @@ def plot_walk_forward_div(divergence_curves:list[tuple[np.ndarray,np.ndarray,np.
     bins = np.linspace(-1.0, 1.0, 101)
     x_mids = (bins[:-1] + bins[1:]) / 2 
     
+    #individual test day plots
     plt.figure(figsize=(20, 10))
     gs = gridspec.GridSpec(2, 1, height_ratios=[3, 1])
     ax1 = plt.subplot(gs[0])
@@ -964,6 +973,7 @@ def plot_walk_forward_div(divergence_curves:list[tuple[np.ndarray,np.ndarray,np.
             label = 'Daily Improved' if i == 0 else None
             ax1.plot(x_mids[valid], daily_prob_curve[i][valid], color='blue', alpha=0.15, linewidth=1, label=label)
 
+    #Plot mean 
     valid_mean_reg = ~np.isnan(mean_reg)
     ax1.plot(x_mids[valid_mean_reg], mean_reg[valid_mean_reg], color='darkred', linewidth=5, label='Weighted Avg Regular')
     
@@ -981,10 +991,9 @@ def plot_walk_forward_div(divergence_curves:list[tuple[np.ndarray,np.ndarray,np.
     ax1.grid(True, alpha=0.3)
     ax1.legend()
 
+    #vol subplot so you can see what volume appears in which bin
     ax2 = plt.subplot(gs[1], sharex=ax1)
-    
-    
-    #width to seperate bins a bit but dont wanna shift logic so check this in plot 
+    #width to seperate bins a bit  
     width = (x_mids[1] - x_mids[0]) * 0.4
     ax2.bar(x_mids - width/2, global_reg_tot, width=width, color='darkred', alpha=0.5, label='Reg Vol')
     ax2.bar(x_mids + width/2, global_prob_tot, width=width, color='darkblue', alpha=0.5, label='Prob Vol')
@@ -999,7 +1008,6 @@ def plot_walk_forward_div(divergence_curves:list[tuple[np.ndarray,np.ndarray,np.
     plt.show()
     
     #For bins above and below qimbal 0 how far are we from the 0.5 line, i.e how good of an indicator are we
-
     sign_mask = np.where(x_mids >= 0, 1.0, -1.0)
 
     daily_dev_reg  = np.nanmean((daily_reg_curve  - 0.5) * sign_mask, axis=1) #take average across bins for the 40 bins
@@ -1017,14 +1025,19 @@ def plot_walk_forward_div(divergence_curves:list[tuple[np.ndarray,np.ndarray,np.
     print(f"Signal Strength Gain:       {np.nanmean(daily_improvement):+.1f}% +- {np.nanstd(daily_improvement, ddof=1):.1f}%\n")
     
     
-def plot_walk_forward_alligator(alligator_curves, model_name):
-    plt.figure(figsize=(16, 9))
+def plot_walk_forward_alligator(alligator_curves:list[tuple[np.ndarray, np.ndarray]], model_name:str) -> None:
+    
+    """
+    Plots the 'alligator' plot alongside all individual test day alligator curves over the testing set
+    See ModelEvaluation script for extra info on plot construction
 
-    # Force 2D float alignment using the ragged-array fix
+    """
+    plt.figure(figsize=(16, 9))
+    x_axis = np.linspace(0, 1, 20)
+    
+    #convert to df then back to array to prevent size differences (if they happen)
     all_fills = pd.DataFrame([day[0] for day in alligator_curves]).values.astype(float)
     all_cancels = pd.DataFrame([day[1] for day in alligator_curves]).values.astype(float)
-    
-    x_axis = np.linspace(0, 1, 20)
     
     for i, fill in enumerate(all_fills):
         valid = ~np.isnan(fill)
@@ -1055,9 +1068,14 @@ def plot_walk_forward_alligator(alligator_curves, model_name):
     plt.grid(True, alpha=0.3)
     plt.show()
     
-def plot_walk_forward_PR(PR_curves, model_name):
+def plot_walk_forward_PR(PR_curves:list[tuple[np.ndarray, np.ndarray]], model_name:str) -> None:
+    
+    """
+    Plots the average PR curve alongside all individual test day PR curves over the testing set
+    See ModelEvaluation script for extra info on plot construction
+    """
 
-    #Sklearn spits out arrays of PR of different sizes, so cant directly compare them like above where we had the fixed bins
+    #SkLearn spits out arrays of PR of different sizes, so cant directly compare them like above where we had the fixed bins
     #Use fixed points where we evaluate the PR
     
     plt.figure(figsize=(16, 9))
@@ -1065,6 +1083,7 @@ def plot_walk_forward_PR(PR_curves, model_name):
     common_recall = np.linspace(0, 1, 101)
     all_interp_precisions = []
     
+    #plot PR for individual test days
     for day_precision, day_recall in PR_curves:
         #The following is from SKlearn documentation
         # Sklearn returns recall in decreasing order (1 to 0). 
@@ -1079,7 +1098,8 @@ def plot_walk_forward_PR(PR_curves, model_name):
         # Plot the daily transparent ghost line (using original arrays)
         plt.plot(day_recall, day_precision, color='blue', alpha=0.15, linewidth=1)
 
-    mean_precision = np.mean(all_interp_precisions, axis=0)
+    #plot mean
+    mean_precision = np.nanmean(all_interp_precisions, axis=0)
     plt.plot(common_recall, mean_precision, color='darkblue', linewidth=5, label=f'Avg {model_name} PR')
 
     plt.xlabel('Recall (Fills correctly identified as Fills / All Actual Fills)')
@@ -1091,7 +1111,12 @@ def plot_walk_forward_PR(PR_curves, model_name):
     plt.grid(True, alpha=0.3)
     plt.show()
     
-def prnt_daily_scores(daily_scores, model_name):
+def prnt_daily_scores(daily_scores:list[dict[str, float]], model_name:str) -> None:
+    
+    """
+    Prints the average performance metrics alongside all individual test day performance metrics over the testing set
+    See ModelEvaluation script for extra info on metric construction
+    """
     
     print(f'Dailiy Scores for {model_name} -{config.TICK}')
     
@@ -1099,7 +1124,7 @@ def prnt_daily_scores(daily_scores, model_name):
 
         for metric_name, value in daily_score.items(): #.items() immediatley gets key string from dic and value attached to it
             print(f'{metric_name}: {value:.4f}')
-            
+      
     df_scores = pd.DataFrame(daily_scores)
 
     mean_scores = df_scores.mean() 
@@ -1109,12 +1134,15 @@ def prnt_daily_scores(daily_scores, model_name):
         print(f'Mean {metric_name}: {mean_scores[metric_name]:.3f} +- STD {std_scores[metric_name]}')
 
 
+def user_main() -> None:
     
-if __name__ == "__main__":
+    """
+    Control Framework & User functionalities
+    """
     
-    print('Starting Programme')
+    print('Starting Programme\n')
     
-    process_choice = input('Do you want to process Raw files (y/n) ').strip().lower()
+    process_choice = input('Do you want to process Raw files (y/n) \n').strip().lower()
     if process_choice == 'y':
         save_data()
     else:
@@ -1129,15 +1157,13 @@ if __name__ == "__main__":
     train_files = paths.get('train_bin', [])
     test_files = paths.get('test_bin', [])
    
-    
     model_choice = ''
     while model_choice not in ['1', '2', '3']:
         print("\n MODEL SELECTION ")
         print("1. Logistic Regression")
         print("2. LGBM")
         print("3. Neural Network ")
-        model_choice = input("Enter the number of the model you want to run (1/2/3): ").strip() #.strip just strips away whitespaces etc, so just the keyword remains
-        
+        model_choice = input("Enter the number of the model you want to run (1/2/3): ").strip()
         if model_choice not in ['1', '2', '3']:
             print("Invalid input. Please enter 1, 2, or 3.")
 
@@ -1148,33 +1174,28 @@ if __name__ == "__main__":
     elif model_choice == '3':
         selected_model = 'FNN'
 
-    print(f"\n[System] You selected: {selected_model}")
-    print('WARNING: TRAINING IS REQUIRED BEFORE TESTING (whenever you select new data)')
-    action_choice = input("Do you want to 'train' or 'test' or 'use' or 'eval' this model? ").strip().lower()
+    print(f"\n[System] You selected: {selected_model}\n")
+    print('WARNING: TRAINING IS REQUIRED BEFORE TESTING (whenever you select new data)\n')
+    action_choice = input("Do you want to 'train' or 'test' or 'use' or 'eval' this model? \n "
+                          "Train is for training your model on the data.\n "
+                          "Test is for testing your trained model on the data.\n "
+                          "Use is for using a trained model to return the predicted fill probability of a order ID at a specific time since placement.\n "
+                          "Eval is for running the models on larger sets of data to evaluate ").strip().lower()
     
-    if action_choice in ['test', 'qimbal', 'use']:
+    if action_choice in ['test','use']:
         test_matrix = pd.read_parquet(test_files) 
-        data_path, mo_path = get_raw_paths_from_parquet(test_files)
-        rawdata = import_data(data_path, mo_path)
-        mo_data = rawdata['MO']
-        cleandata = clean_data(rawdata)
 
     if action_choice == 'train':
-        
         train(train_files, None, selected_model)
         
-        
     elif action_choice == 'test':
-        
         test_model_wrap(test_matrix, selected_model)
         
     elif action_choice == 'eval':
-        #just manually force a list on the one item in tesst files so we can concatenate in sorted below 
         #sorted immediately gives the right order by itself due the naming of our data
         chronological_data = sorted(train_files + test_files)
         walk_forward(chronological_data, selected_model, train_window_days = config.TRAINDAYSWF)
         
-   
     elif action_choice == 'use':
         print(f'Use the {selected_model} to experiment on orders, type "exit" if you want to stop')
         
@@ -1195,7 +1216,6 @@ if __name__ == "__main__":
                 device = torch.device('cpu')
                 print('Training on CPU') 
             
-           
             model_filepath = models_dir / config.USER_FNN_MODEL_WEIGHTS
             metadata_filepath = models_dir / config.USER_FNN_MODEL_METADATA
             # #Load the package using the dynamic path
@@ -1226,7 +1246,6 @@ if __name__ == "__main__":
             #Extracting the contents from the dictionary
             features = loaded_model_package['features']
             scalar = loaded_model_package['scalar']
-            base_lr = loaded_model_package['base_model']
             use_model = loaded_model_package['calibrated_model']
             
         elif selected_model == 'LGBM':
@@ -1238,21 +1257,16 @@ if __name__ == "__main__":
             
             #Extracting the contents from the dictionary
             features = loaded_model_package['features']
-            base_lgbm = loaded_model_package['base_model']
             use_model = loaded_model_package['calibrated_model']
             scalar = None
     
-        #This below is just temporary stuff to see if the use part works and yes it does, use the exploratory data part for that 
+        #Provide the user with some example IDs to use 
         X_raw = test_matrix[features].astype(np.float32, copy=False).values
         X_scaled = scalar.transform(X_raw) if scalar else X_raw 
-        
-        # 2. Isolate ONLY the Fill Probabilities (Column 1)
         fill_probs = use_model.predict_proba(X_scaled)[:, 1]
         
-        # 3. Find the index of the absolute highest fill probability
+        #find highest fill prob in case user wants to view this
         idx = np.argmax(fill_probs)
-        
-        # 4. Extract the exact ID, TSP, and Probability
         highest_id = int(test_matrix['ID'].iloc[idx])
         highest_tsp = int(test_matrix['TimeSincePlacement'].iloc[idx])
         highest_prob = fill_probs[idx]
@@ -1280,12 +1294,18 @@ if __name__ == "__main__":
                 clean_TSP = int(TSP)
                 
             except ValueError:
-                print('Enter a valid ID or TOD (Integer Form)')
+                print('Enter a valid ID or TSP (Integer Form)')
                 continue
             single_order_eval(clean_ID, clean_TSP, test_matrix, use_model, features, scalar)
 
     else:
         exit()
-    
-
-
+        
+if __name__ == "__main__":
+    user_main()            
+            
+            
+            
+            
+            
+            

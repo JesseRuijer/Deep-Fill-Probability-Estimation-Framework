@@ -651,7 +651,6 @@ def compute_daily_alligator(y_true: pd.Series, y_pred_prob: np.ndarray, weights:
     Construct daily plot which shows normalized lifetime on x-axis and predicted fill prob on y-axis with orders split analyzed based on whether they end up filling or not
     """
 
-
     eval_df = pd.DataFrame({
         'y_true': y_true.values,
         'y_pred': y_pred_prob,
@@ -684,7 +683,7 @@ def compute_daily_alligator(y_true: pd.Series, y_pred_prob: np.ndarray, weights:
         .unstack() 
     )
     
-    # Extract columns safely, defaulting to NaNs if a day magically had zero fills or zero cancels
+    #Extract columns safely, defaulting to NaNs if a day magically had zero fills or zero cancels
     fills = trajectory[1].values if 1 in trajectory.columns else np.full(20, np.nan)
     cancels = trajectory[0].values if 0 in trajectory.columns else np.full(20, np.nan)
     
@@ -698,6 +697,7 @@ def compute_daily_PR(y_true: pd.Series, y_pred_prob: np.ndarray, weights: pd.Ser
     
     precision, recall, _ = precision_recall_curve(y_true, y_pred_prob, sample_weight = weights)
     return precision, recall
+
 
 def calc_weighted_ece(y_true: pd.Series, y_pred: np.ndarray, weights: pd.Series) -> float:
     

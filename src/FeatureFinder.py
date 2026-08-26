@@ -11,7 +11,6 @@ Script to find relevant features for model, give this script all features, and i
 
 """
 
-
 import shap
 import numpy as np
 import pandas as pd
@@ -29,8 +28,6 @@ def feature_finder(model, model_name: str, data, features:list, y_train:pd.Serie
     For Shap use testdata, as its the same features as trained on
     For l1 finder for logistic, you have to use traindata
     """
-    
-
 
     def shap_feature_finder(model, data:pd.DataFrame, features:list) -> None:
         
@@ -64,7 +61,6 @@ def feature_finder(model, model_name: str, data, features:list, y_train:pd.Serie
         
         
     def logistic_best_feature_finder(data: pd.DataFrame, features:list, y_train:pd.Series, weights:pd.Series) -> None:
-        
         
         """
         Using Lasso Regression to find best features for LR
