@@ -10,3 +10,5 @@ models/
 playground/
 src/mnistdata/
 *.db
+.last_paths.json
+.ml_cache.json
