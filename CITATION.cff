@@ -1,0 +1,9 @@
+cff-version: 1.2.0
+message: "If you use this software or framework in your research, please cite it as below."
+authors:
+  - family-names: "Ruijer"
+    given-names: "Jesse"
+title: "Deep Fill Probability Estimation Framework"
+version: 1.0.0
+date-released: 2026-08-27
+url: "https://github.com/Deep-Fill-Probability-Estimation-Framework"
