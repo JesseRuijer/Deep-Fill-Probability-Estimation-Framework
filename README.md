@@ -53,6 +53,7 @@ repository_root/
 │   └── processed/                            # Parquet files will generate here
 
 ```
+
 ## Requirements
 
 * pandas
@@ -69,7 +70,17 @@ repository_root/
 
 ## How to use
 
+* Install dependencies 
 * Install required data
-* Run UserScript file
+* Run UserScript file (CLI should be explanatory here)
 
-If you are seriously interested in reviewing/using the code, you can reach out to me on jesse.ruijer@gmail.com to discuss the code with me.
+## Contact & Citation
+If you are seriously interested in reviewing this architecture, you can reach out to me via below. **A sample of the dataset used to validate this pipeline can be provided upon request for academic review.**
+
+* **Name:** Jesse Ruijer
+* **Email:** jesse.ruijer@gmail.com
+* **Academic Affiliation:** Joint MSc Quantitative Finance, ETH Zurich / University of Zurich
+* **LinkedIn:** https://www.linkedin.com/in/jesse-ruijer-898b70281/
+
+*(Citation link to the published paper will be added here upon publication).*
+
