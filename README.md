@@ -75,7 +75,7 @@ repository_root/
 * Run UserScript file (CLI should be self explanatory here)
 
 ## Contact & Citation
-If you are seriously interested in reviewing this architecture, you can reach out to me via below. **A sample of the dataset used to validate this pipeline can be provided upon request for academic review.** Also please consider citing this work if used in any way.
+If you are seriously interested in reviewing this architecture, you can reach out to me via below. A sample of the dataset used to validate this pipeline can be provided upon request for academic review. Also please consider citing this work if used in any way.
 
 * **Name:** Jesse Ruijer
 * **Email:** jesse.ruijer@gmail.com
